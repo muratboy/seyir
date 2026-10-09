@@ -83,8 +83,8 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
     final today = dayStart(now);
 
     // Pazartesi haftanın ilk günü (weekday = 1)
-    final endMonday = today.subtract(Duration(days: today.weekday - 1));
-    final startMonday = endMonday.subtract(Duration(days: (widget.weekCount - 1) * 7));
+    final endMonday = DateTime(today.year, today.month, today.day - (today.weekday - 1));
+    final startMonday = DateTime(endMonday.year, endMonday.month, endMonday.day - ((widget.weekCount - 1) * 7));
 
     const double cellSize = 13.0;
     const double cellSpacing = 3.5;
@@ -95,10 +95,10 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
     final monthLabels = <int, String>{}; // colIndex -> Month name
     String? lastMonthName;
     for (int c = 0; c < widget.weekCount; c++) {
-      final colMonday = startMonday.add(Duration(days: c * 7));
+      final colMonday = DateTime(startMonday.year, startMonday.month, startMonday.day + (c * 7));
       // Sütundaki günlerden biri ayın ilk haftası mı?
       for (int r = 0; r < 7; r++) {
-        final d = colMonday.add(Duration(days: r));
+        final d = DateTime(colMonday.year, colMonday.month, colMonday.day + r);
         if (d.day <= 7) {
           final mName = _monthShortName(d.month, s.isTr);
           if (mName != lastMonthName) {
@@ -183,12 +183,12 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                       // 7 satır x N sütun kareler
                       Row(
                         children: List.generate(widget.weekCount, (col) {
-                          final colMonday = startMonday.add(Duration(days: col * 7));
+                          final colMonday = DateTime(startMonday.year, startMonday.month, startMonday.day + (col * 7));
                           return Padding(
                             padding: const EdgeInsets.only(right: cellSpacing),
                             child: Column(
                               children: List.generate(7, (row) {
-                                final cellDate = colMonday.add(Duration(days: row));
+                                final cellDate = DateTime(colMonday.year, colMonday.month, colMonday.day + row);
                                 final isToday = cellDate.year == today.year &&
                                     cellDate.month == today.month &&
                                     cellDate.day == today.day;

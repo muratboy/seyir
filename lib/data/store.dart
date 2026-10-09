@@ -118,6 +118,8 @@ class AppStore extends ChangeNotifier {
   Map<int, ActivityStats> stats = {};
   ThemeMode themeMode = ThemeMode.system;
   AppLanguage language = AppLanguage.tr;
+  final appThemeNotifier = ValueNotifier<ThemeMode>(ThemeMode.system);
+  final appLanguageNotifier = ValueNotifier<AppLanguage>(AppLanguage.tr);
   String timelineView = 'list'; // 'list' | 'grid'
   List<ActiveTimer> activeTimers = [];
   ActiveTimer? get activeTimer => activeTimers.firstOrNull;
@@ -145,6 +147,8 @@ class AppStore extends ChangeNotifier {
     } else {
       themeMode = ThemeMode.system;
     }
+    appThemeNotifier.value = themeMode;
+
     final langStr = settingsMap['lang'];
     if (langStr == 'en') {
       language = AppLanguage.en;
@@ -153,6 +157,7 @@ class AppStore extends ChangeNotifier {
       language = AppLanguage.tr;
       strings.value = const AppStrings(AppLanguage.tr);
     }
+    appLanguageNotifier.value = language;
 
     final tView = settingsMap['timeline_view'];
     if (tView == 'grid') {
@@ -208,6 +213,7 @@ class AppStore extends ChangeNotifier {
 
   Future<void> setThemeMode(ThemeMode mode) async {
     themeMode = mode;
+    appThemeNotifier.value = mode;
     final d = await db;
     final val = mode == ThemeMode.dark ? 'dark' : (mode == ThemeMode.light ? 'light' : 'system');
     await d.insert('settings', {'key': 'theme', 'value': val}, conflictAlgorithm: ConflictAlgorithm.replace);
@@ -216,6 +222,7 @@ class AppStore extends ChangeNotifier {
 
   Future<void> setLanguage(AppLanguage lang) async {
     language = lang;
+    appLanguageNotifier.value = lang;
     strings.value = AppStrings(lang);
     final d = await db;
     final val = lang == AppLanguage.en ? 'en' : 'tr';
@@ -263,7 +270,10 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  final Map<String, DaySummary> _daySummaryCache = {};
+
   void _changed() {
+    _daySummaryCache.clear();
     _rebuildStats();
     notifyListeners();
   }
@@ -573,10 +583,66 @@ class AppStore extends ChangeNotifier {
     return entriesIn(s, DateTime(s.year, s.month, s.day + 1)).toList();
   }
 
+  /// Belirli bir günün özetini (toplam süre, hacim, kayıt adetleri) önbellekten veya hesaplayarak döner.
+  DaySummary getDaySummary(DateTime day) {
+    final key = dayKey(day);
+    final cached = _daySummaryCache[key];
+    if (cached != null) return cached;
+
+    final list = entriesOfDay(day);
+    if (list.isEmpty) {
+      final empty = DaySummary.empty(dayStart(day));
+      _daySummaryCache[key] = empty;
+      return empty;
+    }
+
+    double totalTimeMinutes = 0;
+    double totalVolumeLiters = 0;
+    final actCounts = <int, int>{};
+    final actTimes = <int, double>{};
+    final actVolumes = <int, double>{};
+
+    for (final e in list) {
+      actCounts[e.activityId] = (actCounts[e.activityId] ?? 0) + 1;
+      final u = e.unitId != null ? unit(e.unitId!) : null;
+      if (u != null && e.value != null) {
+        if (u.dim == 'time') {
+          final mins = e.value! * u.factor;
+          totalTimeMinutes += mins;
+          actTimes[e.activityId] = (actTimes[e.activityId] ?? 0) + mins;
+        } else if (u.dim == 'volume') {
+          final liters = e.value! * u.factor;
+          totalVolumeLiters += liters;
+          actVolumes[e.activityId] = (actVolumes[e.activityId] ?? 0) + liters;
+        }
+      }
+    }
+
+    final summary = DaySummary(
+      date: dayStart(day),
+      count: list.length,
+      totalTimeMinutes: totalTimeMinutes,
+      totalVolumeLiters: totalVolumeLiters,
+      activityCounts: actCounts,
+      activityTimeMinutes: actTimes,
+      activityVolumeLiters: actVolumes,
+    );
+    _daySummaryCache[key] = summary;
+    return summary;
+  }
+
+  void invalidateDaySummary(DateTime day) {
+    _daySummaryCache.remove(dayKey(day));
+  }
+
+  void clearSummaryCache() {
+    _daySummaryCache.clear();
+  }
+
   /// Kayıt detayı: "2 Demlik · 1,4 L", "45 dk"
   String entryDetail(Entry e) {
     if (e.value == null || e.unitId == null) {
-      return e.qty != 1 ? '${fmtNum(e.qty)} kez' : '';
+      return e.qty != 1 ? '${fmtNum(e.qty)} ${strings.value.timesSuffix}' : '';
     }
     final u = unit(e.unitId!);
     final amount = fmtAmount(e.value! * u.factor, u.dim, customUnit: u);
@@ -1156,13 +1222,31 @@ class AppStore extends ChangeNotifier {
 
   /// Arka arkaya tamamlanan periyot sayısı (bugünkü henüz bitmediyse dünden başlar).
   int goalStreak(Goal g) {
-    final h = goalHistory(g, 1000);
-    if (h.isEmpty) return 0;
-    var i = h.first.done ? 0 : 1;
-    var s = 0;
-    while (i < h.length && h[i].done) {
+    if (g.period == GoalPeriod.total) return 0;
+    final start = dayStart(DateTime.fromMillisecondsSinceEpoch(g.startDate));
+    var at = DateTime.now();
+    final firstSt = goalStatus(g, at: at);
+    if (firstSt.to != null && !firstSt.to!.isAfter(start)) return 0;
+
+    int s = 0;
+    if (firstSt.done) {
+      s = 1;
+    }
+
+    final (f0, _) = goalRange(g, at);
+    if (!f0.isAfter(start)) return s;
+    at = DateTime(f0.year, f0.month, f0.day - 1, 12);
+
+    // Seri bozulana kadar geriye doğru kontrol et (maksimum 365 periyot)
+    for (var i = 0; i < 365; i++) {
+      if (!at.isAfter(start)) break;
+      final st = goalStatus(g, at: at);
+      if (st.to != null && !st.to!.isAfter(start)) break;
+      if (!st.done) break;
       s++;
-      i++;
+      final (f, _) = goalRange(g, at);
+      if (!f.isAfter(start)) break;
+      at = DateTime(f.year, f.month, f.day - 1, 12);
     }
     return s;
   }
@@ -1257,10 +1341,10 @@ class AppStore extends ChangeNotifier {
 
     // Current streak (bugün yapıldıysa bugünden geriye, yapılmadıysa dünden geriye)
     int currentStreak = 0;
-    DateTime checkDate = isDoneToday ? today : today.subtract(const Duration(days: 1));
+    DateTime checkDate = isDoneToday ? today : DateTime(today.year, today.month, today.day - 1);
     while (dailyCounts.containsKey(checkDate)) {
       currentStreak++;
-      checkDate = checkDate.subtract(const Duration(days: 1));
+      checkDate = DateTime(checkDate.year, checkDate.month, checkDate.day - 1);
     }
 
     // Longest streak
@@ -1293,7 +1377,7 @@ class AppStore extends ChangeNotifier {
     // Consistency in last 30 days
     int activeIn30 = 0;
     for (int i = 0; i < 30; i++) {
-      final d = today.subtract(Duration(days: i));
+      final d = DateTime(today.year, today.month, today.day - i);
       if (dailyCounts.containsKey(d)) activeIn30++;
     }
     final consistencyLast30 = (activeIn30 / 30.0) * 100.0;

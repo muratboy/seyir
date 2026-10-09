@@ -170,6 +170,36 @@ class AppStrings {
   String get deleteConfirmTitle => isTr ? 'Silmek istediğine emin misin?' : 'Are you sure you want to delete?';
   String get deleteConfirmDesc => isTr ? 'Bu işlem geri alınamaz.' : 'This action cannot be undone.';
   String get nameRequired => isTr ? 'Lütfen bir ad girin' : 'Please enter a name';
+
+  // Stats & Metrics
+  String get metricCount => isTr ? 'Kayıt' : 'Entries';
+  String get metricTime => isTr ? 'Süre' : 'Duration';
+  String get metricVolume => isTr ? 'Hacim' : 'Volume';
+  String get peakPoint => isTr ? 'Zirve Noktası' : 'Peak Point';
+  String get dailyAverage => isTr ? 'Günlük Ortalama' : 'Daily Average';
+  String get entriesPerDay => isTr ? 'kayıt/gün' : 'entries/day';
+  String get noCategoryChart => isTr
+      ? 'Kategori dağılımı için en az 2 farklı kategori gereklidir.'
+      : 'At least 2 different categories are needed for category distribution.';
+  String get assignCategoryHint => isTr
+      ? 'Aktivitelerine kategori atayarak dağılımı görebilirsin.'
+      : 'Assign categories to your activities to view category distribution.';
+
+  // Day Summary & Formatting
+  String get entriesCountSuffix => isTr ? 'kayıt' : 'entries';
+  String get timesSuffix => isTr ? 'kez' : 'times';
+  String get backToToday => isTr ? 'Bugüne Dön' : 'Back to Today';
+
+  // Privacy & Settings Groups
+  String get privacyCardTitle => isTr ? 'Takip %100 Çevrimdışı & Yerel' : 'Takip 100% Offline & Local';
+  String get privacyCardSubtitle => isTr
+      ? 'Tüm verileriniz cihazınızdaki SQLite veritabanında saklanır. Harici sunucu veya analiz takipçisi yoktur.'
+      : 'All your data is stored in a local SQLite database on your device. No cloud servers, no analytics trackers.';
+  String get sectionAppearanceLanguage => isTr ? 'Görünüm & Dil' : 'Appearance & Language';
+  String get sectionActivitiesData => isTr ? 'Aktiviteler & Veriler' : 'Activities & Data';
+  String get sectionNotificationsReminders => isTr ? 'Akıllı Hatırlatıcılar & Bildirimler' : 'Smart Reminders & Notifications';
+  String get sectionBackupReports => isTr ? 'Yedekleme & Raporlama' : 'Backup & Reports';
+  String get sectionPrivacySecurity => isTr ? 'Gizlilik & Güvenlik' : 'Privacy & Security';
 }
 
 final strings = ValueNotifier<AppStrings>(const AppStrings(AppLanguage.tr));

@@ -52,7 +52,7 @@ class TakipApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
-      animation: store,
+      animation: Listenable.merge([store.appThemeNotifier, store.appLanguageNotifier]),
       builder: (context, _) {
         final loc = store.language == AppLanguage.en
             ? const Locale('en', 'US')
@@ -120,46 +120,51 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   @override
   Widget build(BuildContext context) {
-    final s = strings.value;
-    return Scaffold(
-      body: IndexedStack(
-        index: _tab,
-        children: [
-          TodayPage(focusRequest: _focusComposer),
-          const GoalsPage(),
-          const StatsPage(),
-          const ManagePage(),
-        ],
-      ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) {
-          FocusScope.of(context).unfocus();
-          setState(() => _tab = i);
-        },
-        destinations: [
-          NavigationDestination(
-            icon: const Icon(Icons.today_outlined),
-            selectedIcon: const Icon(Icons.today),
-            label: s.tabToday,
+    return AnimatedBuilder(
+      animation: store.appLanguageNotifier,
+      builder: (context, _) {
+        final s = strings.value;
+        return Scaffold(
+          body: IndexedStack(
+            index: _tab,
+            children: [
+              TodayPage(focusRequest: _focusComposer),
+              const GoalsPage(),
+              const StatsPage(),
+              const ManagePage(),
+            ],
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.flag_outlined),
-            selectedIcon: const Icon(Icons.flag),
-            label: s.tabGoals,
+          bottomNavigationBar: NavigationBar(
+            selectedIndex: _tab,
+            onDestinationSelected: (i) {
+              FocusScope.of(context).unfocus();
+              setState(() => _tab = i);
+            },
+            destinations: [
+              NavigationDestination(
+                icon: const Icon(Icons.today_outlined),
+                selectedIcon: const Icon(Icons.today),
+                label: s.tabToday,
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.flag_outlined),
+                selectedIcon: const Icon(Icons.flag),
+                label: s.tabGoals,
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.insights_outlined),
+                selectedIcon: const Icon(Icons.insights),
+                label: s.tabStats,
+              ),
+              NavigationDestination(
+                icon: const Icon(Icons.tune_outlined),
+                selectedIcon: const Icon(Icons.tune),
+                label: s.tabSettings,
+              ),
+            ],
           ),
-          NavigationDestination(
-            icon: const Icon(Icons.insights_outlined),
-            selectedIcon: const Icon(Icons.insights),
-            label: s.tabStats,
-          ),
-          NavigationDestination(
-            icon: const Icon(Icons.tune_outlined),
-            selectedIcon: const Icon(Icons.tune),
-            label: s.tabSettings,
-          ),
-        ],
-      ),
+        );
+      },
     );
   }
 }

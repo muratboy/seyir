@@ -9,7 +9,9 @@ String fmtNum(double v) => _num.format(v);
 String fmtNum1(double v) => _num1.format(v);
 
 DateTime dayStart(DateTime d) => DateTime(d.year, d.month, d.day);
-DateTime weekStart(DateTime d) => dayStart(d).subtract(Duration(days: d.weekday - 1));
+DateTime addDays(DateTime d, int days) => DateTime(d.year, d.month, d.day + days);
+DateTime subDays(DateTime d, int days) => DateTime(d.year, d.month, d.day - days);
+DateTime weekStart(DateTime d) => DateTime(d.year, d.month, d.day - (d.weekday - 1));
 DateTime monthStart(DateTime d) => DateTime(d.year, d.month);
 DateTime yearStart(DateTime d) => DateTime(d.year);
 

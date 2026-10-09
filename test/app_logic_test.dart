@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:takip/data/models.dart';
 import 'package:takip/data/store.dart';
@@ -907,6 +908,115 @@ void main() {
       expect(shouldShowPieChart(5), isTrue);
     });
   });
+
+  group('Stage 5 Architecture, Performance & Scale Tests', () {
+    test('DaySummary computes and caches day-level metrics', () {
+      final store = AppStore();
+      final day = DateTime(2026, 10, 9);
+      final ts = day.add(const Duration(hours: 10)).millisecondsSinceEpoch;
+
+      store.activities = {
+        1: Activity(id: 1, name: 'Ders Çalışma', emoji: '📚', createdAt: 0),
+        2: Activity(id: 2, name: 'Su', emoji: '💧', createdAt: 0),
+      };
+      store.entries = [
+        Entry(id: 1, activityId: 1, ts: ts, qty: 1, value: 45, unitId: 'dk'),
+        Entry(id: 2, activityId: 2, ts: ts + 3600000, qty: 1, value: 0.5, unitId: 'l'),
+      ];
+
+      final summary1 = store.getDaySummary(day);
+      expect(summary1.count, equals(2));
+      expect(summary1.totalTimeMinutes, equals(45.0));
+      expect(summary1.totalVolumeLiters, equals(0.5));
+      expect(summary1.activityCounts[1], equals(1));
+      expect(summary1.activityCounts[2], equals(1));
+
+      // Same day returns cached instance
+      final summary2 = store.getDaySummary(day);
+      expect(identical(summary1, summary2), isTrue);
+
+      // Invalidation clears cache
+      store.invalidateDaySummary(day);
+      final summary3 = store.getDaySummary(day);
+      expect(identical(summary1, summary3), isFalse);
+      expect(summary3.count, equals(2));
+    });
+
+    test('Calendar date math addDays, subDays and weekStart prevent DST drift', () {
+      final dt = DateTime(2026, 10, 25, 0, 0, 0); // European DST transition date
+      final nextDay = addDays(dt, 1);
+      final prevDay = subDays(dt, 1);
+
+      expect(nextDay.hour, equals(0));
+      expect(nextDay.day, equals(26));
+      expect(prevDay.hour, equals(0));
+      expect(prevDay.day, equals(24));
+
+      final sunday = DateTime(2026, 10, 11); // Sunday
+      final monday = weekStart(sunday);
+      expect(monday.weekday, equals(DateTime.monday));
+      expect(monday.day, equals(5));
+      expect(monday.hour, equals(0));
+    });
+
+    test('GoalStreak breaks early when streak is broken', () {
+      final store = AppStore();
+      final today = dayStart(DateTime.now());
+
+      final goal = Goal(
+        id: 1,
+        name: 'Günlük Kitap',
+        period: GoalPeriod.day,
+        type: 'target',
+        mode: 'amount',
+        target: 30,
+        unitId: 'dk',
+        startDate: today.subtract(const Duration(days: 300)).millisecondsSinceEpoch,
+        createdAt: 0,
+        links: [GoalLink(activityId: 5, pct: 100)],
+      );
+      store.goals = [goal];
+
+      // Bugün ve dün yapılmamış kayıt yok
+      store.entries = [];
+
+      final streak = store.goalStreak(goal);
+      expect(streak, equals(0));
+    });
+
+    test('AppThemeNotifier and AppLanguageNotifier update independently from Store entries', () {
+      final store = AppStore();
+      expect(store.appThemeNotifier.value, equals(ThemeMode.system));
+      expect(store.appLanguageNotifier.value, equals(AppLanguage.tr));
+
+      store.appThemeNotifier.value = ThemeMode.dark;
+      expect(store.appThemeNotifier.value, equals(ThemeMode.dark));
+
+      store.appLanguageNotifier.value = AppLanguage.en;
+      expect(store.appLanguageNotifier.value, equals(AppLanguage.en));
+    });
+
+    test('AppStrings provides Stage 5 localized labels for both Turkish and English', () {
+      const trStrings = AppStrings(AppLanguage.tr);
+      const enStrings = AppStrings(AppLanguage.en);
+
+      expect(trStrings.metricCount, equals('Kayıt'));
+      expect(enStrings.metricCount, equals('Entries'));
+
+      expect(trStrings.metricTime, equals('Süre'));
+      expect(enStrings.metricTime, equals('Duration'));
+
+      expect(trStrings.metricVolume, equals('Hacim'));
+      expect(enStrings.metricVolume, equals('Volume'));
+
+      expect(trStrings.privacyCardTitle, contains('Çevrimdışı'));
+      expect(enStrings.privacyCardTitle, contains('Offline'));
+
+      expect(trStrings.timesSuffix, equals('kez'));
+      expect(enStrings.timesSuffix, equals('times'));
+    });
+  });
 }
+
 
 

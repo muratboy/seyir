@@ -466,7 +466,9 @@ class ActiveTimer {
     return rem < 0 ? 0 : rem;
   }
 
-  bool get isTargetReached => isCountdown && targetMs > 0 && elapsedMs >= targetMs;
+  bool get hasTarget => isCountdown && targetMs > 0;
+
+  bool get isTargetReached => hasTarget && elapsedMs >= targetMs;
 
   double get progress {
     if (!isCountdown || targetMs <= 0) return 0.0;
@@ -644,6 +646,34 @@ String formatDurationHuman(int ms, bool isTr) {
   final remMins = mins % 60;
   if (remMins == 0) return '$hours ${isTr ? "sa" : "h"}';
   return '$hours ${isTr ? "sa" : "h"} $remMins ${isTr ? "dk" : "min"}';
+}
+
+/// Belirli bir günün toplamlarını ve aktivite dökümünü içeren performans modeli.
+class DaySummary {
+  final DateTime date;
+  final int count;
+  final double totalTimeMinutes;
+  final double totalVolumeLiters;
+  final Map<int, int> activityCounts;
+  final Map<int, double> activityTimeMinutes;
+  final Map<int, double> activityVolumeLiters;
+
+  const DaySummary({
+    required this.date,
+    required this.count,
+    required this.totalTimeMinutes,
+    required this.totalVolumeLiters,
+    this.activityCounts = const {},
+    this.activityTimeMinutes = const {},
+    this.activityVolumeLiters = const {},
+  });
+
+  factory DaySummary.empty(DateTime date) => DaySummary(
+        date: date,
+        count: 0,
+        totalTimeMinutes: 0,
+        totalVolumeLiters: 0,
+      );
 }
 
 

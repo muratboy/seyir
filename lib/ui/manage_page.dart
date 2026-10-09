@@ -23,11 +23,10 @@ class ManagePage extends StatefulWidget {
 class _ManagePageState extends State<ManagePage> {
   @override
   Widget build(BuildContext context) {
-    final s = strings.value;
-
     return AnimatedBuilder(
       animation: store,
       builder: (context, _) {
+        final s = strings.value;
         return Scaffold(
           appBar: AppBar(
             title: Text(s.tabSettings, style: const TextStyle(fontWeight: FontWeight.bold)),
@@ -36,7 +35,7 @@ class _ManagePageState extends State<ManagePage> {
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             children: [
               // 1. Görünüm & Dil
-              SectionTitle(s.isTr ? 'Görünüm & Dil' : 'Appearance & Language'),
+              SectionTitle(s.sectionAppearanceLanguage),
               Card(
                 child: Padding(
                   padding: const EdgeInsets.all(14),
@@ -109,7 +108,7 @@ class _ManagePageState extends State<ManagePage> {
               const SizedBox(height: 12),
 
               // 2. Aktiviteler & Veriler
-              SectionTitle(s.isTr ? 'Aktiviteler & Veriler' : 'Activities & Data'),
+              SectionTitle(s.sectionActivitiesData),
               Card(
                 child: Column(
                   children: [
@@ -162,8 +161,8 @@ class _ManagePageState extends State<ManagePage> {
 
               const SizedBox(height: 12),
 
-              // 7. Smart Alerts & Reminders
-              SectionTitle(s.isTr ? 'Akıllı Hatırlatıcılar & Bildirimler' : 'Smart Alerts & Notifications'),
+              // 3. Smart Alerts & Reminders
+              SectionTitle(s.sectionNotificationsReminders),
               Card(
                 child: Column(
                   children: [
@@ -366,7 +365,7 @@ class _ManagePageState extends State<ManagePage> {
               const SizedBox(height: 12),
 
               // 4. Yedekleme & Raporlama
-              SectionTitle(s.isTr ? 'Yedekleme & Raporlama' : 'Backup & Reporting'),
+              SectionTitle(s.sectionBackupReports),
               Card(
                 child: Column(
                   children: [
@@ -441,7 +440,7 @@ class _ManagePageState extends State<ManagePage> {
               const SizedBox(height: 12),
 
               // 5. Gizlilik & Güvenlik
-              SectionTitle(s.isTr ? 'Gizlilik & Bilgi' : 'Privacy & Info'),
+              SectionTitle(s.sectionPrivacySecurity),
               Card(
                 elevation: 0,
                 color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
@@ -476,9 +475,7 @@ class _ManagePageState extends State<ManagePage> {
                             ),
                             const SizedBox(height: 3),
                             Text(
-                              s.isTr
-                                  ? 'Tüm verileriniz yalnızca cihazınızda çevrimdışı saklanır. İnternet, hesap veya sunucu bağlantısı bulunmaz.'
-                                  : 'All your data is stored locally and offline on your device. No cloud sync, accounts, or trackers.',
+                              s.privacyCardSubtitle,
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,

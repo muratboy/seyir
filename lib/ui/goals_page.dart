@@ -24,12 +24,11 @@ class _GoalsPageState extends State<GoalsPage> {
 
   @override
   Widget build(BuildContext context) {
-    final s = strings.value;
-    final scheme = Theme.of(context).colorScheme;
-
     return AnimatedBuilder(
       animation: store,
       builder: (context, _) {
+        final s = strings.value;
+        final scheme = Theme.of(context).colorScheme;
         final allGoals = store.goals;
         final filteredGoals = _filterPeriod == null
             ? allGoals
