@@ -39,23 +39,9 @@ class _GoalsPageState extends State<GoalsPage> {
         return Scaffold(
           appBar: AppBar(
             title: Text(
-              _currentTab == GoalsPageTab.goals ? s.goalsTitle : s.habitTitle,
+              _currentTab == GoalsPageTab.goals ? (s.isTr ? 'Hedefler' : 'Goals') : s.habitTitle,
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
-            actions: [
-              if (_currentTab == GoalsPageTab.goals)
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  tooltip: s.newGoal,
-                  onPressed: () => _showGoalEditDialog(context),
-                )
-              else
-                IconButton(
-                  icon: const Icon(Icons.add),
-                  tooltip: s.addHabit,
-                  onPressed: () => _pickAndAddHabit(context),
-                ),
-            ],
           ),
           body: Column(
             children: [
@@ -96,7 +82,7 @@ class _GoalsPageState extends State<GoalsPage> {
                   child: Row(
                     children: [
                       FilterChip(
-                        label: Text(s.filterAll),
+                        label: Text(s.isTr ? 'Tümü' : 'All'),
                         selected: _filterPeriod == null,
                         onSelected: (_) => setState(() => _filterPeriod = null),
                       ),
@@ -340,13 +326,6 @@ class _GoalsPageState extends State<GoalsPage> {
                     ],
                   ),
                 ),
-                ProgressRing(
-                  ratio: status.ratio,
-                  done: isDone,
-                  isLimit: goal.isLimit,
-                  isExceeded: status.isExceeded,
-                  size: 52,
-                ),
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert),
                   onSelected: (val) async {
@@ -469,16 +448,23 @@ class _GoalsPageState extends State<GoalsPage> {
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
-                          color: scheme.surfaceContainerLow,
+                          color: act.displayColor.withValues(alpha: 0.12),
                           borderRadius: BorderRadius.circular(8),
-                          border: Border.all(color: scheme.outlineVariant, width: 0.7),
+                          border: Border.all(color: act.displayColor.withValues(alpha: 0.3), width: 0.8),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             Text(act.emoji ?? '🔹', style: const TextStyle(fontSize: 12)),
                             const SizedBox(width: 4),
-                            Text(act.name, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500)),
+                            Text(
+                              act.name,
+                              style: TextStyle(
+                                fontSize: 12,
+                                fontWeight: FontWeight.w600,
+                                color: act.displayColor,
+                              ),
+                            ),
                             if (link.pct != 100) ...[
                               const SizedBox(width: 2),
                               Text(

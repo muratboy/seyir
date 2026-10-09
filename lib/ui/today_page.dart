@@ -346,61 +346,154 @@ class _TodayPageState extends State<TodayPage> {
     }
   }
 
-  Widget _buildDateHeader() {
+  Widget _buildDaySummary() {
     final s = strings.value;
-    final isToday = sameDay(_currentDay, DateTime.now());
-    return Padding(
+    final scheme = Theme.of(context).colorScheme;
+    final entries = store.entriesOfDay(_currentDay);
+    final dailyGoals = store.goals.where((g) => g.period == GoalPeriod.day).toList();
+
+    // Calculate totals
+    double totalTimeMinutes = 0;
+    double totalVolumeLiters = 0;
+    for (final e in entries) {
+      final u = e.unitId != null ? store.unit(e.unitId!) : null;
+      if (u != null && e.value != null) {
+        if (u.dim == 'time') {
+          totalTimeMinutes += e.value! * u.factor;
+        } else if (u.dim == 'volume') {
+          totalVolumeLiters += e.value! * u.factor;
+        }
+      }
+    }
+
+    if (entries.isEmpty && dailyGoals.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.chevron_left),
-            tooltip: s.isTr ? 'Önceki gün' : 'Previous day',
-            onPressed: () => setState(() => _currentDay = _currentDay.subtract(const Duration(days: 1))),
-          ),
-          Expanded(
-            child: InkWell(
-              borderRadius: BorderRadius.circular(12),
-              onTap: () async {
-                final picked = await showDatePicker(
-                  context: context,
-                  initialDate: _currentDay,
-                  firstDate: DateTime(2020),
-                  lastDate: DateTime.now().add(const Duration(days: 365)),
-                );
-                if (picked != null) setState(() => _currentDay = dayStart(picked));
-              },
-              child: Padding(
-                padding: const EdgeInsets.symmetric(vertical: 6),
-                child: Column(
+          // If time logged
+          if (totalTimeMinutes > 0) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.schedule_rounded, size: 15, color: scheme.primary),
+                  const SizedBox(width: 5),
+                  Text(
+                    fmtAmount(totalTimeMinutes, 'time'),
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: scheme.onSurface),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // If volume logged
+          if (totalVolumeLiters > 0) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.withValues(alpha: 0.1),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.blue.withValues(alpha: 0.25)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.water_drop_rounded, size: 15, color: Colors.blue),
+                  const SizedBox(width: 5),
+                  Text(
+                    fmtAmount(totalVolumeLiters, 'volume'),
+                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Entry count pill
+          if (entries.isNotEmpty) ...[
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              margin: const EdgeInsets.only(right: 8),
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerLow,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.list_alt_rounded, size: 15, color: scheme.secondary),
+                  const SizedBox(width: 5),
+                  Text(
+                    '${entries.length} ${s.isTr ? "kayıt" : "logs"}',
+                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: scheme.onSurface),
+                  ),
+                ],
+              ),
+            ),
+          ],
+          // Daily Goals mini rings / pills
+          for (final g in dailyGoals) ...[
+            Builder(builder: (context) {
+              final st = store.goalStatus(g, at: _currentDay);
+              final isDone = st.done;
+              final isLimit = g.isLimit;
+              final isExceeded = st.isExceeded;
+
+              final Color badgeColor = isLimit
+                  ? (isExceeded ? Colors.red : Colors.teal)
+                  : (isDone ? Colors.green : scheme.primary);
+
+              return Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                margin: const EdgeInsets.only(right: 8),
+                decoration: BoxDecoration(
+                  color: badgeColor.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: badgeColor.withValues(alpha: 0.35)),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
                   children: [
-                    Text(
-                      fmtDayTitle(_currentDay),
-                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                    ),
-                    Text(
-                      fmtDate(_currentDay),
-                      style: TextStyle(
-                        fontSize: 12,
-                        color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    SizedBox(
+                      width: 14,
+                      height: 14,
+                      child: CircularProgressIndicator(
+                        value: isLimit ? (isExceeded ? 1.0 : (st.ratio.clamp(0.0, 1.0))) : (st.ratio.clamp(0.0, 1.0)),
+                        strokeWidth: 2.5,
+                        valueColor: AlwaysStoppedAnimation<Color>(badgeColor),
+                        backgroundColor: badgeColor.withValues(alpha: 0.2),
                       ),
+                    ),
+                    const SizedBox(width: 6),
+                    Text(
+                      g.name,
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: badgeColor),
+                    ),
+                    const SizedBox(width: 4),
+                    Text(
+                      isLimit
+                          ? (isExceeded ? '⚠️' : '✓')
+                          : (isDone ? '✓' : '%${(st.ratio * 100).floor()}'),
+                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeColor),
                     ),
                   ],
                 ),
-              ),
-            ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.chevron_right),
-            tooltip: s.isTr ? 'Sonraki gün' : 'Next day',
-            onPressed: () => setState(() => _currentDay = _currentDay.add(const Duration(days: 1))),
-          ),
-          if (!isToday)
-            IconButton(
-              icon: const Icon(Icons.today),
-              tooltip: s.isTr ? 'Bugüne dön' : 'Go to today',
-              onPressed: () => setState(() => _currentDay = dayStart(DateTime.now())),
-            ),
+              );
+            }),
+          ],
         ],
       ),
     );
@@ -772,17 +865,35 @@ class _TodayPageState extends State<TodayPage> {
 
     if (entries.isEmpty) {
       return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 40, horizontal: 24),
-        child: Center(
-          child: Column(
-            children: [
-              Icon(Icons.event_note_outlined, size: 48, color: scheme.outline),
-              const SizedBox(height: 12),
-              Text(
-                s.timelineEmpty,
-                style: TextStyle(fontSize: 15, color: scheme.onSurfaceVariant),
-              ),
-            ],
+        padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 16),
+        child: Card(
+          elevation: 0,
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.25)),
+          ),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: 24, horizontal: 20),
+            child: Column(
+              children: [
+                Icon(Icons.auto_awesome_rounded, size: 38, color: scheme.primary.withValues(alpha: 0.8)),
+                const SizedBox(height: 10),
+                Text(
+                  s.timelineEmpty,
+                  style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                  textAlign: TextAlign.center,
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  s.isTr
+                      ? 'Yukarıdaki alandan yeni bir aktivite başlatabilir veya hızlı kısayolları kullanabilirsin.'
+                      : 'You can start an activity above or tap one of the quick shortcuts.',
+                  style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                  textAlign: TextAlign.center,
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -942,7 +1053,9 @@ class _TodayPageState extends State<TodayPage> {
         final act = store.activity(entry.activityId);
         final detail = store.entryDetail(entry);
         final timeStr = entry.endTs != null
-            ? '${fmtTime(entry.time)}–${fmtTime(entry.endTime!)}'
+            ? (entry.duration != null && entry.duration!.inMinutes > 0
+                ? '${fmtTime(entry.time)}–${fmtTime(entry.endTime!)} (${fmtAmount(entry.duration!.inMinutes.toDouble(), 'time')})'
+                : '${fmtTime(entry.time)}–${fmtTime(entry.endTime!)}')
             : fmtTime(entry.time);
 
         return Card(
@@ -1413,26 +1526,84 @@ class _TodayPageState extends State<TodayPage> {
 
   @override
   Widget build(BuildContext context) {
+    final s = strings.value;
+    final isToday = sameDay(_currentDay, DateTime.now());
+
     return AnimatedBuilder(
       animation: store,
       builder: (context, _) {
         return Scaffold(
           appBar: AppBar(
+            titleSpacing: 8,
             title: Row(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                Text(
-                  'Takip',
-                  style: TextStyle(
-                    fontWeight: FontWeight.w800,
-                    color: Theme.of(context).colorScheme.primary,
+                IconButton(
+                  icon: const Icon(Icons.chevron_left, size: 22),
+                  tooltip: s.isTr ? 'Önceki gün' : 'Previous day',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: () => setState(() => _currentDay = _currentDay.subtract(const Duration(days: 1))),
+                ),
+                InkWell(
+                  borderRadius: BorderRadius.circular(10),
+                  onTap: () async {
+                    final picked = await showDatePicker(
+                      context: context,
+                      initialDate: _currentDay,
+                      firstDate: DateTime(2020),
+                      lastDate: DateTime.now().add(const Duration(days: 365)),
+                    );
+                    if (picked != null) setState(() => _currentDay = dayStart(picked));
+                  },
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Text(
+                              fmtDayTitle(_currentDay, isTr: s.isTr),
+                              style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 3),
+                            const Icon(Icons.arrow_drop_down, size: 18),
+                          ],
+                        ),
+                        Text(
+                          fmtDateShort(_currentDay, isTr: s.isTr),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
                   ),
+                ),
+                IconButton(
+                  icon: const Icon(Icons.chevron_right, size: 22),
+                  tooltip: s.isTr ? 'Sonraki gün' : 'Next day',
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  onPressed: () => setState(() => _currentDay = _currentDay.add(const Duration(days: 1))),
                 ),
               ],
             ),
             actions: [
+              if (!isToday)
+                IconButton(
+                  icon: const Icon(Icons.today_rounded),
+                  tooltip: s.isTr ? 'Bugüne dön' : 'Go to today',
+                  onPressed: () => setState(() => _currentDay = dayStart(DateTime.now())),
+                ),
               IconButton(
                 icon: const Icon(Icons.search),
-                tooltip: strings.value.isTr ? 'Aktivite Ara' : 'Search Activity',
+                tooltip: s.isTr ? 'Aktivite Ara' : 'Search Activity',
                 onPressed: () async {
                   final a = await showActivityPicker(context);
                   if (a != null) _selectActivity(a);
@@ -1445,10 +1616,10 @@ class _TodayPageState extends State<TodayPage> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                _buildDateHeader(),
                 if (store.activeTimers.isNotEmpty)
                   _ActiveTimersSection(timers: store.activeTimers),
                 _buildComposer(),
+                _buildDaySummary(),
                 _buildQuickShortcuts(),
                 SectionTitle(
                   strings.value.timelineTitle,

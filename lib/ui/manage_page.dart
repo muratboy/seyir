@@ -35,82 +35,92 @@ class _ManagePageState extends State<ManagePage> {
           body: ListView(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             children: [
-              // 1. Theme Mode
-              SectionTitle(s.settingsTheme),
+              // 1. Görünüm & Dil
+              SectionTitle(s.isTr ? 'Görünüm & Dil' : 'Appearance & Language'),
               Card(
                 child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SegmentedButton<ThemeMode>(
-                    segments: [
-                      ButtonSegment(
-                        value: ThemeMode.system,
-                        icon: const Icon(Icons.brightness_auto, size: 18),
-                        label: Text(s.themeSystem),
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        s.settingsTheme,
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
                       ),
-                      ButtonSegment(
-                        value: ThemeMode.light,
-                        icon: const Icon(Icons.light_mode_outlined, size: 18),
-                        label: Text(s.themeLight),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<ThemeMode>(
+                          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                          segments: [
+                            ButtonSegment(
+                              value: ThemeMode.system,
+                              icon: const Icon(Icons.brightness_auto, size: 16),
+                              label: Text(s.isTr ? 'Sistem' : 'System'),
+                            ),
+                            ButtonSegment(
+                              value: ThemeMode.light,
+                              icon: const Icon(Icons.light_mode_outlined, size: 16),
+                              label: Text(s.isTr ? 'Açık' : 'Light'),
+                            ),
+                            ButtonSegment(
+                              value: ThemeMode.dark,
+                              icon: const Icon(Icons.dark_mode_outlined, size: 16),
+                              label: Text(s.isTr ? 'Koyu' : 'Dark'),
+                            ),
+                          ],
+                          selected: {store.themeMode},
+                          onSelectionChanged: (set) => store.setThemeMode(set.first),
+                        ),
                       ),
-                      ButtonSegment(
-                        value: ThemeMode.dark,
-                        icon: const Icon(Icons.dark_mode_outlined, size: 18),
-                        label: Text(s.themeDark),
+                      const SizedBox(height: 14),
+                      Divider(height: 1, thickness: 0.5, color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.3)),
+                      const SizedBox(height: 12),
+                      Text(
+                        s.settingsLanguage,
+                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                      ),
+                      const SizedBox(height: 8),
+                      SizedBox(
+                        width: double.infinity,
+                        child: SegmentedButton<AppLanguage>(
+                          style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                          segments: const [
+                            ButtonSegment(
+                              value: AppLanguage.tr,
+                              icon: Text('🇹🇷', style: TextStyle(fontSize: 15)),
+                              label: Text('Türkçe'),
+                            ),
+                            ButtonSegment(
+                              value: AppLanguage.en,
+                              icon: Text('🇬🇧', style: TextStyle(fontSize: 15)),
+                              label: Text('English'),
+                            ),
+                          ],
+                          selected: {store.language},
+                          onSelectionChanged: (set) => store.setLanguage(set.first),
+                        ),
                       ),
                     ],
-                    selected: {store.themeMode},
-                    onSelectionChanged: (set) => store.setThemeMode(set.first),
                   ),
                 ),
               ),
 
               const SizedBox(height: 12),
 
-              // 2. Language Selection
-              SectionTitle(s.settingsLanguage),
-              Card(
-                child: Padding(
-                  padding: const EdgeInsets.all(12),
-                  child: SegmentedButton<AppLanguage>(
-                    segments: const [
-                      ButtonSegment(
-                        value: AppLanguage.tr,
-                        icon: Text('🇹🇷', style: TextStyle(fontSize: 16)),
-                        label: Text('Türkçe'),
-                      ),
-                      ButtonSegment(
-                        value: AppLanguage.en,
-                        icon: Text('🇬🇧', style: TextStyle(fontSize: 16)),
-                        label: Text('English'),
-                      ),
-                    ],
-                    selected: {store.language},
-                    onSelectionChanged: (set) => store.setLanguage(set.first),
-                  ),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // 3. Activities Management (Edit name, emoji, merge, delete)
-              SectionTitle(s.activitiesManagement),
-              Card(
-                child: ListTile(
-                  leading: const Icon(Icons.category_outlined),
-                  title: Text(s.activitiesManagement),
-                  subtitle: Text(s.activitiesSub),
-                  trailing: const Icon(Icons.chevron_right),
-                  onTap: () => _openActivitiesManager(context),
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // 4. Measures Management (Cups, liters, grams, etc.)
-              SectionTitle(s.measuresManagement),
+              // 2. Aktiviteler & Veriler
+              SectionTitle(s.isTr ? 'Aktiviteler & Veriler' : 'Activities & Data'),
               Card(
                 child: Column(
                   children: [
+                    ListTile(
+                      leading: const Icon(Icons.category_outlined),
+                      title: Text(s.activitiesManagement),
+                      subtitle: Text(s.activitiesSub),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _openActivitiesManager(context),
+                    ),
+                    const Divider(height: 1),
                     ListTile(
                       leading: const Icon(Icons.straighten_outlined),
                       title: Text(s.measuresManagement),
@@ -122,24 +132,14 @@ class _ManagePageState extends State<ManagePage> {
                       trailing: const Icon(Icons.chevron_right),
                       onTap: () => _openMeasuresManager(context),
                     ),
-                  ],
-                ),
-              ),
-
-              const SizedBox(height: 12),
-
-              // 5. Home Screen Widget
-              SectionTitle(s.widgetSetup),
-              Card(
-                child: Column(
-                  children: [
+                    const Divider(height: 1),
                     ListTile(
                       leading: const Icon(Icons.widgets_outlined),
                       title: Text(s.widgetSetup),
                       subtitle: Text(
                         s.isTr
-                            ? 'Ana ekrana basılı tutarak veya aşağıdaki butonla ekleyin'
-                            : 'Add widget to home screen for quick logging',
+                            ? 'Ana ekrandan tek dokunuşla hızlı kayıt'
+                            : 'Quick logging from your home screen',
                       ),
                       trailing: FilledButton.tonal(
                         onPressed: () async {
@@ -155,38 +155,6 @@ class _ManagePageState extends State<ManagePage> {
                         },
                         child: Text(s.isTr ? 'Ekle' : 'Add'),
                       ),
-                    ),
-                  ],
-                ),
-              ),
-
-              // 6. Reports & Export
-              SectionTitle(s.isTr ? 'Raporlama & Dışa Aktarma' : 'Reporting & Export'),
-              Card(
-                child: Column(
-                  children: [
-                    ListTile(
-                      leading: const Icon(Icons.picture_as_pdf_outlined),
-                      title: Text(s.isTr ? 'PDF Sağlık & Alışkanlık Raporu' : 'PDF Health & Habit Report'),
-                      subtitle: Text(
-                        s.isTr
-                            ? 'Grafikler, hedefler ve son kayıtları içeren PDF oluştur'
-                            : 'Generate PDF with stats, goals and recent logs',
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => ExportService.exportPdf(context, store),
-                    ),
-                    const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.table_chart_outlined),
-                      title: Text(s.isTr ? 'Excel (CSV) Tablosu' : 'Excel (CSV) Spreadsheet'),
-                      subtitle: Text(
-                        s.isTr
-                            ? 'Tüm günlük geçmişi CSV formatında dışa aktar'
-                            : 'Export complete timeline history to CSV',
-                      ),
-                      trailing: const Icon(Icons.chevron_right),
-                      onTap: () => ExportService.exportCsv(context, store),
                     ),
                   ],
                 ),
@@ -397,14 +365,44 @@ class _ManagePageState extends State<ManagePage> {
 
               const SizedBox(height: 12),
 
-              // 8. Backup & Restore
-              SectionTitle(s.isTr ? 'Veri Yedekleme' : 'Data Backup'),
+              // 4. Yedekleme & Raporlama
+              SectionTitle(s.isTr ? 'Yedekleme & Raporlama' : 'Backup & Reporting'),
               Card(
                 child: Column(
                   children: [
                     ListTile(
+                      leading: const Icon(Icons.picture_as_pdf_outlined),
+                      title: Text(s.isTr ? 'PDF Sağlık & Alışkanlık Raporu' : 'PDF Health & Habit Report'),
+                      subtitle: Text(
+                        s.isTr
+                            ? 'Grafikler, hedefler ve son kayıtları içeren PDF oluştur'
+                            : 'Generate PDF with stats, goals and recent logs',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => ExportService.exportPdf(context, store),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.table_chart_outlined),
+                      title: Text(s.isTr ? 'Excel (CSV) Tablosu' : 'Excel (CSV) Spreadsheet'),
+                      subtitle: Text(
+                        s.isTr
+                            ? 'Tüm günlük geçmişi CSV formatında dışa aktar'
+                            : 'Export complete timeline history to CSV',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => ExportService.exportCsv(context, store),
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
                       leading: const Icon(Icons.file_upload_outlined),
                       title: Text(s.backupExport),
+                      subtitle: Text(
+                        s.isTr ? 'JSON verisini panoya kopyala' : 'Copy JSON data to clipboard',
+                        style: const TextStyle(fontSize: 12),
+                      ),
                       onTap: () async {
                         final jsonStr = await store.exportJson();
                         await Clipboard.setData(ClipboardData(text: jsonStr));
@@ -417,6 +415,10 @@ class _ManagePageState extends State<ManagePage> {
                     ListTile(
                       leading: const Icon(Icons.file_download_outlined),
                       title: Text(s.backupImport),
+                      subtitle: Text(
+                        s.isTr ? 'JSON yedeğinden geri yükle' : 'Restore from JSON backup',
+                        style: const TextStyle(fontSize: 12),
+                      ),
                       onTap: () => _showImportDialog(context),
                     ),
                     const Divider(height: 1),
@@ -433,6 +435,60 @@ class _ManagePageState extends State<ManagePage> {
                       onTap: () => _showLocalBackupsSheet(context),
                     ),
                   ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // 5. Gizlilik & Güvenlik
+              SectionTitle(s.isTr ? 'Gizlilik & Bilgi' : 'Privacy & Info'),
+              Card(
+                elevation: 0,
+                color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.35),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16),
+                  side: BorderSide(color: Theme.of(context).colorScheme.outlineVariant.withValues(alpha: 0.25)),
+                ),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.verified_user_outlined,
+                          size: 24,
+                          color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(width: 14),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Takip v2.1.0',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            const SizedBox(height: 3),
+                            Text(
+                              s.isTr
+                                  ? 'Tüm verileriniz yalnızca cihazınızda çevrimdışı saklanır. İnternet, hesap veya sunucu bağlantısı bulunmaz.'
+                                  : 'All your data is stored locally and offline on your device. No cloud sync, accounts, or trackers.',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
                 ),
               ),
 

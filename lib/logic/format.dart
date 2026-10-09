@@ -19,17 +19,19 @@ bool sameDay(DateTime a, DateTime b) =>
 String dayKey(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
 
 String fmtTime(DateTime d) => DateFormat.Hm('tr_TR').format(d);
-String fmtDate(DateTime d) => DateFormat('d MMMM yyyy', 'tr_TR').format(d);
-String fmtDateShort(DateTime d) => DateFormat('d MMM', 'tr_TR').format(d);
+String fmtDate(DateTime d, {bool isTr = true}) =>
+    DateFormat('d MMMM yyyy', isTr ? 'tr_TR' : 'en_US').format(d);
+String fmtDateShort(DateTime d, {bool isTr = true}) =>
+    DateFormat('d MMM', isTr ? 'tr_TR' : 'en_US').format(d);
 
 /// "Bugün", "Dün", "Yarın" ya da "8 Ekim Perşembe"
-String fmtDayTitle(DateTime d) {
+String fmtDayTitle(DateTime d, {bool isTr = true}) {
   final today = dayStart(DateTime.now());
   final diff = dayStart(d).difference(today).inDays;
-  if (diff == 0) return 'Bugün';
-  if (diff == -1) return 'Dün';
-  if (diff == 1) return 'Yarın';
-  return DateFormat('d MMMM EEEE', 'tr_TR').format(d);
+  if (diff == 0) return isTr ? 'Bugün' : 'Today';
+  if (diff == -1) return isTr ? 'Dün' : 'Yesterday';
+  if (diff == 1) return isTr ? 'Yarın' : 'Tomorrow';
+  return DateFormat('d MMMM EEEE', isTr ? 'tr_TR' : 'en_US').format(d);
 }
 
 String fmtRelative(int ts) {

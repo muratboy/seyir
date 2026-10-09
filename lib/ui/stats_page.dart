@@ -19,10 +19,13 @@ class StatsPage extends StatefulWidget {
   State<StatsPage> createState() => _StatsPageState();
 }
 
+enum StatMetric { count, time, volume }
+
 class _StatsPageState extends State<StatsPage> {
   StatViewRange _range = StatViewRange.week;
   DateTime _anchorDate = DateTime.now();
   int? _selectedActivityId; // null = all
+  StatMetric _selectedMetric = StatMetric.count;
 
   (DateTime, DateTime) _calculateDateRange() {
     switch (_range) {
@@ -438,7 +441,7 @@ class _StatsPageState extends State<StatsPage> {
     }
     if (periodDays <= 0) periodDays = 1;
 
-    final avgPerDay = (totalLogs / periodDays).toStringAsFixed(1);
+    final avgPerDay = fmtNum1(totalLogs / periodDays);
 
     // Peak active hour or day
     String peakText = '-';
@@ -458,8 +461,8 @@ class _StatsPageState extends State<StatsPage> {
         peakText = '${startH.toString().padLeft(2, '0')}:00 - ${(startH + 4).toString().padLeft(2, '0')}:00';
       } else if (_range == StatViewRange.week) {
         final dayNames = s.isTr
-            ? ['Pzt', 'Sal', 'Çar', 'Per', 'Cum', 'Cmt', 'Paz']
-            : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+            ? ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
+            : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
         final counts = List.filled(7, 0);
         for (final e in entries) {
           final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
@@ -471,7 +474,7 @@ class _StatsPageState extends State<StatsPage> {
           if (counts[i] > counts[maxIdx]) maxIdx = i;
         }
         if (counts[maxIdx] > 0) {
-          peakText = '${dayNames[maxIdx]} (${counts[maxIdx]})';
+          peakText = '${dayNames[maxIdx]} · ${counts[maxIdx]} ${s.isTr ? "kayıt" : "logs"}';
         }
       } else {
         // Most logged activity name
@@ -710,6 +713,46 @@ class _StatsPageState extends State<StatsPage> {
     final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
 
+    double calcMetric(Iterable<Entry> list) {
+      double sum = 0;
+      for (final e in list) {
+        if (_selectedMetric == StatMetric.count) {
+          sum += 1.0;
+        } else if (_selectedMetric == StatMetric.time) {
+          final u = e.unitId != null ? store.unit(e.unitId!) : null;
+          if (u != null && e.value != null && u.dim == 'time') {
+            sum += (e.value! * u.factor) / 60.0; // in hours
+          }
+        } else if (_selectedMetric == StatMetric.volume) {
+          final u = e.unitId != null ? store.unit(e.unitId!) : null;
+          if (u != null && e.value != null && u.dim == 'volume') {
+            sum += e.value! * u.factor; // in liters
+          }
+        }
+      }
+      return sum;
+    }
+
+    String formatMetric(double v) {
+      if (_selectedMetric == StatMetric.count) {
+        return '${v.round()} ${s.isTr ? "kayıt" : "logs"}';
+      } else if (_selectedMetric == StatMetric.time) {
+        if (v <= 0) return '0 ${s.isTr ? "dk" : "min"}';
+        if (v < 1.0) {
+          return '${(v * 60).round()} ${s.isTr ? "dk" : "min"}';
+        }
+        final h = v.floor();
+        final m = ((v - h) * 60).round();
+        if (m == 0) return '$h ${s.isTr ? "sa" : "h"}';
+        return '$h ${s.isTr ? "sa" : "h"} $m ${s.isTr ? "dk" : "min"}';
+      } else {
+        if (v < 1.0 && v > 0) {
+          return '${fmtNum1(v * 1000)} ml';
+        }
+        return '${fmtNum1(v)} L';
+      }
+    }
+
     final barGroups = <BarChartGroupData>[];
     final titles = <String>[];
     double barWidth = 16;
@@ -721,22 +764,22 @@ class _StatsPageState extends State<StatsPage> {
           : ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
       for (var i = 0; i < 7; i++) {
         final currentDay = from.add(Duration(days: i));
-        final dayEntries = entries.where((e) {
+        final val = calcMetric(entries.where((e) {
           final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
           return dt.year == currentDay.year &&
               dt.month == currentDay.month &&
               dt.day == currentDay.day;
-        }).length;
+        }));
         barGroups.add(
           BarChartGroupData(
             x: i,
             barRods: [
               BarChartRodData(
-                toY: dayEntries.toDouble(),
+                toY: val,
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
-                  colors: dayEntries > 0
+                  colors: val > 0
                       ? [scheme.primary, scheme.secondary]
                       : [
                           scheme.outlineVariant.withValues(alpha: 0.2),
@@ -757,20 +800,20 @@ class _StatsPageState extends State<StatsPage> {
       for (var b = 0; b < 6; b++) {
         final startH = b * 4;
         final endH = startH + 4;
-        final count = entries.where((e) {
+        final val = calcMetric(entries.where((e) {
           final h = DateTime.fromMillisecondsSinceEpoch(e.ts).hour;
           return h >= startH && h < endH;
-        }).length;
+        }));
         barGroups.add(
           BarChartGroupData(
             x: b,
             barRods: [
               BarChartRodData(
-                toY: count.toDouble(),
+                toY: val,
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
-                  colors: count > 0
+                  colors: val > 0
                       ? [scheme.primary, scheme.secondary]
                       : [
                           scheme.outlineVariant.withValues(alpha: 0.2),
@@ -791,20 +834,20 @@ class _StatsPageState extends State<StatsPage> {
           ? ['Oca', 'Şub', 'Mar', 'Nis', 'May', 'Haz', 'Tem', 'Ağu', 'Eyl', 'Eki', 'Kas', 'Ara']
           : ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       for (var m = 1; m <= 12; m++) {
-        final count = entries.where((e) {
+        final val = calcMetric(entries.where((e) {
           final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
           return dt.year == from.year && dt.month == m;
-        }).length;
+        }));
         barGroups.add(
           BarChartGroupData(
             x: m - 1,
             barRods: [
               BarChartRodData(
-                toY: count.toDouble(),
+                toY: val,
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
-                  colors: count > 0
+                  colors: val > 0
                       ? [scheme.primary, scheme.secondary]
                       : [
                           scheme.outlineVariant.withValues(alpha: 0.2),
@@ -827,20 +870,20 @@ class _StatsPageState extends State<StatsPage> {
       for (var w = 0; w < weeksCount; w++) {
         final startD = from.add(Duration(days: w * 7));
         final endD = from.add(Duration(days: min((w + 1) * 7, daysInMonth)));
-        final count = entries.where((e) {
+        final val = calcMetric(entries.where((e) {
           final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
           return !dt.isBefore(startD) && dt.isBefore(endD);
-        }).length;
+        }));
         barGroups.add(
           BarChartGroupData(
             x: w,
             barRods: [
               BarChartRodData(
-                toY: count.toDouble(),
+                toY: val,
                 gradient: LinearGradient(
                   begin: Alignment.bottomCenter,
                   end: Alignment.topCenter,
-                  colors: count > 0
+                  colors: val > 0
                       ? [scheme.primary, scheme.secondary]
                       : [
                           scheme.outlineVariant.withValues(alpha: 0.2),
@@ -858,7 +901,8 @@ class _StatsPageState extends State<StatsPage> {
     }
 
     final maxY = barGroups.map((g) => g.barRods.first.toY).fold(0.0, max);
-    final topY = maxY < 5 ? 5.0 : (maxY * 1.25).ceilToDouble();
+    final minTop = _selectedMetric == StatMetric.count ? 5.0 : (_selectedMetric == StatMetric.time ? 2.0 : 1.0);
+    final topY = maxY < minTop ? minTop : (maxY * 1.25);
 
     // Attach background full track to rods
     final enrichedGroups = barGroups.map((g) {
@@ -931,7 +975,7 @@ class _StatsPageState extends State<StatsPage> {
                         ),
                         const SizedBox(width: 4),
                         Text(
-                          '${titles[peakGroup.x]} (${peakVal.toInt()})',
+                          '${titles[peakGroup.x]} · ${formatMetric(peakVal)}',
                           style: TextStyle(
                             fontSize: 11,
                             fontWeight: FontWeight.bold,
@@ -943,7 +987,36 @@ class _StatsPageState extends State<StatsPage> {
                   ),
               ],
             ),
-            const SizedBox(height: 20),
+            const SizedBox(height: 12),
+            SizedBox(
+              width: double.infinity,
+              child: SegmentedButton<StatMetric>(
+                style: const ButtonStyle(
+                  visualDensity: VisualDensity.compact,
+                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                ),
+                segments: [
+                  ButtonSegment(
+                    value: StatMetric.count,
+                    icon: const Icon(Icons.tag_rounded, size: 16),
+                    label: Text(s.isTr ? 'Kayıt' : 'Logs'),
+                  ),
+                  ButtonSegment(
+                    value: StatMetric.time,
+                    icon: const Icon(Icons.schedule_rounded, size: 16),
+                    label: Text(s.isTr ? 'Süre' : 'Time'),
+                  ),
+                  ButtonSegment(
+                    value: StatMetric.volume,
+                    icon: const Icon(Icons.water_drop_outlined, size: 16),
+                    label: Text(s.isTr ? 'Hacim' : 'Volume'),
+                  ),
+                ],
+                selected: {_selectedMetric},
+                onSelectionChanged: (set) => setState(() => _selectedMetric = set.first),
+              ),
+            ),
+            const SizedBox(height: 16),
             SizedBox(
               height: 180,
               child: BarChart(
@@ -971,7 +1044,7 @@ class _StatsPageState extends State<StatsPage> {
                           ),
                           children: [
                             TextSpan(
-                              text: '${rod.toY.toInt()} ${s.isTr ? "kayıt" : "logs"}',
+                              text: formatMetric(rod.toY),
                               style: TextStyle(
                                 color: scheme.inversePrimary,
                                 fontWeight: FontWeight.w600,
@@ -999,16 +1072,27 @@ class _StatsPageState extends State<StatsPage> {
                     leftTitles: AxisTitles(
                       sideTitles: SideTitles(
                         showTitles: true,
-                        reservedSize: 28,
+                        reservedSize: 32,
                         interval: topY > 10 ? (topY / 4).roundToDouble() : 1,
-                        getTitlesWidget: (val, _) => Text(
-                          val.toInt().toString(),
-                          style: TextStyle(
-                            fontSize: 10.5,
-                            fontWeight: FontWeight.w500,
-                            color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
-                          ),
-                        ),
+                        getTitlesWidget: (val, _) {
+                          if (val <= 0) return const SizedBox.shrink();
+                          String label;
+                          if (_selectedMetric == StatMetric.count) {
+                            label = val.toInt().toString();
+                          } else if (_selectedMetric == StatMetric.time) {
+                            label = '${fmtNum1(val)}h';
+                          } else {
+                            label = '${fmtNum1(val)}L';
+                          }
+                          return Text(
+                            label,
+                            style: TextStyle(
+                              fontSize: 10,
+                              fontWeight: FontWeight.w500,
+                              color: scheme.onSurfaceVariant.withValues(alpha: 0.7),
+                            ),
+                          );
+                        },
                       ),
                     ),
                     bottomTitles: AxisTitles(
@@ -1061,6 +1145,8 @@ class _StatsPageState extends State<StatsPage> {
     final total = entries.length;
     final sortedCats = catCounts.values.toList()
       ..sort((a, b) => b.$2.compareTo(a.$2));
+
+    if (sortedCats.length < 2) return const SizedBox.shrink();
 
     final sections = sortedCats.map((item) {
       final pct = (item.$2 / total) * 100;
@@ -1688,7 +1774,7 @@ class _StatsPageState extends State<StatsPage> {
                               )
                             else
                               Text(
-                                '$count ${s.isTr ? "adet" : "items"}',
+                                '$count ${s.isTr ? "kayıt" : "logs"}',
                                 style: TextStyle(
                                   fontSize: 14,
                                   fontWeight: FontWeight.bold,

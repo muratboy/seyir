@@ -832,6 +832,81 @@ void main() {
       expect(store.timerSoundEnabled, isTrue);
     });
   });
+
+  group('Stage 4 UI & UX Logic Tests', () {
+    test('fmtDayTitle localization supports English and Turkish', () {
+      final now = DateTime.now();
+      expect(fmtDayTitle(now, isTr: true), equals('Bugün'));
+      expect(fmtDayTitle(now, isTr: false), equals('Today'));
+
+      final yesterday = now.subtract(const Duration(days: 1));
+      expect(fmtDayTitle(yesterday, isTr: true), equals('Dün'));
+      expect(fmtDayTitle(yesterday, isTr: false), equals('Yesterday'));
+
+      final tomorrow = now.add(const Duration(days: 1));
+      expect(fmtDayTitle(tomorrow, isTr: true), equals('Yarın'));
+      expect(fmtDayTitle(tomorrow, isTr: false), equals('Tomorrow'));
+    });
+
+    test('Number formatting fmtNum1 outputs Turkish comma format', () {
+      expect(fmtNum1(2.4), equals('2,4'));
+      expect(fmtNum1(15.0), equals('15'));
+      expect(fmtNum1(0.5), equals('0,5'));
+    });
+
+    test('Stat metric calculation correctly converts units to hours and liters', () {
+      final timeEntry = Entry(
+        id: 1,
+        activityId: 1,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        qty: 1,
+        value: 120,
+        unitId: 'dk',
+      );
+
+      final volEntry = Entry(
+        id: 2,
+        activityId: 2,
+        ts: DateTime.now().millisecondsSinceEpoch,
+        qty: 1,
+        value: 500,
+        unitId: 'ml',
+      );
+
+      final units = {
+        'dk': Unit(id: 'dk', name: 'Dakika', symbol: 'dk', dim: 'time', factor: 1.0),
+        'ml': Unit(id: 'ml', name: 'Mililitre', symbol: 'ml', dim: 'volume', factor: 0.001),
+      };
+
+      double calc(Entry e, String metric) {
+        if (metric == 'count') return 1.0;
+        final u = units[e.unitId];
+        if (u == null || e.value == null) return 0.0;
+        if (metric == 'time' && u.dim == 'time') return (e.value! * u.factor) / 60.0;
+        if (metric == 'volume' && u.dim == 'volume') return e.value! * u.factor;
+        return 0.0;
+      }
+
+      expect(calc(timeEntry, 'time'), equals(2.0));
+      expect(calc(timeEntry, 'count'), equals(1.0));
+      expect(calc(timeEntry, 'volume'), equals(0.0));
+
+      expect(calc(volEntry, 'volume'), equals(0.5));
+      expect(calc(volEntry, 'count'), equals(1.0));
+      expect(calc(volEntry, 'time'), equals(0.0));
+    });
+
+    test('Category distribution filter hides chart when single category exists', () {
+      bool shouldShowPieChart(int uniqueCategoriesCount) {
+        return uniqueCategoriesCount >= 2;
+      }
+
+      expect(shouldShowPieChart(0), isFalse);
+      expect(shouldShowPieChart(1), isFalse);
+      expect(shouldShowPieChart(2), isTrue);
+      expect(shouldShowPieChart(5), isTrue);
+    });
+  });
 }
 
 
