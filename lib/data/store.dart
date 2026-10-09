@@ -123,6 +123,12 @@ class AppStore extends ChangeNotifier {
   ActiveTimer? get activeTimer => activeTimers.firstOrNull;
   bool loaded = false;
 
+  bool waterReminderEnabled = false;
+  int waterReminderIntervalHours = 2;
+  bool dailySummaryReminderEnabled = false;
+  String dailySummaryReminderTime = '21:30';
+  bool timerSoundEnabled = true;
+
   Future<Database> get db async => _db ??= await AppDb.open();
 
   // ---------------------------------------------------------------- yükleme
@@ -155,6 +161,12 @@ class AppStore extends ChangeNotifier {
       timelineView = 'list';
     }
 
+    waterReminderEnabled = settingsMap['reminder_water_enabled'] == 'true';
+    waterReminderIntervalHours = int.tryParse(settingsMap['reminder_water_interval'] ?? '2') ?? 2;
+    dailySummaryReminderEnabled = settingsMap['reminder_daily_summary_enabled'] == 'true';
+    dailySummaryReminderTime = settingsMap['reminder_daily_summary_time'] ?? '21:30';
+    timerSoundEnabled = settingsMap['reminder_timer_sound'] != 'false';
+
     customUnits = (await d.query('units')).map(Unit.fromMap).toList();
     measures = (await d.query('measures', orderBy: 'sort, id')).map(Measure.fromMap).toList();
     activities = {
@@ -174,6 +186,20 @@ class AppStore extends ChangeNotifier {
     final timerRows = await d.query('active_timers', orderBy: 'id ASC');
     activeTimers = timerRows.map(ActiveTimer.fromMap).toList();
     await NotificationService.updateTimerNotification(activeTimers, activities);
+
+    for (final t in activeTimers) {
+      if (t.isCountdown && t.isRunning && t.remainingMs > 0) {
+        final actName = activities[t.activityId]?.name ?? 'Aktivite';
+        await NotificationService.scheduleTimerAlarm(
+          timerId: t.id,
+          activityName: actName,
+          remainingMs: t.remainingMs,
+          isPomodoro: t.isPomodoro,
+          soundEnabled: timerSoundEnabled,
+        );
+      }
+    }
+    unawaited(NotificationService.scheduleReminders(this));
 
     loaded = true;
     _changed();
@@ -201,6 +227,38 @@ class AppStore extends ChangeNotifier {
     timelineView = mode == 'grid' ? 'grid' : 'list';
     final d = await db;
     await d.insert('settings', {'key': 'timeline_view', 'value': timelineView},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    notifyListeners();
+  }
+
+  Future<void> setWaterReminder({required bool enabled, int? intervalHours}) async {
+    waterReminderEnabled = enabled;
+    if (intervalHours != null) waterReminderIntervalHours = intervalHours;
+    final d = await db;
+    await d.insert('settings', {'key': 'reminder_water_enabled', 'value': enabled.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    await d.insert('settings', {'key': 'reminder_water_interval', 'value': waterReminderIntervalHours.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    notifyListeners();
+    await NotificationService.scheduleReminders(this);
+  }
+
+  Future<void> setDailySummaryReminder({required bool enabled, String? time}) async {
+    dailySummaryReminderEnabled = enabled;
+    if (time != null) dailySummaryReminderTime = time;
+    final d = await db;
+    await d.insert('settings', {'key': 'reminder_daily_summary_enabled', 'value': enabled.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    await d.insert('settings', {'key': 'reminder_daily_summary_time', 'value': dailySummaryReminderTime},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    notifyListeners();
+    await NotificationService.scheduleReminders(this);
+  }
+
+  Future<void> setTimerSoundEnabled(bool enabled) async {
+    timerSoundEnabled = enabled;
+    final d = await db;
+    await d.insert('settings', {'key': 'reminder_timer_sound', 'value': enabled.toString()},
         conflictAlgorithm: ConflictAlgorithm.replace);
     notifyListeners();
   }
@@ -702,6 +760,16 @@ class AppStore extends ChangeNotifier {
     activeTimers.add(timer);
     unawaited(NotificationService.requestPermission());
     await NotificationService.updateTimerNotification(activeTimers, activities);
+    if (timer.isCountdown && timer.remainingMs > 0) {
+      final actName = activities[timer.activityId]?.name ?? 'Aktivite';
+      await NotificationService.scheduleTimerAlarm(
+        timerId: timer.id,
+        activityName: actName,
+        remainingMs: timer.remainingMs,
+        isPomodoro: timer.isPomodoro,
+        soundEnabled: timerSoundEnabled,
+      );
+    }
     notifyListeners();
     return timer;
   }
@@ -729,6 +797,7 @@ class AppStore extends ChangeNotifier {
     final idx = activeTimers.indexWhere((t) => t.id == updated.id);
     if (idx != -1) activeTimers[idx] = updated;
 
+    await NotificationService.cancelTimerAlarm(timer.id);
     await NotificationService.updateTimerNotification(activeTimers, activities);
     notifyListeners();
   }
@@ -749,6 +818,16 @@ class AppStore extends ChangeNotifier {
     if (idx != -1) activeTimers[idx] = updated;
 
     await NotificationService.updateTimerNotification(activeTimers, activities);
+    if (updated.isCountdown && updated.remainingMs > 0) {
+      final actName = activities[updated.activityId]?.name ?? 'Aktivite';
+      await NotificationService.scheduleTimerAlarm(
+        timerId: updated.id,
+        activityName: actName,
+        remainingMs: updated.remainingMs,
+        isPomodoro: updated.isPomodoro,
+        soundEnabled: timerSoundEnabled,
+      );
+    }
     notifyListeners();
   }
 
@@ -896,6 +975,7 @@ class AppStore extends ChangeNotifier {
     });
 
     // Veritabanı başarılı oldu -> bellek durumunu ve bildirimleri güvenle güncelle
+    await NotificationService.cancelTimerAlarm(timer.id);
     activeTimers.removeWhere((t) => t.id == timer.id);
     for (final e in createdEntries) {
       _insertSorted(e);
@@ -940,6 +1020,7 @@ class AppStore extends ChangeNotifier {
     if (timer == null) return;
     final d = await db;
     await d.delete('active_timers', where: 'id=?', whereArgs: [timer.id]);
+    await NotificationService.cancelTimerAlarm(timer.id);
     activeTimers.removeWhere((t) => t.id == timer.id);
     await NotificationService.updateTimerNotification(activeTimers, activities);
     notifyListeners();

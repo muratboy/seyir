@@ -751,6 +751,87 @@ void main() {
       expect(restored.segments.first.endTs, equals(5000));
     });
   });
+
+  group('Stage 3 Notifications & Timers Tests', () {
+    test('Pomodoro remainingMs and progress calculations', () {
+      final timer = ActiveTimer(
+        id: 1,
+        activityId: 10,
+        startTs: 1000,
+        mode: 'pomodoro',
+        targetMs: 25 * 60 * 1000, // 25 minutes
+        accumulatedMs: 20 * 60 * 1000, // 20 minutes
+        isRunning: false,
+      );
+
+      expect(timer.isCountdown, isTrue);
+      expect(timer.isPomodoro, isTrue);
+      expect(timer.remainingMs, equals(5 * 60 * 1000)); // 5 mins left
+      expect(timer.progress, closeTo(0.8, 0.001));
+      expect(timer.isTargetReached, isFalse);
+    });
+
+    test('Pomodoro target reached clamps remainingMs to zero', () {
+      final timer = ActiveTimer(
+        id: 2,
+        activityId: 10,
+        startTs: 1000,
+        mode: 'pomodoro',
+        targetMs: 25 * 60 * 1000,
+        accumulatedMs: 27 * 60 * 1000, // 27 minutes (over target)
+        isRunning: false,
+      );
+
+      expect(timer.remainingMs, equals(0));
+      expect(timer.progress, equals(1.0));
+      expect(timer.isTargetReached, isTrue);
+    });
+
+    test('Water reminder interval slots between 09:00 and 21:00', () {
+      List<int> calculateSlots(int intervalHours) {
+        final interval = intervalHours.clamp(1, 6);
+        final slots = <int>[];
+        for (int hour = 9 + interval; hour <= 21; hour += interval) {
+          slots.add(hour);
+        }
+        return slots;
+      }
+
+      expect(calculateSlots(2), equals([11, 13, 15, 17, 19, 21]));
+      expect(calculateSlots(3), equals([12, 15, 18, 21]));
+      expect(calculateSlots(4), equals([13, 17, 21]));
+    });
+
+    test('Daily summary time parser parses HH:mm correctly', () {
+      (int, int) parseTime(String timeStr) {
+        final parts = timeStr.split(':');
+        final hour = parts.isNotEmpty ? (int.tryParse(parts[0]) ?? 21) : 21;
+        final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 30) : 30;
+        return (hour, minute);
+      }
+
+      final (h1, m1) = parseTime('21:30');
+      expect(h1, equals(21));
+      expect(m1, equals(30));
+
+      final (h2, m2) = parseTime('08:05');
+      expect(h2, equals(8));
+      expect(m2, equals(5));
+
+      final (h3, m3) = parseTime('invalid');
+      expect(h3, equals(21));
+      expect(m3, equals(30));
+    });
+
+    test('Store reminder settings properties have sensible defaults', () {
+      final store = AppStore();
+      expect(store.waterReminderEnabled, isFalse);
+      expect(store.waterReminderIntervalHours, equals(2));
+      expect(store.dailySummaryReminderEnabled, isFalse);
+      expect(store.dailySummaryReminderTime, equals('21:30'));
+      expect(store.timerSoundEnabled, isTrue);
+    });
+  });
 }
 
 

@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
@@ -1600,10 +1601,12 @@ class _ActiveTimerCard extends StatefulWidget {
 
 class _ActiveTimerCardState extends State<_ActiveTimerCard> {
   Timer? _ticker;
+  bool _alertPlayed = false;
 
   @override
   void initState() {
     super.initState();
+    _alertPlayed = widget.timer.isTargetReached;
     _startTickerIfNeeded();
   }
 
@@ -1619,7 +1622,17 @@ class _ActiveTimerCardState extends State<_ActiveTimerCard> {
     _ticker?.cancel();
     if (widget.timer.isRunning) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
-        if (mounted) setState(() {});
+        if (!mounted) return;
+        if (widget.timer.isTargetReached && !_alertPlayed) {
+          _alertPlayed = true;
+          if (store.timerSoundEnabled) {
+            HapticFeedback.heavyImpact();
+            SystemSound.play(SystemSoundType.alert);
+          }
+        } else if (!widget.timer.isTargetReached) {
+          _alertPlayed = false;
+        }
+        setState(() {});
       });
     }
   }

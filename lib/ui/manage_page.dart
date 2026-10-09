@@ -194,7 +194,7 @@ class _ManagePageState extends State<ManagePage> {
 
               const SizedBox(height: 12),
 
-              // 7. Smart Alerts & Reminders Test
+              // 7. Smart Alerts & Reminders
               SectionTitle(s.isTr ? 'Akıllı Hatırlatıcılar & Bildirimler' : 'Smart Alerts & Notifications'),
               Card(
                 child: Column(
@@ -234,24 +234,161 @@ class _ManagePageState extends State<ManagePage> {
                       ),
                     ),
                     const Divider(height: 1),
-                    ListTile(
-                      leading: const Icon(Icons.water_drop_outlined, color: Colors.blue),
-                      title: Text(s.isTr ? 'Su Hatırlatıcısı Test Et' : 'Test Water Reminder'),
-                      subtitle: Text(s.isTr ? 'Bildirim çubuğunda hatırlatıcı göster' : 'Show notification in tray'),
-                      trailing: FilledButton.tonal(
-                        onPressed: () {
-                          NotificationService.showReminder(
-                            s.isTr ? '💧 Su İçme Zamanı' : '💧 Hydration Time',
-                            s.isTr
-                                ? 'Günlük sıvı hedefinize ulaşmak için bir bardak su için.'
-                                : 'Drink a glass of water to reach your daily goal.',
-                          );
-                          showSnack(
-                            context,
-                            s.isTr ? 'Test bildirimi gönderildi!' : 'Test notification sent!',
-                          );
-                        },
-                        child: Text(s.isTr ? 'Dene' : 'Test'),
+                    SwitchListTile(
+                      secondary: const Icon(Icons.alarm_on_outlined, color: Colors.deepOrange),
+                      title: Text(s.isTr ? 'Sayaç & Pomodoro Bitiş Alarmı' : 'Timer & Pomodoro Finish Alarm'),
+                      subtitle: Text(
+                        s.isTr
+                            ? 'Süre dolduğunda ses, titreşim ve alarm bildirimi'
+                            : 'Sound, vibration and alarm alert when time ends',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: store.timerSoundEnabled,
+                      onChanged: (val) {
+                        store.setTimerSoundEnabled(val);
+                        setState(() {});
+                      },
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      secondary: const Icon(Icons.water_drop_outlined, color: Colors.blue),
+                      title: Text(s.isTr ? 'Gün İçi Su Hatırlatıcısı' : 'Daily Hydration Reminder'),
+                      subtitle: Text(
+                        store.waterReminderEnabled
+                            ? (s.isTr
+                                ? 'Her ${store.waterReminderIntervalHours} saatte bir (09:00–21:00)'
+                                : 'Every ${store.waterReminderIntervalHours} hours (09:00–21:00)')
+                            : (s.isTr ? 'Kapalı' : 'Disabled'),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: store.waterReminderEnabled,
+                      onChanged: (val) async {
+                        await store.setWaterReminder(enabled: val);
+                        setState(() {});
+                      },
+                    ),
+                    if (store.waterReminderEnabled) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+                        child: Row(
+                          children: [
+                            Text(
+                              s.isTr ? 'Aralık:' : 'Interval:',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 8),
+                            Wrap(
+                              spacing: 6,
+                              children: [2, 3, 4].map((hours) {
+                                final isSelected = store.waterReminderIntervalHours == hours;
+                                return ChoiceChip(
+                                  label: Text('$hours sa'),
+                                  selected: isSelected,
+                                  onSelected: (_) async {
+                                    await store.setWaterReminder(enabled: true, intervalHours: hours);
+                                    setState(() {});
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const Divider(height: 1),
+                    SwitchListTile(
+                      secondary: const Icon(Icons.fact_check_outlined, color: Colors.teal),
+                      title: Text(s.isTr ? 'Gün Sonu Takip Hatırlatıcısı' : 'End of Day Tracker Reminder'),
+                      subtitle: Text(
+                        store.dailySummaryReminderEnabled
+                            ? (s.isTr
+                                ? 'Her gün ${store.dailySummaryReminderTime} saatinde'
+                                : 'Every day at ${store.dailySummaryReminderTime}')
+                            : (s.isTr ? 'Kapalı' : 'Disabled'),
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: store.dailySummaryReminderEnabled,
+                      onChanged: (val) async {
+                        await store.setDailySummaryReminder(enabled: val);
+                        setState(() {});
+                      },
+                    ),
+                    if (store.dailySummaryReminderEnabled) ...[
+                      Padding(
+                        padding: const EdgeInsets.only(left: 16, right: 16, bottom: 12),
+                        child: Row(
+                          children: [
+                            Text(
+                              s.isTr ? 'Hatırlatma Saati:' : 'Reminder Time:',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(width: 12),
+                            OutlinedButton.icon(
+                              icon: const Icon(Icons.schedule, size: 16),
+                              label: Text(store.dailySummaryReminderTime),
+                              onPressed: () async {
+                                final parts = store.dailySummaryReminderTime.split(':');
+                                final initH = parts.isNotEmpty ? (int.tryParse(parts[0]) ?? 21) : 21;
+                                final initM = parts.length > 1 ? (int.tryParse(parts[1]) ?? 30) : 30;
+                                final picked = await showTimePicker(
+                                  context: context,
+                                  initialTime: TimeOfDay(hour: initH, minute: initM),
+                                );
+                                if (picked != null) {
+                                  final h = picked.hour.toString().padLeft(2, '0');
+                                  final m = picked.minute.toString().padLeft(2, '0');
+                                  await store.setDailySummaryReminder(enabled: true, time: '$h:$m');
+                                  setState(() {});
+                                }
+                              },
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const Divider(height: 1),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                      child: Row(
+                        children: [
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.water_drop, size: 16, color: Colors.blue),
+                              label: Text(s.isTr ? 'Su Testi' : 'Water Test'),
+                              onPressed: () {
+                                NotificationService.showReminder(
+                                  s.isTr ? '💧 Su İçme Zamanı' : '💧 Hydration Time',
+                                  s.isTr
+                                      ? 'Günlük sıvı hedefinize ulaşmak için bir bardak su için.'
+                                      : 'Drink a glass of water to reach your daily goal.',
+                                );
+                                showSnack(context, s.isTr ? 'Su testi bildirimi gönderildi!' : 'Water test notification sent!');
+                              },
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: OutlinedButton.icon(
+                              icon: const Icon(Icons.alarm, size: 16, color: Colors.deepOrange),
+                              label: Text(s.isTr ? 'Alarm Testi (3s)' : 'Alarm Test (3s)'),
+                              onPressed: () {
+                                NotificationService.scheduleTimerAlarm(
+                                  timerId: 9999,
+                                  activityName: s.isTr ? 'Test Pomodoro' : 'Test Pomodoro',
+                                  remainingMs: 3000,
+                                  isPomodoro: true,
+                                  soundEnabled: store.timerSoundEnabled,
+                                );
+                                showSnack(
+                                  context,
+                                  s.isTr
+                                      ? '3 saniye sonra test alarmı çalacak...'
+                                      : 'Test alarm will ring in 3 seconds...',
+                                );
+                              },
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ],
