@@ -1,7 +1,5 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 
-import '../data/store.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 

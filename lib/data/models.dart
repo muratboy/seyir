@@ -456,12 +456,26 @@ class ActiveTimer {
     return now.year != start.year || now.month != start.month || now.day != start.day;
   }
 
+  DateTime get effectiveEndTime {
+    if (isRunning && lastResumeTs != null) {
+      return DateTime.now();
+    }
+    return startTime.add(Duration(milliseconds: elapsedMs));
+  }
+
   /// Gece yarısından (00:00:00) önceki kısım (ms)
   int get msBeforeMidnight {
     final start = startTime;
+    final end = effectiveEndTime;
+    final wallClockTotal = end.difference(start).inMilliseconds;
+    if (wallClockTotal <= 0 || elapsedMs <= 0) return elapsedMs;
+
     final nextDayMidnight = DateTime(start.year, start.month, start.day + 1);
-    final diff = nextDayMidnight.difference(start).inMilliseconds;
-    return diff.clamp(0, elapsedMs);
+    final wallClockBefore = nextDayMidnight.difference(start).inMilliseconds.clamp(0, wallClockTotal);
+
+    final ratioBefore = wallClockBefore / wallClockTotal;
+    final activeBefore = (elapsedMs * ratioBefore).round().clamp(0, elapsedMs);
+    return activeBefore;
   }
 
   /// Gece yarısından sonraki kısım (ms)

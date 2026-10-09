@@ -191,10 +191,45 @@ class _ManagePageState extends State<ManagePage> {
               const SizedBox(height: 12),
 
               // 7. Smart Alerts & Reminders Test
-              SectionTitle(s.isTr ? 'Akıllı Hatırlatıcılar' : 'Smart Reminders'),
+              SectionTitle(s.isTr ? 'Akıllı Hatırlatıcılar & Bildirimler' : 'Smart Alerts & Notifications'),
               Card(
                 child: Column(
                   children: [
+                    ListTile(
+                      leading: const Icon(Icons.notifications_active_outlined, color: Colors.amber),
+                      title: Text(s.isTr ? 'Bildirim İzni (Android)' : 'Notification Permission'),
+                      subtitle: FutureBuilder<bool>(
+                        future: NotificationService.areNotificationsEnabled(),
+                        builder: (ctx, snap) {
+                          final enabled = snap.data ?? false;
+                          return Text(
+                            enabled
+                                ? (s.isTr ? 'Bildirimler etkinleştirildi ✓' : 'Notifications enabled ✓')
+                                : (s.isTr ? 'Bildirimler kapalı (İzin gerekiyor)' : 'Notifications disabled (Requires permission)'),
+                            style: TextStyle(
+                              color: enabled ? Colors.green : Colors.orange,
+                              fontSize: 12,
+                            ),
+                          );
+                        },
+                      ),
+                      trailing: FilledButton.tonal(
+                        onPressed: () async {
+                          final granted = await NotificationService.requestPermission();
+                          if (context.mounted) {
+                            showSnack(
+                              context,
+                              granted
+                                  ? (s.isTr ? 'Bildirim izni verildi!' : 'Notification permission granted!')
+                                  : (s.isTr ? 'Bildirim izni reddedildi veya ayarlardan açılmalı.' : 'Notification permission denied.'),
+                            );
+                            setState(() {});
+                          }
+                        },
+                        child: Text(s.isTr ? 'İzin İste' : 'Request'),
+                      ),
+                    ),
+                    const Divider(height: 1),
                     ListTile(
                       leading: const Icon(Icons.water_drop_outlined, color: Colors.blue),
                       title: Text(s.isTr ? 'Su Hatırlatıcısı Test Et' : 'Test Water Reminder'),

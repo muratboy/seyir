@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:math';
 
@@ -672,6 +673,7 @@ class AppStore extends ChangeNotifier {
       isCollapsed: false,
     );
     activeTimers.add(timer);
+    unawaited(NotificationService.requestPermission());
     await NotificationService.updateTimerNotification(activeTimers, activities);
     notifyListeners();
     return timer;
@@ -783,62 +785,118 @@ class AppStore extends ChangeNotifier {
     final startTime = timer.startTime;
     final endTime = DateTime.now();
 
-    final d = await db;
-    await d.delete('active_timers', where: 'id=?', whereArgs: [timer.id]);
-    activeTimers.removeWhere((t) => t.id == timer.id);
-    await NotificationService.updateTimerNotification(activeTimers, activities);
+    final beforeDone = _doneTargetGoalIds(actId, startTime);
+    final beforeExceeded = _exceededLimitGoalIds(actId, startTime);
+
+    final entriesToSave = <Entry>[];
 
     // Gece yarısı bölme seçeneği ve oturum gerçekten gece yarısını aşıyorsa
     if (splitChoice == MidnightSplitChoice.split && timer.spansMidnight) {
       final msBefore = timer.msBeforeMidnight;
       final msAfter = timer.msAfterMidnight;
 
-      AddResult? firstResult;
       if (msBefore > 0) {
         final (unitId1, qty1, measureId1) = _calculateTimerUnitAndQty(msBefore);
-        firstResult = await addEntry(
-          actId,
+        final m1 = measureById(measureId1);
+        entriesToSave.add(Entry(
+          id: 0,
+          activityId: actId,
+          ts: startTime.millisecondsSinceEpoch,
           measureId: measureId1,
           qty: qty1,
-          value: qty1,
-          unitId: unitId1,
-          at: startTime,
+          value: m1 != null ? m1.amount * qty1 : qty1,
+          unitId: m1?.unitId ?? unitId1,
           note: note,
-        );
+        ));
       }
 
       if (msAfter > 0) {
         final nextMidnight = DateTime(startTime.year, startTime.month, startTime.day + 1);
         final (unitId2, qty2, measureId2) = _calculateTimerUnitAndQty(msAfter);
-        final secondResult = await addEntry(
-          actId,
+        final m2 = measureById(measureId2);
+        entriesToSave.add(Entry(
+          id: 0,
+          activityId: actId,
+          ts: nextMidnight.millisecondsSinceEpoch,
           measureId: measureId2,
           qty: qty2,
-          value: qty2,
-          unitId: unitId2,
-          at: nextMidnight,
+          value: m2 != null ? m2.amount * qty2 : qty2,
+          unitId: m2?.unitId ?? unitId2,
           note: note,
-        );
-        return secondResult;
+        ));
       }
-      return firstResult;
+    } else {
+      // Tek parça kayıt: startDay (başlangıç saati) veya endDay (bitiş saati)
+      final totalMs = timer.elapsedMs;
+      final (finalUnitId, finalQty, measureId) = _calculateTimerUnitAndQty(totalMs);
+      final recordTime = splitChoice == MidnightSplitChoice.endDay ? endTime : startTime;
+      final m = measureById(measureId);
+
+      entriesToSave.add(Entry(
+        id: 0,
+        activityId: actId,
+        ts: recordTime.millisecondsSinceEpoch,
+        measureId: measureId,
+        qty: finalQty,
+        value: m != null ? m.amount * finalQty : finalQty,
+        unitId: m?.unitId ?? finalUnitId,
+        note: note,
+      ));
     }
 
-    // Tek parça kayıt: startDay (başlangıç saati) veya endDay (bitiş saati)
-    final totalMs = timer.elapsedMs;
-    final (finalUnitId, finalQty, measureId) = _calculateTimerUnitAndQty(totalMs);
-    final recordTime = splitChoice == MidnightSplitChoice.endDay ? endTime : startTime;
+    if (entriesToSave.isEmpty) return null;
 
-    final res = await addEntry(
-      actId,
-      measureId: measureId,
-      qty: finalQty,
-      value: finalQty,
-      unitId: finalUnitId,
-      at: recordTime,
-      note: note,
-    );
-    return res;
+    final d = await db;
+    final createdEntries = <Entry>[];
+
+    // Atomik SQLite işlemi: tüm kayıtlar yazılır ve sayaç tek transaction'da silinir
+    await d.transaction((tx) async {
+      for (final raw in entriesToSave) {
+        final rowId = await tx.insert('entries', raw.toMap()..remove('id'));
+        raw.id = rowId;
+        createdEntries.add(raw);
+      }
+      await tx.delete('active_timers', where: 'id=?', whereArgs: [timer.id]);
+    });
+
+    // Veritabanı başarılı oldu -> bellek durumunu ve bildirimleri güvenle güncelle
+    activeTimers.removeWhere((t) => t.id == timer.id);
+    for (final e in createdEntries) {
+      _insertSorted(e);
+    }
+    _changed();
+    await NotificationService.updateTimerNotification(activeTimers, activities);
+
+    // Hedef ve limit durumlarını kontrol et
+    final achieved = <Goal>[];
+    final exceeded = <Goal>[];
+    for (final e in createdEntries) {
+      final afterDone = _doneTargetGoalIds(actId, e.time);
+      final afterExceeded = _exceededLimitGoalIds(actId, e.time);
+      for (final g in goals) {
+        if (afterDone.contains(g.id) && !beforeDone.contains(g.id) && !achieved.contains(g)) {
+          achieved.add(g);
+        }
+        if (afterExceeded.contains(g.id) && !beforeExceeded.contains(g.id) && !exceeded.contains(g)) {
+          exceeded.add(g);
+        }
+      }
+    }
+
+    for (final g in exceeded) {
+      NotificationService.showLimitAlert(
+        '⚠️ Limit Aşıldı!',
+        '${g.name} limitinizi aştınız.',
+      );
+    }
+    for (final g in achieved) {
+      NotificationService.showLimitAlert(
+        '🎯 Hedefe Ulaşıldı!',
+        'Tebrikler! ${g.name} hedefini tamamladınız.',
+      );
+    }
+
+    return AddResult(createdEntries.last, achieved, exceeded: exceeded);
   }
 
   Future<void> cancelTimer([int? id]) async {

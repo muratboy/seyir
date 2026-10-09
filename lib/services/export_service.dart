@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:csv/csv.dart';
 import 'package:flutter/material.dart' show BuildContext, ScaffoldMessenger, SnackBar, Text;
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:pdf/pdf.dart';
@@ -9,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
+import '../logic/format.dart';
 import '../logic/l10n.dart';
 
 class ExportService {
@@ -23,9 +25,11 @@ class ExportService {
         'Saat',
         'Aktivite',
         'Kategori',
-        'Miktar',
-        'Birim',
+        'Adet / Çarpan',
         'Ölçü Adı',
+        'Hesaplanan Miktar',
+        'Birim',
+        'Detay',
         'Not',
       ]);
 
@@ -43,6 +47,8 @@ class ExportService {
         final measureName = m?.name ?? '';
         final unitStr = e.unitId ?? '';
         final note = e.note ?? '';
+        final calculatedVal = e.value != null ? fmtNum(e.value!) : fmtNum(e.qty);
+        final detail = store.entryDetail(e);
 
         rows.add([
           e.id,
@@ -50,14 +56,17 @@ class ExportService {
           timeStr,
           actName,
           catName,
-          e.qty,
-          unitStr,
+          fmtNum(e.qty),
           measureName,
+          calculatedVal,
+          unitStr,
+          detail,
           note,
         ]);
       }
 
-      final csvContent = excel.encode(rows);
+      // UTF-8 BOM (\uFEFF) eklenerek Excel ve Türkçe karakter uyumluluğu sağlanır
+      final csvContent = '\uFEFF${excel.encode(rows)}';
       final tempDir = await getTemporaryDirectory();
       final nowStr = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final filePath = '${tempDir.path}/takip_kayitlar_$nowStr.csv';
@@ -83,7 +92,19 @@ class ExportService {
   static Future<void> exportPdf(BuildContext context, AppStore store) async {
     try {
       final isTr = store.language == AppLanguage.tr;
-      final pdf = pw.Document();
+
+      // Türkçe karakter desteği için NotoSans fontlarını yükle
+      final regularData = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
+      final boldData = await rootBundle.load('assets/fonts/NotoSans-Bold.ttf');
+      final ttfRegular = pw.Font.ttf(regularData);
+      final ttfBold = pw.Font.ttf(boldData);
+
+      final pdfTheme = pw.ThemeData.withFont(
+        base: ttfRegular,
+        bold: ttfBold,
+      );
+
+      final pdf = pw.Document(theme: pdfTheme);
 
       final dateFmt = DateFormat('dd.MM.yyyy');
       final timeFmt = DateFormat('HH:mm');
@@ -189,8 +210,8 @@ class ExportService {
                     final targetStr = '${g.target} ${g.unitId ?? ''}'.trim();
                     final currentStr = '${st.value.toStringAsFixed(1)} ${g.unitId ?? ''}'.trim();
                     final statusStr = g.isLimit
-                        ? (st.isExceeded ? 'AŞILDI ⚠️' : 'Normal ✓')
-                        : (st.done ? 'TAMAMLANDI ✓' : '%${(st.ratio * 100).floor()}');
+                        ? (st.isExceeded ? 'AŞILDI (!)' : 'Normal')
+                        : (st.done ? 'TAMAMLANDI' : '%${(st.ratio * 100).floor()}');
                     return [g.name, typeStr, periodStr, targetStr, currentStr, statusStr];
                   }).toList(),
                   headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),

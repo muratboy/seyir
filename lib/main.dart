@@ -12,6 +12,7 @@ import 'ui/goals_page.dart';
 import 'ui/manage_page.dart';
 import 'ui/stats_page.dart';
 import 'ui/today_page.dart';
+import 'services/notification_service.dart';
 import 'widget_sync.dart';
 
 Future<void> main() async {
@@ -19,6 +20,7 @@ Future<void> main() async {
   await initializeDateFormatting('tr_TR');
   await initializeDateFormatting('en_US');
   Intl.defaultLocale = 'tr_TR';
+  await NotificationService.init();
   await store.load();
   store.addListener(WidgetSync.schedule);
   WidgetSync.push();

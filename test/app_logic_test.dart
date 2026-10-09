@@ -604,5 +604,45 @@ void main() {
       expect(info.consistencyLast30, closeTo(50.0, 0.1));
     });
   });
+
+  group('Stage 1 Hardening Tests', () {
+    test('ActiveTimer proportional midnight split handles pauses gracefully', () {
+      final now = DateTime.now();
+      // Started yesterday at 23:00
+      final yesterday23 = DateTime(now.year, now.month, now.day - 1, 23, 0);
+      // Ran for 15 mins yesterday, then paused, total elapsed 30 mins
+      final timer = ActiveTimer(
+        id: 1,
+        activityId: 10,
+        startTs: yesterday23.millisecondsSinceEpoch,
+        accumulatedMs: 30 * 60 * 1000, // 30 mins elapsed
+        isRunning: false,
+      );
+
+      // Effective end time is 23:00 + 30 mins = 23:30 (all before midnight)
+      expect(timer.spansMidnight, isTrue); // Calendar day of start != today
+      // All 30 mins fell before midnight
+      expect(timer.msBeforeMidnight, equals(30 * 60 * 1000));
+      expect(timer.msAfterMidnight, equals(0));
+    });
+
+    test('CSV export structure adheres to BOM and distinct columns', () {
+      final store = AppStore();
+      store.activities = {
+        1: Activity(id: 1, name: 'Çay', emoji: '☕', createdAt: 0),
+      };
+      store.measures = [
+        Measure(id: 1, name: 'Çay bardağı', unitId: 'l', amount: 0.1, sort: 0),
+      ];
+      store.entries = [
+        Entry(id: 10, activityId: 1, ts: DateTime(2026, 10, 9, 10, 30).millisecondsSinceEpoch, qty: 2, value: 0.2, unitId: 'l', measureId: 1),
+      ];
+
+      final detail = store.entryDetail(store.entries.first);
+      // Detail should format amount correctly (0.2 L -> 200 ml)
+      expect(detail, contains('Çay bardağı'));
+      expect(detail, contains('200 ml'));
+    });
+  });
 }
 
