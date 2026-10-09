@@ -271,9 +271,11 @@ class AppStore extends ChangeNotifier {
   }
 
   final Map<String, DaySummary> _daySummaryCache = {};
+  final Map<int, HabitStreakInfo> _habitStreakCache = {};
 
   void _changed() {
     _daySummaryCache.clear();
+    _habitStreakCache.clear();
     _rebuildStats();
     notifyListeners();
   }
@@ -637,6 +639,7 @@ class AppStore extends ChangeNotifier {
 
   void clearSummaryCache() {
     _daySummaryCache.clear();
+    _habitStreakCache.clear();
   }
 
   /// Kayıt detayı: "2 Demlik · 1,4 L", "45 dk"
@@ -1324,6 +1327,9 @@ class AppStore extends ChangeNotifier {
   }
 
   HabitStreakInfo habitStreakInfo(int activityId) {
+    final cached = _habitStreakCache[activityId];
+    if (cached != null) return cached;
+
     final now = DateTime.now();
     final today = dayStart(now);
 
@@ -1382,7 +1388,7 @@ class AppStore extends ChangeNotifier {
     }
     final consistencyLast30 = (activeIn30 / 30.0) * 100.0;
 
-    return HabitStreakInfo(
+    final result = HabitStreakInfo(
       currentStreak: currentStreak,
       longestStreak: longestStreak,
       totalActiveDays: totalActiveDays,
@@ -1391,6 +1397,8 @@ class AppStore extends ChangeNotifier {
       consistencyLast30: consistencyLast30,
       dailyCounts: dailyCounts,
     );
+    _habitStreakCache[activityId] = result;
+    return result;
   }
 
   Future<AddResult> quickLogHabit(int activityId, {DateTime? date}) async {
