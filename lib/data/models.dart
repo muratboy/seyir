@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:ui' show Color;
 
 import '../logic/text_match.dart';
@@ -161,6 +162,7 @@ class Activity {
   String? category;
   int? color;
   bool isHabit;
+  bool isArchived;
   int createdAt;
   String _norm;
 
@@ -171,6 +173,7 @@ class Activity {
     this.category,
     this.color,
     this.isHabit = false,
+    this.isArchived = false,
     required this.createdAt,
   }) : _norm = normalizeTr(name);
 
@@ -192,6 +195,7 @@ class Activity {
         'category': category,
         'color': color,
         'is_habit': isHabit ? 1 : 0,
+        'is_archived': isArchived ? 1 : 0,
         'created_at': createdAt,
       };
 
@@ -202,6 +206,7 @@ class Activity {
         category: m['category'] as String?,
         color: m['color'] as int?,
         isHabit: (m['is_habit'] as int? ?? 0) == 1,
+        isArchived: (m['is_archived'] as int? ?? 0) == 1,
         createdAt: m['created_at'] as int,
       );
 }
@@ -212,6 +217,7 @@ class Entry {
   int id;
   int activityId;
   int ts;
+  int? endTs;
   int? measureId;
   double qty;
   double? value;
@@ -222,6 +228,7 @@ class Entry {
     required this.id,
     required this.activityId,
     required this.ts,
+    this.endTs,
     this.measureId,
     this.qty = 1,
     this.value,
@@ -230,11 +237,14 @@ class Entry {
   });
 
   DateTime get time => DateTime.fromMillisecondsSinceEpoch(ts);
+  DateTime? get endTime => endTs != null ? DateTime.fromMillisecondsSinceEpoch(endTs!) : null;
+  Duration? get duration => endTs != null ? Duration(milliseconds: (endTs! - ts).clamp(0, 86400000000)) : null;
 
   Map<String, Object?> toMap() => {
         'id': id,
         'activity_id': activityId,
         'ts': ts,
+        'end_ts': endTs,
         'measure_id': measureId,
         'qty': qty,
         'value': value,
@@ -246,6 +256,7 @@ class Entry {
         id: m['id'] as int,
         activityId: m['activity_id'] as int,
         ts: m['ts'] as int,
+        endTs: m['end_ts'] as int?,
         measureId: m['measure_id'] as int?,
         qty: ((m['qty'] as num?) ?? 1).toDouble(),
         value: (m['value'] as num?)?.toDouble(),
@@ -393,6 +404,22 @@ class QuickItem {
       );
 }
 
+class TimerSegment {
+  final int startTs;
+  final int endTs;
+
+  const TimerSegment({required this.startTs, required this.endTs});
+
+  int get durationMs => (endTs - startTs).clamp(0, 86400000000);
+
+  Map<String, dynamic> toMap() => {'start': startTs, 'end': endTs};
+
+  factory TimerSegment.fromMap(Map<String, dynamic> m) => TimerSegment(
+        startTs: (m['start'] as num).toInt(),
+        endTs: (m['end'] as num).toInt(),
+      );
+}
+
 /// Devam eden veya duraklatılmış kronometre kaydı.
 class ActiveTimer {
   final int id;
@@ -405,6 +432,7 @@ class ActiveTimer {
   final String mode; // 'stopwatch', 'pomodoro', 'countdown'
   final int targetMs;
   final bool isCollapsed;
+  final List<TimerSegment> segments;
 
   ActiveTimer({
     required this.id,
@@ -417,6 +445,7 @@ class ActiveTimer {
     this.mode = 'stopwatch',
     this.targetMs = 0,
     this.isCollapsed = false,
+    this.segments = const [],
   });
 
   bool get isCountdown => mode == 'pomodoro' || mode == 'countdown';
@@ -463,10 +492,36 @@ class ActiveTimer {
     return startTime.add(Duration(milliseconds: elapsedMs));
   }
 
+  List<TimerSegment> allSegments(int currentMs) {
+    final list = List<TimerSegment>.from(segments);
+    if (isRunning && lastResumeTs != null && currentMs > lastResumeTs!) {
+      list.add(TimerSegment(startTs: lastResumeTs!, endTs: currentMs));
+    }
+    return list;
+  }
+
   /// Gece yarısından (00:00:00) önceki kısım (ms)
   int get msBeforeMidnight {
     final start = startTime;
     final end = effectiveEndTime;
+    final endMs = end.millisecondsSinceEpoch;
+    final segs = allSegments(endMs);
+
+    // Segmentler varsa kesintisiz kesin hesaplama
+    if (segs.isNotEmpty) {
+      final nextDayMidnight = DateTime(start.year, start.month, start.day + 1).millisecondsSinceEpoch;
+      int exactBefore = 0;
+      for (final s in segs) {
+        if (s.startTs < nextDayMidnight) {
+          final sEndBefore = s.endTs < nextDayMidnight ? s.endTs : nextDayMidnight;
+          final duration = (sEndBefore - s.startTs).clamp(0, s.durationMs);
+          exactBefore += duration;
+        }
+      }
+      return exactBefore.clamp(0, elapsedMs);
+    }
+
+    // Segment yoksa oransal wall-clock formülü
     final wallClockTotal = end.difference(start).inMilliseconds;
     if (wallClockTotal <= 0 || elapsedMs <= 0) return elapsedMs;
 
@@ -500,6 +555,7 @@ class ActiveTimer {
     int? targetMs,
     bool? isCollapsed,
     bool clearLastResumeTs = false,
+    List<TimerSegment>? segments,
   }) {
     return ActiveTimer(
       id: id ?? this.id,
@@ -512,6 +568,7 @@ class ActiveTimer {
       mode: mode ?? this.mode,
       targetMs: targetMs ?? this.targetMs,
       isCollapsed: isCollapsed ?? this.isCollapsed,
+      segments: segments ?? this.segments,
     );
   }
 
@@ -525,19 +582,35 @@ class ActiveTimer {
         'note': note,
         'mode': mode,
         'target_ms': targetMs,
+        'segments': jsonEncode(segments.map((s) => s.toMap()).toList()),
       };
 
-  factory ActiveTimer.fromMap(Map<String, Object?> m) => ActiveTimer(
-        id: m['id'] as int,
-        activityId: m['activity_id'] as int,
-        startTs: m['start_ts'] as int,
-        accumulatedMs: (m['accumulated_ms'] as int?) ?? 0,
-        lastResumeTs: m['last_resume_ts'] as int?,
-        isRunning: (m['is_running'] as int? ?? 1) == 1,
-        note: m['note'] as String?,
-        mode: (m['mode'] as String?) ?? 'stopwatch',
-        targetMs: (m['target_ms'] as int?) ?? 0,
-      );
+  factory ActiveTimer.fromMap(Map<String, Object?> m) {
+    List<TimerSegment> parsedSegments = const [];
+    if (m['segments'] is String && (m['segments'] as String).isNotEmpty) {
+      try {
+        final list = jsonDecode(m['segments'] as String);
+        if (list is List) {
+          parsedSegments = list
+              .map((item) => TimerSegment.fromMap(Map<String, dynamic>.from(item as Map)))
+              .toList();
+        }
+      } catch (_) {}
+    }
+
+    return ActiveTimer(
+      id: m['id'] as int,
+      activityId: m['activity_id'] as int,
+      startTs: m['start_ts'] as int,
+      accumulatedMs: (m['accumulated_ms'] as int?) ?? 0,
+      lastResumeTs: m['last_resume_ts'] as int?,
+      isRunning: (m['is_running'] as int? ?? 1) == 1,
+      note: m['note'] as String?,
+      mode: (m['mode'] as String?) ?? 'stopwatch',
+      targetMs: (m['target_ms'] as int?) ?? 0,
+      segments: parsedSegments,
+    );
+  }
 }
 
 String formatTimerDuration(int ms) {

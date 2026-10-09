@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
+import 'package:share_plus/share_plus.dart';
 
+import '../data/models.dart';
 import '../data/store.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
+import '../services/backup_service.dart';
 import '../services/export_service.dart';
 import '../services/notification_service.dart';
 import '../widget_sync.dart';
@@ -278,6 +282,19 @@ class _ManagePageState extends State<ManagePage> {
                       title: Text(s.backupImport),
                       onTap: () => _showImportDialog(context),
                     ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.backup_outlined),
+                      title: Text(s.isTr ? 'Yerel Yedekler & Geçmiş' : 'Local Backups & History'),
+                      subtitle: Text(
+                        s.isTr
+                            ? 'Otomatik ve güvenlik yedeklerini incele / geri yükle'
+                            : 'View or restore auto and safety backups',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: const Icon(Icons.chevron_right),
+                      onTap: () => _showLocalBackupsSheet(context),
+                    ),
                   ],
                 ),
               ),
@@ -381,7 +398,27 @@ class _ManagePageState extends State<ManagePage> {
                   return ListTile(
                     onTap: () => showActivityEditDialog(c, act),
                     leading: ActivityAvatar(act.id, size: 40),
-                    title: Text(act.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    title: Row(
+                      children: [
+                        Flexible(
+                          child: Text(act.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                        ),
+                        if (act.isArchived) ...[
+                          const SizedBox(width: 6),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                            decoration: BoxDecoration(
+                              color: Colors.grey.withValues(alpha: 0.2),
+                              borderRadius: BorderRadius.circular(4),
+                            ),
+                            child: Text(
+                              s.isTr ? 'Arşivde' : 'Archived',
+                              style: const TextStyle(fontSize: 10, color: Colors.grey, fontWeight: FontWeight.bold),
+                            ),
+                          ),
+                        ],
+                      ],
+                    ),
                     subtitle: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
@@ -427,6 +464,15 @@ class _ManagePageState extends State<ManagePage> {
                     trailing: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
+                        if (act.isArchived)
+                          IconButton(
+                            icon: const Icon(Icons.unarchive_outlined, color: Colors.teal),
+                            tooltip: s.isTr ? 'Arşivden Çıkar' : 'Unarchive',
+                            onPressed: () {
+                              store.archiveActivity(act.id, archived: false);
+                              showSnack(context, s.isTr ? '${act.name} arşivden çıkarıldı' : '${act.name} unarchived');
+                            },
+                          ),
                         IconButton(
                           icon: const Icon(Icons.edit_outlined),
                           tooltip: s.edit,
@@ -435,14 +481,7 @@ class _ManagePageState extends State<ManagePage> {
                         IconButton(
                           icon: Icon(Icons.delete_outline, color: Theme.of(c).colorScheme.error),
                           tooltip: s.delete,
-                          onPressed: () async {
-                            final ok = await confirm(
-                              c,
-                              s.deleteConfirmTitle,
-                              '${act.name} ${s.deleteConfirmDesc}',
-                            );
-                            if (ok) store.deleteActivity(act.id);
-                          },
+                          onPressed: () => _handleDeleteOrArchiveActivity(c, act),
                         ),
                       ],
                     ),
@@ -559,6 +598,268 @@ class _ManagePageState extends State<ManagePage> {
             child: Text(s.isTr ? 'Geri Yükle' : 'Restore'),
           ),
         ],
+      ),
+    );
+  }
+
+  void _handleDeleteOrArchiveActivity(BuildContext context, Activity act) {
+    final s = strings.value;
+    final entriesCount = store.entries.where((e) => e.activityId == act.id).length;
+
+    if (entriesCount > 0 && !act.isArchived) {
+      showDialog<void>(
+        context: context,
+        builder: (c) => AlertDialog(
+          title: Text(s.isTr ? 'Aktiviteyi Yönet' : 'Manage Activity'),
+          content: Text(
+            s.isTr
+                ? '"${act.name}" aktivitesine ait $entriesCount adet geçmiş kayıt bulunuyor.\n\n'
+                  '• Arşivle (Önerilen): Geçmiş kayıtlarınız ve istatistikleriniz korunur, ancak yeni kayıt oluştururken önerilmez.\n\n'
+                  '• Kalıcı Sil: Aktivite ve ona ait TÜM $entriesCount geçmiş kayıt geri dönüşsüz olarak silinir.'
+                : '"${act.name}" has $entriesCount recorded entries.\n\n'
+                  '• Archive (Recommended): Keeps historical data and statistics, but hides from quick suggestions.\n\n'
+                  '• Permanently Delete: Deletes the activity and all historical entries permanently.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c),
+              child: Text(s.cancel),
+            ),
+            OutlinedButton(
+              onPressed: () {
+                Navigator.pop(c);
+                store.archiveActivity(act.id, archived: true);
+                showSnack(context, s.isTr ? '${act.name} arşivlendi' : '${act.name} archived');
+              },
+              child: Text(s.isTr ? 'Arşivle (Önerilen)' : 'Archive'),
+            ),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Theme.of(c).colorScheme.error),
+              onPressed: () {
+                Navigator.pop(c);
+                store.deleteActivity(act.id);
+                showSnack(context, s.isTr ? '${act.name} silindi' : '${act.name} deleted');
+              },
+              child: Text(s.isTr ? 'Kalıcı Olarak Sil' : 'Permanently Delete'),
+            ),
+          ],
+        ),
+      );
+    } else {
+      confirm(
+        context,
+        s.deleteConfirmTitle,
+        '${act.name} ${s.deleteConfirmDesc}',
+      ).then((ok) {
+        if (ok) store.deleteActivity(act.id);
+      });
+    }
+  }
+
+  void _showLocalBackupsSheet(BuildContext context) {
+    final s = strings.value;
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      useSafeArea: true,
+      builder: (bottomContext) => StatefulBuilder(
+        builder: (bottomContext, setSheetState) => FutureBuilder<List<BackupFileInfo>>(
+          future: BackupService.listBackups(),
+          builder: (context, snap) {
+            final backups = snap.data ?? [];
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.6,
+              maxChildSize: 0.9,
+              builder: (c, scrollCtrl) => Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                child: Column(
+                  children: [
+                    Container(
+                      width: 40,
+                      height: 4,
+                      decoration: BoxDecoration(
+                        color: Colors.grey.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(2),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          s.isTr ? 'Yerel Yedekler' : 'Local Backups',
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        ),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.add, size: 16),
+                          label: Text(s.isTr ? 'Yeni Yedek Al' : 'Backup Now'),
+                          onPressed: () async {
+                            await BackupService.createBackup(store, prefix: 'manual');
+                            setSheetState(() {});
+                            if (bottomContext.mounted) {
+                              showSnack(bottomContext, s.isTr ? 'Yedek başarıyla oluşturuldu' : 'Backup created');
+                            }
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    if (snap.connectionState == ConnectionState.waiting)
+                      const Expanded(child: Center(child: CircularProgressIndicator()))
+                    else if (backups.isEmpty)
+                      Expanded(
+                        child: Center(
+                          child: Text(
+                            s.isTr ? 'Henüz kaydedilmiş yerel yedek yok' : 'No local backups found',
+                            style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant),
+                          ),
+                        ),
+                      )
+                    else
+                      Expanded(
+                        child: ListView.builder(
+                          controller: scrollCtrl,
+                          itemCount: backups.length,
+                          itemBuilder: (c, i) {
+                            final b = backups[i];
+                            String typeLabel = s.isTr ? 'Manuel' : 'Manual';
+                            Color typeColor = Colors.blue;
+                            if (b.isAutomatic) {
+                              typeLabel = s.isTr ? 'Otomatik' : 'Auto';
+                              typeColor = Colors.green;
+                            } else if (b.isPreRestore) {
+                              typeLabel = s.isTr ? 'Güvenlik' : 'Safety';
+                              typeColor = Colors.orange;
+                            }
+
+                            return Card(
+                              margin: const EdgeInsets.only(bottom: 8),
+                              child: ListTile(
+                                leading: Icon(
+                                  b.isAutomatic
+                                      ? Icons.schedule
+                                      : (b.isPreRestore ? Icons.shield_outlined : Icons.save_outlined),
+                                  color: typeColor,
+                                ),
+                                title: Text(
+                                  DateFormat('dd.MM.yyyy HH:mm').format(b.createdAt),
+                                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                ),
+                                subtitle: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 3),
+                                    Row(
+                                      children: [
+                                        Container(
+                                          padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                          decoration: BoxDecoration(
+                                            color: typeColor.withValues(alpha: 0.15),
+                                            borderRadius: BorderRadius.circular(4),
+                                          ),
+                                          child: Text(
+                                            typeLabel,
+                                            style: TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: typeColor),
+                                          ),
+                                        ),
+                                        const SizedBox(width: 6),
+                                        Text(
+                                          b.sizeLabel,
+                                          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      b.name,
+                                      style: TextStyle(fontSize: 10.5, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                                      maxLines: 1,
+                                      overflow: TextOverflow.ellipsis,
+                                    ),
+                                  ],
+                                ),
+                                trailing: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(Icons.restore, size: 22, color: Colors.teal),
+                                      tooltip: s.isTr ? 'Geri Yükle' : 'Restore',
+                                      onPressed: () async {
+                                        final ok = await confirm(
+                                          c,
+                                          s.isTr ? 'Yedeği Geri Yükle' : 'Restore Backup',
+                                          s.isTr
+                                              ? 'Bu yedeği geri yüklemek istediğinize emin misiniz? Mevcut verileriniz öncesinde otomatik güvenlik yedeğine alınacaktır.'
+                                              : 'Restore this backup? A safety snapshot will be taken first.',
+                                        );
+                                        if (ok) {
+                                          await BackupService.restoreFromFile(store, b.file);
+                                          if (bottomContext.mounted) {
+                                            Navigator.pop(bottomContext);
+                                            showSnack(context, s.backupSuccess);
+                                          }
+                                        }
+                                      },
+                                    ),
+                                    PopupMenuButton<String>(
+                                      icon: const Icon(Icons.more_vert, size: 20),
+                                      onSelected: (val) async {
+                                        if (val == 'share') {
+                                          SharePlus.instance.share(
+                                            ShareParams(
+                                              files: [XFile(b.file.path)],
+                                              text: 'Takip JSON Yedeği (${b.name})',
+                                            ),
+                                          );
+                                        } else if (val == 'delete') {
+                                          final ok = await confirm(
+                                            c,
+                                            s.deleteConfirmTitle,
+                                            s.isTr ? 'Bu yedek dosyasını silmek istediğinize emin misiniz?' : 'Delete this backup file?',
+                                          );
+                                          if (ok) {
+                                            await b.file.delete();
+                                            setSheetState(() {});
+                                          }
+                                        }
+                                      },
+                                      itemBuilder: (c) => [
+                                        PopupMenuItem(
+                                          value: 'share',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.share_outlined, size: 18),
+                                              const SizedBox(width: 8),
+                                              Text(s.isTr ? 'Paylaş' : 'Share'),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'delete',
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.delete_outline, size: 18, color: Theme.of(c).colorScheme.error),
+                                              const SizedBox(width: 8),
+                                              Text(s.delete, style: TextStyle(color: Theme.of(c).colorScheme.error)),
+                                            ],
+                                          ),
+                                        ),
+                                      ],
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                        ),
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        ),
       ),
     );
   }

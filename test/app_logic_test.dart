@@ -644,5 +644,113 @@ void main() {
       expect(detail, contains('200 ml'));
     });
   });
+
+  group('Stage 2 Data Model & Safety Tests', () {
+    test('Entry model preserves endTs and calculates duration', () {
+      final start = DateTime(2026, 10, 9, 14, 0);
+      final end = DateTime(2026, 10, 9, 15, 30);
+      final entry = Entry(
+        id: 1,
+        activityId: 10,
+        ts: start.millisecondsSinceEpoch,
+        endTs: end.millisecondsSinceEpoch,
+        value: 90,
+        unitId: 'dk',
+      );
+
+      expect(entry.time, equals(start));
+      expect(entry.endTime, equals(end));
+      expect(entry.duration?.inMinutes, equals(90));
+
+      final map = entry.toMap();
+      expect(map['end_ts'], equals(end.millisecondsSinceEpoch));
+
+      final restored = Entry.fromMap(map);
+      expect(restored.endTs, equals(end.millisecondsSinceEpoch));
+      expect(restored.endTime, equals(end));
+      expect(restored.duration?.inMinutes, equals(90));
+    });
+
+    test('Activity archiving preserves history and filters suggestions', () {
+      final store = AppStore();
+      final act1 = Activity(id: 1, name: 'Ders Çalışma', createdAt: 0, isArchived: false);
+      final act2 = Activity(id: 2, name: 'Eski Hobi', createdAt: 0, isArchived: true);
+      store.activities = {1: act1, 2: act2};
+      store.stats = {
+        1: ActivityStats()..count = 5..recent = 5,
+        2: ActivityStats()..count = 20..recent = 10,
+      };
+
+      // In suggestions and frequent, archived activity must be excluded
+      final suggestions = store.suggest('');
+      expect(suggestions.any((a) => a.id == 2), isFalse);
+      expect(suggestions.any((a) => a.id == 1), isTrue);
+
+      final frequentList = store.frequent();
+      expect(frequentList.any((a) => a.id == 2), isFalse);
+      expect(frequentList.any((a) => a.id == 1), isTrue);
+
+      // Serialization test
+      final map = act2.toMap();
+      expect(map['is_archived'], equals(1));
+      final restored = Activity.fromMap(map);
+      expect(restored.isArchived, isTrue);
+    });
+
+    test('TimerSegment exact midnight split with cross-midnight pause', () {
+      final now = DateTime.now();
+      final yesterday23 = DateTime(now.year, now.month, now.day - 1, 23, 0);
+      final yesterday2330 = DateTime(now.year, now.month, now.day - 1, 23, 30);
+      final today0030 = DateTime(now.year, now.month, now.day, 0, 30);
+      final today0115 = DateTime(now.year, now.month, now.day, 1, 15);
+
+      final seg1 = TimerSegment(
+        startTs: yesterday23.millisecondsSinceEpoch,
+        endTs: yesterday2330.millisecondsSinceEpoch, // 30 min before midnight
+      );
+      final seg2 = TimerSegment(
+        startTs: today0030.millisecondsSinceEpoch,
+        endTs: today0115.millisecondsSinceEpoch, // 45 min after midnight
+      );
+
+      final timer = ActiveTimer(
+        id: 10,
+        activityId: 1,
+        startTs: yesterday23.millisecondsSinceEpoch,
+        accumulatedMs: (30 + 45) * 60 * 1000,
+        isRunning: false,
+        segments: [seg1, seg2],
+      );
+
+      expect(timer.spansMidnight, isTrue);
+      // Segment 1 is entirely yesterday: exactly 30 minutes
+      expect(timer.msBeforeMidnight, equals(30 * 60 * 1000));
+      // Segment 2 is entirely today: exactly 45 minutes
+      expect(timer.msAfterMidnight, equals(45 * 60 * 1000));
+      expect(timer.elapsedMs, equals(75 * 60 * 1000));
+    });
+
+    test('ActiveTimer serialization roundtrip preserves segments', () {
+      final seg = TimerSegment(startTs: 1000, endTs: 5000);
+      final timer = ActiveTimer(
+        id: 5,
+        activityId: 2,
+        startTs: 1000,
+        accumulatedMs: 4000,
+        isRunning: false,
+        segments: [seg],
+      );
+
+      final map = timer.toMap();
+      expect(map['segments'], contains('"start":1000'));
+      expect(map['segments'], contains('"end":5000'));
+
+      final restored = ActiveTimer.fromMap(map);
+      expect(restored.segments.length, equals(1));
+      expect(restored.segments.first.startTs, equals(1000));
+      expect(restored.segments.first.endTs, equals(5000));
+    });
+  });
 }
+
 

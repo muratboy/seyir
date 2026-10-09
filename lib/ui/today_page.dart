@@ -812,7 +812,9 @@ class _TodayPageState extends State<TodayPage> {
         final entry = entries[i];
         final act = store.activity(entry.activityId);
         final detail = store.entryDetail(entry);
-        final timeStr = fmtTime(entry.time);
+        final timeStr = entry.endTs != null
+            ? '${fmtTime(entry.time)}–${fmtTime(entry.endTime!)}'
+            : fmtTime(entry.time);
         final activeTimer = store.getTimerForActivity(act.id);
 
         return Card(
@@ -938,7 +940,9 @@ class _TodayPageState extends State<TodayPage> {
         final entry = entries[i];
         final act = store.activity(entry.activityId);
         final detail = store.entryDetail(entry);
-        final timeStr = fmtTime(entry.time);
+        final timeStr = entry.endTs != null
+            ? '${fmtTime(entry.time)}–${fmtTime(entry.endTime!)}'
+            : fmtTime(entry.time);
 
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -1082,7 +1086,9 @@ class _TodayPageState extends State<TodayPage> {
                             style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                           ),
                           Text(
-                            '${s.isTr ? "Eklenme" : "Logged"}: ${fmtTime(entryTime)} - ${fmtDateShort(entryTime)}',
+                            e.endTs != null
+                                ? '${s.isTr ? "Süre Aralığı" : "Interval"}: ${fmtTime(entryTime)}–${fmtTime(e.endTime!)} (${fmtDateShort(entryTime)})'
+                                : '${s.isTr ? "Eklenme" : "Logged"}: ${fmtTime(entryTime)} - ${fmtDateShort(entryTime)}',
                             style: TextStyle(
                               fontSize: 12,
                               color: Theme.of(c).colorScheme.onSurfaceVariant,

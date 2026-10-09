@@ -8,6 +8,7 @@ import 'package:sqflite/sqflite.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/text_match.dart';
+import '../services/backup_service.dart';
 import '../services/notification_service.dart';
 import 'db.dart';
 import 'models.dart';
@@ -176,6 +177,7 @@ class AppStore extends ChangeNotifier {
 
     loaded = true;
     _changed();
+    unawaited(BackupService.checkAndPerformDailyAutoBackup(this));
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
@@ -351,12 +353,12 @@ class AppStore extends ChangeNotifier {
     return null;
   }
 
-  /// Yazarken öneriler: benzerlik + kullanım sıklığı.
+  /// Yazarken öneriler: benzerlik + kullanım sıklığı (arşivlenenler hariç).
   List<Activity> suggest(String text, {int limit = 6}) {
     final q = normalizeTr(text);
     if (q.isEmpty) return frequent(limit: limit);
     final scored = <(Activity, double)>[];
-    for (final a in activities.values) {
+    for (final a in activities.values.where((a) => !a.isArchived)) {
       var s = matchScore(q, a.norm);
       if (s <= 0) continue;
       final st = stats[a.id];
@@ -367,9 +369,9 @@ class AppStore extends ChangeNotifier {
     return scored.take(limit).map((e) => e.$1).toList();
   }
 
-  /// Son 30 günde en sık yapılanlar.
+  /// Son 30 günde en sık yapılanlar (arşivlenenler hariç).
   List<Activity> frequent({int limit = 8}) {
-    final list = activities.values.where((a) => (stats[a.id]?.count ?? 0) > 0).toList();
+    final list = activities.values.where((a) => !a.isArchived && (stats[a.id]?.count ?? 0) > 0).toList();
     list.sort((a, b) {
       final sa = stats[a.id]!, sb = stats[b.id]!;
       final c = sb.recent.compareTo(sa.recent);
@@ -405,6 +407,21 @@ class AppStore extends ChangeNotifier {
 
   Future<void> updateActivity(Activity a) async {
     await (await db).update('activities', a.toMap(), where: 'id=?', whereArgs: [a.id]);
+    _changed();
+  }
+
+  /// Aktiviteyi arşivler veya arşivden çıkarır.
+  /// Geçmiş kayıtlar korunur, ancak yeni kayıt oluştururken önerilmez.
+  Future<void> archiveActivity(int id, {bool archived = true}) async {
+    final act = activities[id];
+    if (act == null) return;
+    act.isArchived = archived;
+    final d = await db;
+    await d.update('activities', {'is_archived': archived ? 1 : 0}, where: 'id=?', whereArgs: [id]);
+    if (archived) {
+      await d.delete('quick_items', where: 'activity_id=?', whereArgs: [id]);
+      quickItems.removeWhere((q) => q.activityId == id);
+    }
     _changed();
   }
 
@@ -525,6 +542,8 @@ class AppStore extends ChangeNotifier {
     int? measureId,
     double qty = 1,
     DateTime? at,
+    DateTime? endAt,
+    int? endTs,
     String? note,
     double? value,
     String? unitId,
@@ -535,10 +554,18 @@ class AppStore extends ChangeNotifier {
     final m = measureById(measureId);
     final finalUnitId = m?.unitId ?? unitId;
     final finalValue = m != null ? m.amount * qty : value;
+
+    int? calculatedEndTs = endTs ?? endAt?.millisecondsSinceEpoch;
+    if (calculatedEndTs == null && (finalUnitId == 'dk' || finalUnitId == 'sa') && finalValue != null && finalValue > 0) {
+      final durationMins = (finalValue * (finalUnitId == 'sa' ? 60 : 1)).round();
+      calculatedEndTs = time.add(Duration(minutes: durationMins)).millisecondsSinceEpoch;
+    }
+
     final e = Entry(
       id: 0,
       activityId: activityId,
       ts: time.millisecondsSinceEpoch,
+      endTs: calculatedEndTs,
       measureId: m?.id,
       qty: qty,
       value: finalValue,
@@ -686,10 +713,15 @@ class AppStore extends ChangeNotifier {
     final now = DateTime.now().millisecondsSinceEpoch;
     final last = timer.lastResumeTs;
     final diff = last != null ? (now - last).clamp(0, 1000000000) : 0;
+    final segs = List<TimerSegment>.from(timer.segments);
+    if (last != null && now > last) {
+      segs.add(TimerSegment(startTs: last, endTs: now));
+    }
     final updated = timer.copyWith(
       accumulatedMs: timer.accumulatedMs + diff,
       isRunning: false,
       clearLastResumeTs: true,
+      segments: segs,
     );
 
     final d = await db;
@@ -795,6 +827,8 @@ class AppStore extends ChangeNotifier {
       final msBefore = timer.msBeforeMidnight;
       final msAfter = timer.msAfterMidnight;
 
+      final nextMidnight = DateTime(startTime.year, startTime.month, startTime.day + 1);
+
       if (msBefore > 0) {
         final (unitId1, qty1, measureId1) = _calculateTimerUnitAndQty(msBefore);
         final m1 = measureById(measureId1);
@@ -802,6 +836,7 @@ class AppStore extends ChangeNotifier {
           id: 0,
           activityId: actId,
           ts: startTime.millisecondsSinceEpoch,
+          endTs: nextMidnight.millisecondsSinceEpoch,
           measureId: measureId1,
           qty: qty1,
           value: m1 != null ? m1.amount * qty1 : qty1,
@@ -811,13 +846,13 @@ class AppStore extends ChangeNotifier {
       }
 
       if (msAfter > 0) {
-        final nextMidnight = DateTime(startTime.year, startTime.month, startTime.day + 1);
         final (unitId2, qty2, measureId2) = _calculateTimerUnitAndQty(msAfter);
         final m2 = measureById(measureId2);
         entriesToSave.add(Entry(
           id: 0,
           activityId: actId,
           ts: nextMidnight.millisecondsSinceEpoch,
+          endTs: endTime.millisecondsSinceEpoch,
           measureId: measureId2,
           qty: qty2,
           value: m2 != null ? m2.amount * qty2 : qty2,
@@ -836,6 +871,7 @@ class AppStore extends ChangeNotifier {
         id: 0,
         activityId: actId,
         ts: recordTime.millisecondsSinceEpoch,
+        endTs: endTime.millisecondsSinceEpoch,
         measureId: measureId,
         qty: finalQty,
         value: m != null ? m.amount * finalQty : finalQty,
@@ -1328,7 +1364,7 @@ class AppStore extends ChangeNotifier {
     final d = await db;
     final out = <String, Object?>{
       'app': 'takip',
-      'version': 1,
+      'version': AppDb.currentVersion,
       'exportedAt': DateTime.now().toIso8601String(),
     };
     for (final t in AppDb.tables) {
@@ -1342,6 +1378,11 @@ class AppStore extends ChangeNotifier {
     if (m is! Map || m['app'] != 'takip') {
       throw const FormatException('Bu dosya bir Takip yedeği değil.');
     }
+    // Geri yükleme öncesinde mevcut verileri korumak için güvenlik yedeği al
+    try {
+      await BackupService.createPreRestoreSnapshot(this);
+    } catch (_) {}
+
     final d = await db;
     await d.transaction((tx) async {
       for (final t in AppDb.tables) {
