@@ -22,7 +22,11 @@ class WidgetSync {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
       await HomeWidget.saveWidgetData<String>('payload', jsonEncode(store.widgetPayload()));
-      await HomeWidget.updateWidget(qualifiedAndroidName: widgetProviderName);
+      await HomeWidget.updateWidget(
+        name: 'TakipWidgetProvider',
+        androidName: 'TakipWidgetProvider',
+        qualifiedAndroidName: widgetProviderName,
+      );
     } catch (e) {
       debugPrint('Widget güncellenemedi: $e');
     }
@@ -31,7 +35,11 @@ class WidgetSync {
   static Future<bool> requestPin() async {
     try {
       if (await HomeWidget.isRequestPinWidgetSupported() ?? false) {
-        await HomeWidget.requestPinWidget(qualifiedAndroidName: widgetProviderName);
+        await HomeWidget.requestPinWidget(
+          name: 'TakipWidgetProvider',
+          androidName: 'TakipWidgetProvider',
+          qualifiedAndroidName: widgetProviderName,
+        );
         return true;
       }
     } catch (_) {}

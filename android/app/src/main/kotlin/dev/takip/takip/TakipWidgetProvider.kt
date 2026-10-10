@@ -30,6 +30,7 @@ class TakipWidgetProvider : HomeWidgetProvider() {
                 addUri
             )
             views.setOnClickPendingIntent(R.id.widget_add_btn, addPendingIntent)
+            views.setOnClickPendingIntent(R.id.widget_title, addPendingIntent)
 
             val payloadStr = widgetData.getString("payload", null)
             if (payloadStr != null) {
