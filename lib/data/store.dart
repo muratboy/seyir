@@ -1570,24 +1570,12 @@ class AppStore extends ChangeNotifier {
   // ---------------------------------------------------------------- zinciri kırma (habit tracker)
 
   List<Activity> get habitActivities => activities.values.where((a) => a.isHabit).toList();
-  List<Goal> get habitGoals => goals.where((g) => g.isHabit).toList();
 
   Future<void> setActivityHabit(int activityId, bool isHabit) async {
     final act = activities[activityId];
     if (act == null) return;
     act.isHabit = isHabit;
     await updateActivity(act);
-  }
-
-  Future<void> setGoalHabit(int goalId, bool isHabit) async {
-    final g = goals.where((x) => x.id == goalId).firstOrNull;
-    if (g == null) return;
-    g.isHabit = isHabit;
-    if (_db != null) {
-      await _db!.update('goals', {'is_habit': isHabit ? 1 : 0}, where: 'id = ?', whereArgs: [goalId]);
-    }
-    clearHabitStreakCache();
-    _changed();
   }
 
   HabitStreakInfo habitStreakInfo(int activityId) {

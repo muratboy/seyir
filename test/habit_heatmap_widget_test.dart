@@ -300,7 +300,7 @@ void main() {
     expect(find.textContaining('1 sa 15 dk (Hedefe ulaşıldı ✓)'), findsWidgets);
   });
 
-  testWidgets('Goal card 3-dots popup menu shows Zinciri Kırma option and toggles habit', (tester) async {
+  testWidgets('Goal card expands Zamana Yayılmış Görünüm and shows ContributionHeatmap', (tester) async {
     store.clearHabitStreakCache();
     store.activities.clear();
     store.goals.clear();
@@ -339,24 +339,32 @@ void main() {
     // Verify goal card is rendered
     expect(find.text('Haftalık Yürüyüş'), findsOneWidget);
 
-    // Tap 3-dots menu on the goal card
+    // Verify 3-dots menu only contains Edit and Delete (no Zinciri Kırma option)
     final popupBtn = find.byIcon(Icons.more_vert);
     expect(popupBtn, findsOneWidget);
     await tester.tap(popupBtn);
     await tester.pumpAndSettle();
 
-    // Verify 🔥 Zinciri Kırma'ya Ekle is in popup menu
-    expect(find.textContaining('Zinciri Kırma\'ya Ekle'), findsOneWidget);
+    expect(find.textContaining('Zinciri Kırma\'ya'), findsNothing);
+    expect(find.text('Düzenle'), findsOneWidget);
+    expect(find.text('Sil'), findsOneWidget);
 
-    // Tap the menu option
-    await tester.tap(find.textContaining('Zinciri Kırma\'ya Ekle'));
+    // Dismiss menu
+    await tester.tapAt(const Offset(10, 10));
     await tester.pumpAndSettle();
 
-    // Verify goal is now a habit!
-    expect(goal.isHabit, isTrue);
+    // Verify Zamana Yayılmış Görünüm button exists
+    final expandBtn = find.byIcon(Icons.calendar_month_rounded);
+    expect(expandBtn, findsOneWidget);
 
-    // Verify SnackBar feedback
-    expect(find.textContaining('Haftalık Yürüyüş'), findsWidgets);
+    // Tap to expand heatmap
+    await tester.tap(expandBtn);
+    await tester.pumpAndSettle();
+
+    // Verify ContributionHeatmap is displayed inside goal card
+    expect(find.byType(ContributionHeatmap), findsOneWidget);
+    expect(find.textContaining('Seri'), findsWidgets);
+    expect(find.textContaining('Başarı'), findsOneWidget);
   });
 
   test('goalStreakInfo calculates daily values, tooltips and levels for target and limit goals', () {
@@ -385,7 +393,6 @@ void main() {
       startDate: DateTime.now().subtract(const Duration(days: 10)).millisecondsSinceEpoch,
       createdAt: 1000000,
       links: [GoalLink(activityId: actId, pct: 100)],
-      isHabit: true,
     );
     store.goals = [targetGoal];
 

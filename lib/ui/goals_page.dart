@@ -22,7 +22,6 @@ class _GoalsPageState extends State<GoalsPage> {
   GoalsPageTab _currentTab = GoalsPageTab.goals;
   GoalPeriod? _filterPeriod;
   final Set<int> _expandedGoalHeatmapIds = {};
-  String _habitFilter = 'all';
 
   @override
   Widget build(BuildContext context) {
@@ -36,8 +35,7 @@ class _GoalsPageState extends State<GoalsPage> {
             ? allGoals
             : allGoals.where((g) => g.period == _filterPeriod).toList();
         final habits = store.habitActivities;
-        final habitGoals = store.habitGoals;
-        final totalHabitsCount = habits.length + habitGoals.length;
+        final totalHabitsCount = habits.length;
 
         return Scaffold(
           appBar: AppBar(
@@ -179,12 +177,6 @@ class _GoalsPageState extends State<GoalsPage> {
     final unitSym = store.goalUnitSymbol(goal);
     final isDone = status.done;
     final streak = store.goalStreak(goal);
-
-    final linkedActivities = goal.links
-        .map((l) => store.activities[l.activityId])
-        .whereType<Activity>()
-        .toList();
-    final nonHabitLinkedActivities = linkedActivities.where((a) => !a.isHabit).toList();
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -330,24 +322,6 @@ class _GoalsPageState extends State<GoalsPage> {
                               ),
                             ),
                           ],
-                          if (goal.isHabit) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.deepOrange.shade100,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '🔥 Zinciri Kırma',
-                                style: TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.deepOrange.shade900,
-                                ),
-                              ),
-                            ),
-                          ],
                         ],
                       ),
                     ],
@@ -365,118 +339,9 @@ class _GoalsPageState extends State<GoalsPage> {
                         '${goal.name} ${s.deleteConfirmDesc}',
                       );
                       if (ok) store.deleteGoal(goal);
-                    } else if (val == 'add_to_habits') {
-                      await store.setGoalHabit(goal.id, true);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              s.isTr
-                                  ? '🔥 "${goal.name}" Zinciri Kırma\'ya eklendi!'
-                                  : '🔥 "${goal.name}" added to Habits!',
-                            ),
-                            behavior: SnackBarBehavior.floating,
-                            action: SnackBarAction(
-                              label: s.isTr ? 'Görüntüle' : 'View',
-                              onPressed: () {
-                                setState(() => _currentTab = GoalsPageTab.habits);
-                              },
-                            ),
-                          ),
-                        );
-                      }
-                    } else if (val == 'view_in_habits') {
-                      setState(() => _currentTab = GoalsPageTab.habits);
-                    } else if (val == 'remove_from_habits') {
-                      await store.setGoalHabit(goal.id, false);
-                      if (context.mounted) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                            content: Text(
-                              s.isTr
-                                  ? '"${goal.name}" Zinciri Kırma\'dan çıkarıldı.'
-                                  : '"${goal.name}" removed from Habits.',
-                            ),
-                            behavior: SnackBarBehavior.floating,
-                          ),
-                        );
-                      }
-                    } else if (val == 'add_linked_activities') {
-                      if (nonHabitLinkedActivities.length == 1) {
-                        final act = nonHabitLinkedActivities.first;
-                        await store.setActivityHabit(act.id, true);
-                        if (context.mounted) {
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            SnackBar(
-                              content: Text(
-                                s.isTr
-                                    ? '🔥 "${act.name}" Zinciri Kırma\'ya eklendi!'
-                                    : '🔥 "${act.name}" added to Habits!',
-                              ),
-                              behavior: SnackBarBehavior.floating,
-                            ),
-                          );
-                        }
-                      } else if (nonHabitLinkedActivities.length > 1) {
-                        await _showSelectActivitiesForHabitDialog(context, goal, nonHabitLinkedActivities);
-                      }
                     }
                   },
                   itemBuilder: (c) => [
-                    if (goal.isHabit) ...[
-                      PopupMenuItem(
-                        value: 'view_in_habits',
-                        child: Row(
-                          children: [
-                            const Text('🔥', style: TextStyle(fontSize: 16)),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(s.viewInHabits)),
-                          ],
-                        ),
-                      ),
-                      PopupMenuItem(
-                        value: 'remove_from_habits',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.remove_circle_outline, size: 18, color: Colors.red),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                s.removeFromHabits,
-                                style: const TextStyle(color: Colors.red),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ] else ...[
-                      PopupMenuItem(
-                        value: 'add_to_habits',
-                        child: Row(
-                          children: [
-                            const Text('🔥', style: TextStyle(fontSize: 16)),
-                            const SizedBox(width: 8),
-                            Expanded(child: Text(s.addToHabits)),
-                          ],
-                        ),
-                      ),
-                    ],
-                    if (nonHabitLinkedActivities.isNotEmpty)
-                      PopupMenuItem(
-                        value: 'add_linked_activities',
-                        child: Row(
-                          children: [
-                            const Icon(Icons.playlist_add_rounded, size: 18),
-                            const SizedBox(width: 8),
-                            Expanded(
-                              child: Text(
-                                s.isTr ? 'Aktiviteleri de Alışkanlık Yap' : 'Make Activities Habits Too',
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ),
                     PopupMenuItem(value: 'edit', child: Text(s.edit)),
                     PopupMenuItem(
                       value: 'delete',
@@ -1118,61 +983,13 @@ class _GoalsPageState extends State<GoalsPage> {
         ),
       );
     }
-
     final habitActivities = habits;
-    final habitGoals = store.habitGoals;
-    final totalHabits = habitActivities.length + habitGoals.length;
-
-    if (totalHabits == 0) {
-      return Center(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 32),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              Container(
-                padding: const EdgeInsets.all(22),
-                decoration: BoxDecoration(
-                  color: Colors.orange.withValues(alpha: 0.12),
-                  shape: BoxShape.circle,
-                ),
-                child: const Icon(Icons.local_fire_department_rounded, size: 54, color: Colors.orange),
-              ),
-              const SizedBox(height: 18),
-              Text(
-                s.noHabitsTitle,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                textAlign: TextAlign.center,
-              ),
-              const SizedBox(height: 8),
-              Text(
-                s.noHabitsDesc,
-                textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13.5),
-              ),
-              const SizedBox(height: 20),
-              FilledButton.icon(
-                icon: const Icon(Icons.add),
-                label: Text(s.addHabit),
-                onPressed: () => _pickAndAddHabit(context),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    final doneTodayCount = habitActivities.where((h) => store.habitStreakInfo(h.id).isDoneToday).length +
-        habitGoals.where((g) => store.goalStreakInfo(g).isDoneToday).length;
-    final maxActivityStreak = habitActivities.fold<int>(
+    final totalHabits = habitActivities.length;
+    final doneTodayCount = habitActivities.where((h) => store.habitStreakInfo(h.id).isDoneToday).length;
+    final maxStreak = habitActivities.fold<int>(
       0,
       (prev, h) => max(prev, store.habitStreakInfo(h.id).longestStreak),
     );
-    final maxGoalStreak = habitGoals.fold<int>(
-      0,
-      (prev, g) => max(prev, store.goalStreakInfo(g).longestStreak),
-    );
-    final maxStreak = max(maxActivityStreak, maxGoalStreak);
 
     return ListView(
       padding: const EdgeInsets.fromLTRB(16, 4, 16, 80),
@@ -1260,290 +1077,10 @@ class _GoalsPageState extends State<GoalsPage> {
             ),
           ),
         ),
-        const SizedBox(height: 10),
-
-        // Filter Chips (All, Goals, Activities)
-        SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: [
-              FilterChip(
-                label: Text('${s.allHabits} ($totalHabits)'),
-                selected: _habitFilter == 'all',
-                onSelected: (_) => setState(() => _habitFilter = 'all'),
-              ),
-              if (habitGoals.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                FilterChip(
-                  label: Text('${s.habitGoalsTitle} (${habitGoals.length})'),
-                  selected: _habitFilter == 'goals',
-                  onSelected: (_) => setState(() => _habitFilter = 'goals'),
-                ),
-              ],
-              if (habitActivities.isNotEmpty) ...[
-                const SizedBox(width: 8),
-                FilterChip(
-                  label: Text('${s.habitActivitiesTitle} (${habitActivities.length})'),
-                  selected: _habitFilter == 'activities',
-                  onSelected: (_) => setState(() => _habitFilter = 'activities'),
-                ),
-              ],
-            ],
-          ),
-        ),
         const SizedBox(height: 12),
-
-        // Habit Goal Cards
-        if (_habitFilter == 'all' || _habitFilter == 'goals') ...[
-          for (final goal in habitGoals) ...[
-            _buildGoalHabitCard(context, goal),
-          ],
-        ],
-
-        // Habit Activity Cards
-        if (_habitFilter == 'all' || _habitFilter == 'activities') ...[
-          for (final habit in habitActivities) ...[
-            _buildHabitCard(context, habit),
-          ],
-        ],
+        for (final habit in habitActivities)
+          _buildHabitCard(context, habit),
       ],
-    );
-  }
-
-  Widget _buildGoalHabitCard(BuildContext context, Goal goal) {
-    final s = strings.value;
-    final scheme = Theme.of(context).colorScheme;
-    final streakInfo = store.goalStreakInfo(goal);
-    final status = store.goalStatus(goal);
-    final unitSym = store.goalUnitSymbol(goal);
-    final isSuccessToday = streakInfo.isDoneToday;
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 14),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(20),
-        side: BorderSide(
-          color: isSuccessToday
-              ? Colors.green.withValues(alpha: 0.45)
-              : scheme.outlineVariant.withValues(alpha: 0.35),
-          width: isSuccessToday ? 1.5 : 1,
-        ),
-      ),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            // Top Row: Avatar, Title, Goal Type Badge, Today Status, Menu
-            Row(
-              children: [
-                CircleAvatar(
-                  radius: 20,
-                  backgroundColor: goal.isLimit
-                      ? Colors.orange.withValues(alpha: 0.2)
-                      : scheme.primary.withValues(alpha: 0.15),
-                  child: Text(
-                    goal.isLimit ? '🛡️' : '🎯',
-                    style: const TextStyle(fontSize: 20),
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              goal.name,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: goal.isLimit
-                                  ? Colors.orange.withValues(alpha: 0.15)
-                                  : scheme.primary.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              goal.isLimit
-                                  ? '🛡️ Limit (${fmtNum(goal.target)} $unitSym)'
-                                  : '🎯 Hedef (${fmtNum(goal.target)} $unitSym)',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                                color: goal.isLimit ? Colors.orange.shade900 : scheme.primary,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 3),
-                      Text(
-                        goal.isLimit
-                            ? (status.isExceeded
-                                ? (s.isTr
-                                    ? '⚠️ Bugün limit aşıldı (+${fmtNum(status.value - goal.target)} $unitSym)'
-                                    : '⚠️ Limit exceeded (+${fmtNum(status.value - goal.target)} $unitSym)')
-                                : (s.isTr
-                                    ? '✓ Bugün limit dahilinde (${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym)'
-                                    : '✓ Within limit (${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym)'))
-                            : (status.done
-                                ? (s.isTr
-                                    ? '✓ Bugün tamamlandı (${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym)'
-                                    : '✓ Completed today (${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym)')
-                                : (s.isTr
-                                    ? '⏳ Bugün: ${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym (%${(status.ratio * 100).round()})'
-                                    : '⏳ Today: ${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym (%${(status.ratio * 100).round()})')),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: isSuccessToday
-                              ? Colors.green.shade700
-                              : (goal.isLimit ? Colors.red.shade700 : Colors.orange.shade800),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                PopupMenuButton<String>(
-                  icon: const Icon(Icons.more_vert, size: 20),
-                  itemBuilder: (c) => [
-                    PopupMenuItem(
-                      value: 'edit',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.edit_outlined, size: 18),
-                          const SizedBox(width: 8),
-                          Text(s.edit),
-                        ],
-                      ),
-                    ),
-                    PopupMenuItem(
-                      value: 'remove_habit',
-                      child: Row(
-                        children: [
-                          const Icon(Icons.close_rounded, size: 18, color: Colors.red),
-                          const SizedBox(width: 8),
-                          Text(
-                            s.removeFromHabits,
-                            style: const TextStyle(color: Colors.red),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                  onSelected: (val) {
-                    if (val == 'edit') {
-                      _showGoalEditDialog(context, existing: goal);
-                    } else if (val == 'remove_habit') {
-                      store.setGoalHabit(goal.id, false);
-                    }
-                  },
-                ),
-              ],
-            ),
-
-            // Linked activities row
-            if (goal.links.isNotEmpty) ...[
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  for (final link in goal.links) ...[
-                    Builder(builder: (c) {
-                      final act = store.activity(link.activityId);
-                      return Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                        decoration: BoxDecoration(
-                          color: act.displayColor.withValues(alpha: 0.1),
-                          borderRadius: BorderRadius.circular(6),
-                          border: Border.all(color: act.displayColor.withValues(alpha: 0.25), width: 0.7),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(act.emoji ?? '🔹', style: const TextStyle(fontSize: 11)),
-                            const SizedBox(width: 4),
-                            Text(
-                              act.name,
-                              style: TextStyle(
-                                fontSize: 11,
-                                fontWeight: FontWeight.w600,
-                                color: act.displayColor,
-                              ),
-                            ),
-                            if (link.pct != 100) ...[
-                              const SizedBox(width: 2),
-                              Text(
-                                ' (%${fmtNum(link.pct)})',
-                                style: TextStyle(fontSize: 9.5, color: scheme.onSurfaceVariant),
-                              ),
-                            ],
-                          ],
-                        ),
-                      );
-                    }),
-                  ],
-                ],
-              ),
-            ],
-            const SizedBox(height: 12),
-
-            // Streak Badges Row (3 KPI cards)
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStreakBadge(
-                    icon: '🔥',
-                    title: s.currentStreak,
-                    value: '${streakInfo.currentStreak} ${s.isTr ? "Gün" : "Days"}',
-                    color: Colors.orange,
-                    isHighlighted: streakInfo.currentStreak > 0,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStreakBadge(
-                    icon: '🏆',
-                    title: s.longestStreak,
-                    value: '${streakInfo.longestStreak} ${s.isTr ? "Gün" : "Days"}',
-                    color: Colors.amber,
-                    isHighlighted: streakInfo.longestStreak > 0,
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStreakBadge(
-                    icon: '📈',
-                    title: s.consistency30,
-                    value: '%${streakInfo.consistencyLast30.round()}',
-                    color: Colors.blue,
-                    isHighlighted: streakInfo.consistencyLast30 > 0,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-
-            // GitHub Contributions Heatmap for Goal
-            ContributionHeatmap(
-              dailyCounts: streakInfo.dailyCounts,
-              dailyLevels: streakInfo.dailyLevels,
-              dailyTooltips: streakInfo.dailyTooltips,
-              baseColor: goal.isLimit ? const Color(0xFF10B981) : const Color(0xFF3B82F6),
-              weekCount: 20,
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1841,209 +1378,22 @@ class _GoalsPageState extends State<GoalsPage> {
 
   Future<void> _pickAndAddHabit(BuildContext context) async {
     final s = strings.value;
-    final nonHabitGoals = store.goals.where((g) => !g.isHabit).toList();
-    final nonHabitActivities = store.activities.values.where((a) => !a.isHabit && !a.isArchived).toList();
-
-    await showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (ctx) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.6,
-          maxChildSize: 0.85,
-          minChildSize: 0.4,
-          builder: (context, scrollController) {
-            return DefaultTabController(
-              length: 2,
-              child: Column(
-                children: [
-                  const SizedBox(height: 8),
-                  Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Theme.of(context).colorScheme.outlineVariant,
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                  TabBar(
-                    tabs: [
-                      Tab(text: '${s.habitGoalsTitle} (${nonHabitGoals.length})'),
-                      Tab(text: '${s.habitActivitiesTitle} (${nonHabitActivities.length})'),
-                    ],
-                  ),
-                  Expanded(
-                    child: TabBarView(
-                      children: [
-                        // Goals Tab
-                        nonHabitGoals.isEmpty
-                            ? Center(
-                                child: Text(
-                                  s.isTr ? 'Eklenebilecek hedef bulunmuyor.' : 'No goals available to add.',
-                                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                ),
-                              )
-                            : ListView.builder(
-                                controller: scrollController,
-                                itemCount: nonHabitGoals.length,
-                                itemBuilder: (c, i) {
-                                  final g = nonHabitGoals[i];
-                                  return ListTile(
-                                    leading: Text(g.isLimit ? '🛡️' : '🎯', style: const TextStyle(fontSize: 24)),
-                                    title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                    subtitle: Text(
-                                      '${g.isLimit ? (s.isTr ? "Limit" : "Limit") : (s.isTr ? "Hedef" : "Goal")} • ${fmtNum(g.target)} ${store.goalUnitSymbol(g)}',
-                                    ),
-                                    trailing: const Icon(Icons.add_circle_outline, color: Colors.orange),
-                                    onTap: () async {
-                                      Navigator.pop(ctx);
-                                      await store.setGoalHabit(g.id, true);
-                                    },
-                                  );
-                                },
-                              ),
-                        // Activities Tab
-                        nonHabitActivities.isEmpty
-                            ? Center(
-                                child: Text(
-                                  s.isTr ? 'Eklenebilecek aktivite bulunmuyor.' : 'No activities available.',
-                                  style: TextStyle(color: Theme.of(context).colorScheme.onSurfaceVariant),
-                                ),
-                              )
-                            : ListView.builder(
-                                controller: scrollController,
-                                itemCount: nonHabitActivities.length,
-                                itemBuilder: (c, i) {
-                                  final a = nonHabitActivities[i];
-                                  return ListTile(
-                                    leading: ActivityAvatar(a.id, size: 36),
-                                    title: Text(a.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                                    subtitle: Text(a.categoryDef.name(s.isTr)),
-                                    trailing: const Icon(Icons.add_circle_outline, color: Colors.green),
-                                    onTap: () async {
-                                      Navigator.pop(ctx);
-                                      await store.setActivityHabit(a.id, true);
-                                    },
-                                  );
-                                },
-                              ),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+    final picked = await showActivityPicker(
+      context,
+      title: s.isTr ? 'Alışkanlık Yapılacak Aktiviteyi Seç' : 'Select Activity as Habit',
+      exclude: store.habitActivities.map((a) => a.id).toSet(),
     );
-  }
-
-  Future<void> _showSelectActivitiesForHabitDialog(
-    BuildContext context,
-    Goal goal,
-    List<Activity> activities,
-  ) async {
-    final s = strings.value;
-    final selectedIds = <int>{...activities.map((a) => a.id)};
-
-    final confirmed = await showDialog<bool>(
-      context: context,
-      builder: (ctx) {
-        return StatefulBuilder(
-          builder: (context, setDialogState) {
-            return AlertDialog(
-              title: Row(
-                children: [
-                  const Text('🔥', style: TextStyle(fontSize: 20)),
-                  const SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                      s.isTr ? 'Zinciri Kırma\'ya Ekle' : 'Add to Habits',
-                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                    ),
-                  ),
-                ],
-              ),
-              content: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    s.isTr
-                        ? '"${goal.name}" hedefine bağlı aktiviteler:'
-                        : 'Activities linked to "${goal.name}":',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  ...activities.map((act) {
-                    final isChecked = selectedIds.contains(act.id);
-                    return CheckboxListTile(
-                      dense: true,
-                      contentPadding: EdgeInsets.zero,
-                      value: isChecked,
-                      title: Row(
-                        children: [
-                          ActivityAvatar(act.id, size: 24),
-                          const SizedBox(width: 8),
-                          Expanded(child: Text(act.name)),
-                        ],
-                      ),
-                      onChanged: (val) {
-                        setDialogState(() {
-                          if (val == true) {
-                            selectedIds.add(act.id);
-                          } else {
-                            selectedIds.remove(act.id);
-                          }
-                        });
-                      },
-                    );
-                  }),
-                ],
-              ),
-              actions: [
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx, false),
-                  child: Text(s.cancel),
-                ),
-                FilledButton(
-                  onPressed: selectedIds.isEmpty ? null : () => Navigator.pop(ctx, true),
-                  child: Text(s.isTr ? 'Ekle (${selectedIds.length})' : 'Add (${selectedIds.length})'),
-                ),
-              ],
-            );
-          },
-        );
-      },
-    );
-
-    if (confirmed == true && selectedIds.isNotEmpty) {
-      for (final id in selectedIds) {
-        await store.setActivityHabit(id, true);
-      }
+    if (picked != null) {
+      await store.setActivityHabit(picked.id, true);
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
               s.isTr
-                  ? '🔥 Seçilen aktiviteler Zinciri Kırma\'ya eklendi!'
-                  : '🔥 Selected activities added to Habits!',
+                  ? '"${picked.name}" artık bir alışkanlık! Zinciri kırma 🔥'
+                  : '"${picked.name}" is now a habit! Keep the streak 🔥',
             ),
             behavior: SnackBarBehavior.floating,
-            action: SnackBarAction(
-              label: s.isTr ? 'Görüntüle' : 'View',
-              onPressed: () {
-                setState(() => _currentTab = GoalsPageTab.habits);
-              },
-            ),
           ),
         );
       }
