@@ -106,12 +106,12 @@ class TodayTimeline extends StatelessWidget {
     return GridView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        crossAxisSpacing: 8,
-        mainAxisSpacing: 6,
-        childAspectRatio: 2.85,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 8,
+        childAspectRatio: 2.25,
       ),
       itemCount: entries.length,
       itemBuilder: (context, i) {
@@ -130,20 +130,24 @@ class TodayTimeline extends StatelessWidget {
               ? Colors.green.withValues(alpha: 0.08)
               : scheme.surfaceContainerLow,
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
+            borderRadius: BorderRadius.circular(16),
             side: activeTimer != null
                 ? BorderSide(color: Colors.green.shade600, width: 1.5)
-                : BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.25)),
+                : BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
           ),
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () => _showEntryEditSheet(context, entry),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  ActivityAvatar(act.id, size: 28),
-                  const SizedBox(width: 8),
+                  // 1. Sol: Büyük ve net ikon (yuvarlak disk olmadan)
+                  ActivityAvatar(act.id, size: 38),
+                  const SizedBox(width: 10),
+
+                  // 2. Sağ taraf: Başlık ve alt satırda Detay + Saat
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -151,12 +155,13 @@ class TodayTimeline extends StatelessWidget {
                       children: [
                         Row(
                           children: [
-                            Flexible(
+                            Expanded(
                               child: Text(
                                 act.name,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 12.5,
+                                  fontSize: 13.5,
+                                  letterSpacing: -0.2,
                                 ),
                                 maxLines: 1,
                                 overflow: TextOverflow.ellipsis,
@@ -168,58 +173,64 @@ class TodayTimeline extends StatelessWidget {
                             ],
                           ],
                         ),
-                        const SizedBox(height: 1),
-                        Text(
-                          detail.isNotEmpty
-                              ? detail
-                              : (act.category != null
-                                  ? '${act.categoryDef.emoji} ${act.categoryDef.name(s.isTr)}'
-                                  : timeStr),
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: scheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
-                          ),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        const SizedBox(height: 3),
+                        Row(
+                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                          children: [
+                            Flexible(
+                              child: Text(
+                                detail.isNotEmpty
+                                    ? detail
+                                    : (act.category != null
+                                        ? '${act.categoryDef.emoji} ${act.categoryDef.name(s.isTr)}'
+                                        : ''),
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  color: scheme.onSurfaceVariant,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            const SizedBox(width: 4),
+                            if (activeTimer != null)
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 1.5),
+                                decoration: BoxDecoration(
+                                  color: Colors.green.withValues(alpha: 0.15),
+                                  borderRadius: BorderRadius.circular(5),
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    const Icon(Icons.timer_outlined, size: 10, color: Colors.green),
+                                    const SizedBox(width: 2),
+                                    Text(
+                                      activeTimer.displayDuration,
+                                      style: const TextStyle(
+                                        fontSize: 9.5,
+                                        color: Colors.green,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              )
+                            else
+                              Text(
+                                timeStr,
+                                style: TextStyle(
+                                  fontSize: 10.5,
+                                  fontWeight: FontWeight.w600,
+                                  color: scheme.primary.withValues(alpha: 0.85),
+                                ),
+                              ),
+                          ],
                         ),
                       ],
                     ),
                   ),
-                  const SizedBox(width: 4),
-                  if (activeTimer != null) ...[
-                    Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 5, vertical: 2),
-                      decoration: BoxDecoration(
-                        color: Colors.green.withValues(alpha: 0.15),
-                        borderRadius: BorderRadius.circular(6),
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [
-                          const Icon(Icons.timer_outlined, size: 10, color: Colors.green),
-                          const SizedBox(width: 2),
-                          Text(
-                            activeTimer.displayDuration,
-                            style: const TextStyle(
-                              fontSize: 9.5,
-                              color: Colors.green,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ] else ...[
-                    Text(
-                      timeStr,
-                      style: TextStyle(
-                        fontSize: 10.5,
-                        fontWeight: FontWeight.w600,
-                        color: scheme.primary.withValues(alpha: 0.85),
-                      ),
-                    ),
-                  ],
                 ],
               ),
             ),
@@ -243,108 +254,180 @@ class TodayTimeline extends StatelessWidget {
         final detail = store.entryDetail(entry);
         final timeStr = entry.endTs != null
             ? (entry.duration != null && entry.duration!.inMinutes > 0
-                ? '${fmtTime(entry.time)}–${fmtTime(entry.endTime!)} (${fmtAmount(entry.duration!.inMinutes.toDouble(), 'time')})'
+                ? '${fmtTime(entry.time)}–${fmtTime(entry.endTime!)}'
                 : '${fmtTime(entry.time)}–${fmtTime(entry.endTime!)}')
             : fmtTime(entry.time);
+        final activeTimer = store.getTimerForActivity(act.id);
 
         return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
           elevation: 0,
-          color: scheme.surfaceContainerLow,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: ListTile(
-            contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
-            leading: ActivityAvatar(act.id, size: 42),
-            title: Row(
-              children: [
-                Expanded(
-                  child: Row(
+          color: activeTimer != null
+              ? Colors.green.withValues(alpha: 0.08)
+              : scheme.surfaceContainerLow,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: activeTimer != null
+                ? BorderSide(color: Colors.green.shade600, width: 1.5)
+                : BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          clipBehavior: Clip.antiAlias,
+          child: InkWell(
+            onTap: () => _showEntryEditSheet(context, entry),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.center,
+                children: [
+                  // 1. Sol: Büyük ve net ikon (yuvarlak disk olmadan)
+                  ActivityAvatar(act.id, size: 44),
+                  const SizedBox(width: 14),
+
+                  // 2. Orta: Bilgiler (Hiyerarşik ve şık)
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Row(
+                          children: [
+                            Flexible(
+                              child: Text(
+                                act.name,
+                                style: const TextStyle(
+                                  fontWeight: FontWeight.w600,
+                                  fontSize: 16,
+                                  letterSpacing: -0.2,
+                                ),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                            if (act.category != null) ...[
+                              const SizedBox(width: 8),
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                                decoration: BoxDecoration(
+                                  color: act.displayColor.withValues(alpha: 0.14),
+                                  borderRadius: BorderRadius.circular(6),
+                                ),
+                                child: Text(
+                                  '${act.categoryDef.emoji} ${act.categoryDef.name(s.isTr)}',
+                                  style: TextStyle(
+                                    fontSize: 10.5,
+                                    fontWeight: FontWeight.w600,
+                                    color: act.displayColor,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ],
+                        ),
+                        if (activeTimer != null || detail.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              if (activeTimer != null) ...[
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.withValues(alpha: 0.15),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Icon(Icons.timer_outlined, size: 12, color: Colors.green),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        '${s.isTr ? "Sayaç çalışıyor" : "Timer running"} (${activeTimer.displayDuration})',
+                                        style: const TextStyle(
+                                          fontSize: 11,
+                                          color: Colors.green,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (detail.isNotEmpty) const SizedBox(width: 8),
+                              ],
+                              if (detail.isNotEmpty)
+                                Flexible(
+                                  child: Text(
+                                    detail,
+                                    style: TextStyle(
+                                      color: scheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w500,
+                                      fontSize: 13,
+                                    ),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ],
+                        if (entry.note != null && entry.note!.isNotEmpty) ...[
+                          const SizedBox(height: 3),
+                          Row(
+                            children: [
+                              Icon(Icons.notes, size: 12, color: scheme.onSurfaceVariant.withValues(alpha: 0.8)),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  entry.note!,
+                                  style: TextStyle(
+                                    fontStyle: FontStyle.italic,
+                                    color: scheme.onSurfaceVariant,
+                                    fontSize: 12,
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
+                      ],
+                    ),
+                  ),
+                  const SizedBox(width: 10),
+
+                  // 3. Sağ: Şık Saat Rozeti ve Süre
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    mainAxisSize: MainAxisSize.min,
                     children: [
-                      Flexible(
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                         child: Text(
-                          act.name,
-                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 16),
-                          overflow: TextOverflow.ellipsis,
+                          timeStr,
+                          style: TextStyle(
+                            fontSize: 12.5,
+                            color: scheme.primary,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
-                      if (act.category != null) ...[
-                        const SizedBox(width: 6),
-                        Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 1.5),
-                          decoration: BoxDecoration(
-                            color: act.displayColor.withValues(alpha: 0.15),
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Text(
-                            '${act.categoryDef.emoji} ${act.categoryDef.name(s.isTr)}',
-                            style: TextStyle(
-                              fontSize: 10,
-                              fontWeight: FontWeight.bold,
-                              color: act.displayColor,
-                            ),
+                      if (entry.duration != null && entry.duration!.inMinutes > 0) ...[
+                        const SizedBox(height: 3),
+                        Text(
+                          fmtAmount(entry.duration!.inMinutes.toDouble(), 'time'),
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: scheme.onSurfaceVariant,
+                            fontWeight: FontWeight.w500,
                           ),
                         ),
                       ],
                     ],
                   ),
-                ),
-                Text(
-                  timeStr,
-                  style: TextStyle(
-                    fontSize: 13,
-                    color: scheme.primary,
-                    fontWeight: FontWeight.bold,
-                  ),
-                ),
-              ],
-            ),
-            subtitle: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                if (store.getTimerForActivity(act.id) != null) ...[
-                  const SizedBox(height: 3),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: Colors.green.withValues(alpha: 0.15),
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        const Icon(Icons.timer_outlined, size: 12, color: Colors.green),
-                        const SizedBox(width: 4),
-                        Text(
-                          '${s.isTr ? "Sayaç çalışıyor" : "Timer running"} (${store.getTimerForActivity(act.id)!.displayDuration})',
-                          style: const TextStyle(fontSize: 11, color: Colors.green, fontWeight: FontWeight.bold),
-                        ),
-                      ],
-                    ),
-                  ),
                 ],
-                if (detail.isNotEmpty)
-                  Padding(
-                    padding: const EdgeInsets.only(top: 2),
-                    child: Text(
-                      detail,
-                      style: TextStyle(
-                        color: scheme.onSurfaceVariant,
-                        fontWeight: FontWeight.w500,
-                      ),
-                    ),
-                  ),
-                if (entry.note != null)
-                  Text(
-                    entry.note!,
-                    style: TextStyle(
-                      fontStyle: FontStyle.italic,
-                      color: scheme.onSurfaceVariant,
-                      fontSize: 12,
-                    ),
-                  ),
-              ],
+              ),
             ),
-            onTap: () => _showEntryEditSheet(context, entry),
           ),
         );
       },

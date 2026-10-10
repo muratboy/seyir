@@ -16,21 +16,46 @@ class ActivityAvatar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final a = store.activity(activityId);
+    final rawEmoji = (a.emoji != null && a.emoji!.trim().isNotEmpty)
+        ? a.emoji!.trim()
+        : (a.category != null ? a.categoryDef.emoji : null);
+
+    if (rawEmoji != null && rawEmoji.isNotEmpty) {
+      // İkon/emoji varken yuvarlak disk görünmesin, ikon büyük ve şık olsun
+      return SizedBox(
+        width: size,
+        height: size,
+        child: Center(
+          child: Text(
+            rawEmoji,
+            style: TextStyle(
+              fontSize: size * 0.85,
+              height: 1.1,
+            ),
+          ),
+        ),
+      );
+    }
+
+    // İkon yoksa: Şık, yumuşak yuvarlatılmış modern squircle monogram
     final hue = (a.norm.hashCode % 360).abs().toDouble();
     final dark = Theme.of(context).brightness == Brightness.dark;
     final bg = HSLColor.fromAHSL(1, hue, 0.55, dark ? 0.28 : 0.86).toColor();
     final fg = HSLColor.fromAHSL(1, hue, 0.6, dark ? 0.85 : 0.28).toColor();
-    final hasEmoji = a.emoji != null && a.emoji!.isNotEmpty;
     final letter = a.name.isEmpty ? '?' : trUpper(a.name.substring(0, 1));
+
     return Container(
       width: size,
       height: size,
       alignment: Alignment.center,
-      decoration: BoxDecoration(color: bg, shape: BoxShape.circle),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(size * 0.30),
+      ),
       child: Text(
-        hasEmoji ? a.emoji! : letter,
+        letter,
         style: TextStyle(
-          fontSize: size * (hasEmoji ? 0.5 : 0.42),
+          fontSize: size * 0.46,
           fontWeight: FontWeight.w700,
           color: fg,
         ),

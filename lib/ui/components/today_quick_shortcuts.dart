@@ -98,8 +98,13 @@ class TodayQuickShortcuts extends StatelessWidget {
                             color: done ? scheme.primary : scheme.onSurfaceVariant,
                           )
                         else
-                          Text(act.emoji ?? '⚡', style: const TextStyle(fontSize: 16)),
-                        const SizedBox(width: 6),
+                          Text(
+                            (act.emoji != null && act.emoji!.trim().isNotEmpty)
+                                ? act.emoji!.trim()
+                                : (act.category != null ? act.categoryDef.emoji : '⚡'),
+                            style: const TextStyle(fontSize: 18),
+                          ),
+                        const SizedBox(width: 8),
                         Text(
                           act.name,
                           style: TextStyle(
