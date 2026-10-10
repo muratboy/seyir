@@ -728,6 +728,8 @@ class AppStore extends ChangeNotifier {
     int? measureId,
     double qty = 1,
     String? note,
+    DateTime? endAt,
+    int? endTs,
   }) async {
     final m = measureById(measureId);
     if (m != null) {
@@ -752,6 +754,14 @@ class AppStore extends ChangeNotifier {
       entries.remove(e);
       e.ts = newTs;
       _insertSorted(e);
+    }
+    if (endTs != null) {
+      e.endTs = endTs;
+    } else if (endAt != null) {
+      e.endTs = endAt.millisecondsSinceEpoch;
+    } else if ((e.unitId == 'dk' || e.unitId == 'sa') && e.value != null && e.value! > 0) {
+      final durationMins = (e.value! * (e.unitId == 'sa' ? 60 : 1)).round();
+      e.endTs = time.add(Duration(minutes: durationMins)).millisecondsSinceEpoch;
     }
     await (await db).update('entries', e.toMap(), where: 'id=?', whereArgs: [e.id]);
     _changed();

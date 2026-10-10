@@ -138,6 +138,7 @@ class TodayTimeline extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () => _showEntryEditSheet(context, entry),
+            onLongPress: () => showActivityEditDialog(context, act),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
               child: Row(
@@ -274,6 +275,7 @@ class TodayTimeline extends StatelessWidget {
           clipBehavior: Clip.antiAlias,
           child: InkWell(
             onTap: () => _showEntryEditSheet(context, entry),
+            onLongPress: () => showActivityEditDialog(context, act),
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
               child: Row(
@@ -459,27 +461,95 @@ class TodayTimeline extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.stretch,
               mainAxisSize: MainAxisSize.min,
               children: [
+                // 1. Üst Başlık ve Avatar / İkon Değiştirme
                 Row(
                   children: [
-                    ActivityAvatar(act.id, size: 44),
+                    Tooltip(
+                      message: s.isTr ? 'İkonu / Emojiyi Değiştir' : 'Change Emoji',
+                      child: InkWell(
+                        borderRadius: BorderRadius.circular(24),
+                        onTap: () async {
+                          final chosen = await showEmojiPicker(context, currentEmoji: act.emoji);
+                          if (chosen != null) {
+                            act.emoji = chosen.trim().isEmpty ? null : chosen.trim();
+                            await store.updateActivity(act);
+                            setS(() {});
+                          }
+                        },
+                        child: Stack(
+                          clipBehavior: Clip.none,
+                          children: [
+                            ActivityAvatar(act.id, size: 48),
+                            Positioned(
+                              right: -2,
+                              bottom: -2,
+                              child: Container(
+                                padding: const EdgeInsets.all(2.5),
+                                decoration: BoxDecoration(
+                                  color: Theme.of(c).colorScheme.primaryContainer,
+                                  shape: BoxShape.circle,
+                                  border: Border.all(
+                                    color: Theme.of(c).colorScheme.surface,
+                                    width: 1.5,
+                                  ),
+                                ),
+                                child: Icon(
+                                  Icons.edit,
+                                  size: 11,
+                                  color: Theme.of(c).colorScheme.primary,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                     const SizedBox(width: 12),
                     Expanded(
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            act.name,
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          Row(
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  act.name,
+                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
+                                icon: const Icon(Icons.edit_outlined, size: 18),
+                                tooltip: s.isTr ? 'Aktiviteyi Düzenle (İsim, Kategori, İkon)' : 'Edit Activity',
+                                onPressed: () async {
+                                  await showActivityEditDialog(context, act);
+                                  setS(() {});
+                                },
+                              ),
+                            ],
                           ),
-                          Text(
-                            e.endTs != null
-                                ? '${s.isTr ? "Süre Aralığı" : "Interval"}: ${fmtTime(entryTime)}–${fmtTime(e.endTime!)} (${fmtDateShort(entryTime)})'
-                                : '${s.isTr ? "Eklenme" : "Logged"}: ${fmtTime(entryTime)} - ${fmtDateShort(entryTime)}',
-                            style: TextStyle(
-                              fontSize: 12,
-                              color: Theme.of(c).colorScheme.onSurfaceVariant,
-                            ),
-                          ),
+                          Builder(builder: (ctx) {
+                            final currentM = store.measureById(measureId);
+                            int durMins = 0;
+                            if (currentM != null && (currentM.unitId == 'dk' || currentM.unitId == 'sa')) {
+                              durMins = (currentM.amount * qty * (currentM.unitId == 'sa' ? 60 : 1)).round();
+                            } else if (e.duration != null && e.duration!.inMinutes > 0) {
+                              durMins = e.duration!.inMinutes;
+                            }
+                            final cEnd = entryTime.add(Duration(minutes: durMins));
+                            return Text(
+                              durMins > 0
+                                  ? '${s.isTr ? "Süre Aralığı" : "Interval"}: ${fmtTime(entryTime)}–${fmtTime(cEnd)} (${fmtDateShort(entryTime)})'
+                                  : '${s.isTr ? "Eklenme" : "Logged"}: ${fmtTime(entryTime)} - ${fmtDateShort(entryTime)}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Theme.of(c).colorScheme.onSurfaceVariant,
+                              ),
+                            );
+                          }),
                         ],
                       ),
                     ),
@@ -493,7 +563,7 @@ class TodayTimeline extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.access_time),
-                      tooltip: s.isTr ? 'Saati değiştir' : 'Change time',
+                      tooltip: s.isTr ? 'Başlangıç saatini değiştir' : 'Change time',
                       onPressed: () async {
                         final t = await showTimePicker(
                           context: c,
@@ -514,6 +584,55 @@ class TodayTimeline extends StatelessWidget {
                     ),
                   ],
                 ),
+                Builder(builder: (ctx) {
+                  final currentM = store.measureById(measureId);
+                  int durMins = 0;
+                  if (currentM != null && (currentM.unitId == 'dk' || currentM.unitId == 'sa')) {
+                    durMins = (currentM.amount * qty * (currentM.unitId == 'sa' ? 60 : 1)).round();
+                  } else if (e.duration != null && e.duration!.inMinutes > 0) {
+                    durMins = e.duration!.inMinutes;
+                  }
+                  if (durMins <= 0) return const SizedBox.shrink();
+                  final cEnd = entryTime.add(Duration(minutes: durMins));
+                  return Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      decoration: BoxDecoration(
+                        color: Theme.of(c).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.schedule, size: 16, color: Theme.of(c).colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              '${fmtTime(entryTime)}–${fmtTime(cEnd)} (${fmtAmount(durMins.toDouble(), 'time')})',
+                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          TextButton.icon(
+                            style: TextButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                            ),
+                            icon: const Icon(Icons.history, size: 14),
+                            label: Text(
+                              s.isTr ? '$durMins dk geriye al' : 'Shift back',
+                              style: const TextStyle(fontSize: 11.5),
+                            ),
+                            onPressed: () {
+                              setS(() {
+                                entryTime = entryTime.subtract(Duration(minutes: durMins));
+                              });
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
                 const SizedBox(height: 16),
                 Text(
                   s.selectMeasure,
@@ -633,6 +752,13 @@ class TodayTimeline extends StatelessWidget {
                     const Spacer(),
                     FilledButton(
                       onPressed: () async {
+                        final currentM = store.measureById(measureId);
+                        int durMins = 0;
+                        if (currentM != null && (currentM.unitId == 'dk' || currentM.unitId == 'sa')) {
+                          durMins = (currentM.amount * qty * (currentM.unitId == 'sa' ? 60 : 1)).round();
+                        } else if (e.duration != null && e.duration!.inMinutes > 0) {
+                          durMins = e.duration!.inMinutes;
+                        }
                         await store.updateEntry(
                           e,
                           activityId: e.activityId,
@@ -640,6 +766,7 @@ class TodayTimeline extends StatelessWidget {
                           measureId: measureId,
                           qty: qty,
                           note: noteCtrl.text,
+                          endTs: durMins > 0 ? entryTime.add(Duration(minutes: durMins)).millisecondsSinceEpoch : null,
                         );
                         if (c.mounted) Navigator.pop(c);
                       },

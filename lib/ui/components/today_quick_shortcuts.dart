@@ -236,9 +236,68 @@ class TodayQuickShortcuts extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            Text(
-              act.name,
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Row(
+              children: [
+                Tooltip(
+                  message: s.isTr ? 'İkonu Değiştir' : 'Change Emoji',
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(24),
+                    onTap: () async {
+                      final chosen = await showEmojiPicker(context, currentEmoji: act.emoji);
+                      if (chosen != null) {
+                        act.emoji = chosen.trim().isEmpty ? null : chosen.trim();
+                        await store.updateActivity(act);
+                        if (c.mounted) Navigator.pop(c);
+                      }
+                    },
+                    child: Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        ActivityAvatar(act.id, size: 44),
+                        Positioned(
+                          right: -2,
+                          bottom: -2,
+                          child: Container(
+                            padding: const EdgeInsets.all(2.5),
+                            decoration: BoxDecoration(
+                              color: Theme.of(c).colorScheme.primaryContainer,
+                              shape: BoxShape.circle,
+                              border: Border.all(
+                                color: Theme.of(c).colorScheme.surface,
+                                width: 1.5,
+                              ),
+                            ),
+                            child: Icon(
+                              Icons.edit,
+                              size: 10,
+                              color: Theme.of(c).colorScheme.primary,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        act.name,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      Text(
+                        s.isTr ? 'İkonu değiştirmek için dokunun' : 'Tap icon to change emoji',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Theme.of(c).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
             ),
             const SizedBox(height: 12),
             ListTile(
@@ -251,7 +310,7 @@ class TodayQuickShortcuts extends StatelessWidget {
             ),
             ListTile(
               leading: const Icon(Icons.edit_outlined),
-              title: Text(s.edit),
+              title: Text(s.isTr ? 'Aktiviteyi & İkonu Düzenle' : 'Edit Activity & Icon'),
               onTap: () {
                 Navigator.pop(c);
                 showActivityEditDialog(context, act);
