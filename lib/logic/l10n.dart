@@ -200,6 +200,19 @@ class AppStrings {
   String get sectionNotificationsReminders => isTr ? 'Akıllı Hatırlatıcılar & Bildirimler' : 'Smart Reminders & Notifications';
   String get sectionBackupReports => isTr ? 'Yedekleme & Raporlama' : 'Backup & Reports';
   String get sectionPrivacySecurity => isTr ? 'Gizlilik & Güvenlik' : 'Privacy & Security';
+  String get sectionHealthTracking => isTr ? 'Sağlık & Sensör Takibi' : 'Health & Sensor Tracking';
+  String get stepTrackerTitle => isTr ? 'Adım Sayar (Otomatik)' : 'Step Counter (Automatic)';
+  String get stepTrackerSubtitle => isTr ? 'Telefonun sensörüyle günlük adımlarını takip et' : 'Track daily steps with phone sensor';
+  String get stepDailyGoal => isTr ? 'Günlük Adım Hedefi' : 'Daily Step Goal';
+  String get steps => isTr ? 'adım' : 'steps';
+  String get sleepTrackerTitle => isTr ? 'Uyku Takibi' : 'Sleep Tracking';
+  String get sleepTrackerSubtitle => isTr ? 'Gece uykusu oturumu ve uyku süresi takibi' : 'Night sleep session and duration tracking';
+  String get sleepDailyGoal => isTr ? 'Günlük Uyku Hedefi' : 'Daily Sleep Goal';
+  String get sleepSessionActive => isTr ? 'Uyku Oturumu Aktif 😴' : 'Sleep Session Active 😴';
+  String get startSleepSession => isTr ? 'Uyumaya Başla 🌙' : 'Start Sleeping 🌙';
+  String get wakeUp => isTr ? 'Uyandım ☀️' : 'Wake Up ☀️';
+  String get logSleep => isTr ? 'Uyku Kaydet 🛌' : 'Log Sleep 🛌';
+  String get syncSteps => isTr ? 'Adımı Senkronize Et' : 'Sync Steps';
 }
 
 final strings = ValueNotifier<AppStrings>(const AppStrings(AppLanguage.tr));

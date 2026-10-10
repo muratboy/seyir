@@ -9,6 +9,7 @@ import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/text_match.dart';
 import '../services/backup_service.dart';
+import '../services/health_tracker_service.dart';
 import '../services/notification_service.dart';
 import 'db.dart';
 import 'models.dart';
@@ -131,6 +132,15 @@ class AppStore extends ChangeNotifier {
   String dailySummaryReminderTime = '21:30';
   bool timerSoundEnabled = true;
 
+  bool stepTrackerEnabled = false;
+  int stepDailyGoal = 10000;
+  int todaySteps = 0;
+  String? stepSensorError;
+
+  bool sleepTrackerEnabled = false;
+  double sleepDailyGoalHours = 8.0;
+  int? sleepSessionStartTs;
+
   Future<Database> get db async => _db ??= await AppDb.open();
 
   // ---------------------------------------------------------------- yükleme
@@ -172,6 +182,16 @@ class AppStore extends ChangeNotifier {
     dailySummaryReminderTime = settingsMap['reminder_daily_summary_time'] ?? '21:30';
     timerSoundEnabled = settingsMap['reminder_timer_sound'] != 'false';
 
+    stepTrackerEnabled = settingsMap['step_tracker_enabled'] == 'true';
+    stepDailyGoal = int.tryParse(settingsMap['step_daily_goal'] ?? '10000') ?? 10000;
+    final now = DateTime.now();
+    final todayKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    todaySteps = int.tryParse(settingsMap['step_today_$todayKey'] ?? '0') ?? 0;
+
+    sleepTrackerEnabled = settingsMap['sleep_tracker_enabled'] == 'true';
+    sleepDailyGoalHours = double.tryParse(settingsMap['sleep_daily_goal_hours'] ?? '8.0') ?? 8.0;
+    sleepSessionStartTs = int.tryParse(settingsMap['sleep_session_start_ts'] ?? '');
+
     customUnits = (await d.query('units')).map(Unit.fromMap).toList();
     measures = (await d.query('measures', orderBy: 'sort, id')).map(Measure.fromMap).toList();
     activities = {
@@ -208,6 +228,9 @@ class AppStore extends ChangeNotifier {
 
     loaded = true;
     _changed();
+    if (stepTrackerEnabled) {
+      HealthTrackerService.instance.startStepTracking(this);
+    }
     unawaited(BackupService.checkAndPerformDailyAutoBackup(this));
   }
 
@@ -268,6 +291,210 @@ class AppStore extends ChangeNotifier {
     await d.insert('settings', {'key': 'reminder_timer_sound', 'value': enabled.toString()},
         conflictAlgorithm: ConflictAlgorithm.replace);
     notifyListeners();
+  }
+
+  // ---------------------------------------------------------------- Sağlık & Sensör Takibi
+
+  Future<void> setStepTrackerEnabled(bool enabled) async {
+    stepTrackerEnabled = enabled;
+    final d = await db;
+    await d.insert('settings', {'key': 'step_tracker_enabled', 'value': enabled.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    if (enabled) {
+      HealthTrackerService.instance.startStepTracking(this);
+    } else {
+      HealthTrackerService.instance.stopStepTracking();
+    }
+    notifyListeners();
+  }
+
+  Future<void> setStepDailyGoal(int goal) async {
+    stepDailyGoal = goal;
+    final d = await db;
+    await d.insert('settings', {'key': 'step_daily_goal', 'value': goal.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    notifyListeners();
+  }
+
+  Future<void> handlePedometerStepEvent(int totalSteps) async {
+    final now = DateTime.now();
+    final todayKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    final d = await db;
+
+    final baselineRows = await d.query('settings', where: 'key = ?', whereArgs: ['step_baseline_$todayKey']);
+    int baseline;
+    if (baselineRows.isEmpty) {
+      baseline = totalSteps;
+      await d.insert('settings', {'key': 'step_baseline_$todayKey', 'value': baseline.toString()},
+          conflictAlgorithm: ConflictAlgorithm.replace);
+      todaySteps = 0;
+    } else {
+      baseline = int.tryParse(baselineRows.first['value'] as String? ?? '0') ?? totalSteps;
+      if (totalSteps >= baseline) {
+        todaySteps = totalSteps - baseline;
+      } else {
+        baseline = 0;
+        await d.insert('settings', {'key': 'step_baseline_$todayKey', 'value': '0'},
+            conflictAlgorithm: ConflictAlgorithm.replace);
+        todaySteps = totalSteps;
+      }
+    }
+
+    await d.insert('settings', {'key': 'step_today_$todayKey', 'value': todaySteps.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    stepSensorError = null;
+    notifyListeners();
+  }
+
+  void handlePedometerError(String error) {
+    stepSensorError = error;
+    notifyListeners();
+  }
+
+  Future<void> addManualSteps(int delta) async {
+    final now = DateTime.now();
+    final todayKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
+    todaySteps = (todaySteps + delta).clamp(0, 500000);
+    final d = await db;
+    await d.insert('settings', {'key': 'step_today_$todayKey', 'value': todaySteps.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    notifyListeners();
+  }
+
+  Future<Entry?> syncTodayStepsToEntry({int? steps}) async {
+    final count = steps ?? todaySteps;
+    if (count <= 0) return null;
+
+    Activity? act = activities.values.where((a) => a.name.toLowerCase() == 'adım').firstOrNull;
+    act ??= await addActivity('Adım', emoji: '👟', category: 'sport');
+
+    final now = DateTime.now();
+    final start = dayStart(now);
+    final end = dayEnd(now);
+
+    final existing = entries.where((e) =>
+        e.activityId == act!.id &&
+        e.time.isAfter(start) &&
+        e.time.isBefore(end)).firstOrNull;
+
+    if (existing != null) {
+      await updateEntry(
+        existing,
+        activityId: act.id,
+        time: existing.time,
+        qty: count.toDouble(),
+        value: count.toDouble(),
+        unitId: 'adet',
+      );
+      return existing;
+    } else {
+      final res = await addEntry(
+        act.id,
+        at: now,
+        qty: count.toDouble(),
+        value: count.toDouble(),
+        unitId: 'adet',
+      );
+      return res.entry;
+    }
+  }
+
+  Future<void> setSleepTrackerEnabled(bool enabled) async {
+    sleepTrackerEnabled = enabled;
+    final d = await db;
+    await d.insert('settings', {'key': 'sleep_tracker_enabled', 'value': enabled.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    notifyListeners();
+  }
+
+  Future<void> setSleepDailyGoalHours(double hours) async {
+    sleepDailyGoalHours = hours;
+    final d = await db;
+    await d.insert('settings', {'key': 'sleep_daily_goal_hours', 'value': hours.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    notifyListeners();
+  }
+
+  Future<void> startSleepSession({DateTime? at}) async {
+    final startTime = at ?? DateTime.now();
+    sleepSessionStartTs = startTime.millisecondsSinceEpoch;
+    final d = await db;
+    await d.insert('settings', {'key': 'sleep_session_start_ts', 'value': sleepSessionStartTs.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    notifyListeners();
+  }
+
+  Future<Entry?> stopSleepSession({DateTime? at, String? note}) async {
+    if (sleepSessionStartTs == null) return null;
+    final start = DateTime.fromMillisecondsSinceEpoch(sleepSessionStartTs!);
+    final end = at ?? DateTime.now();
+    final diffMins = end.difference(start).inMinutes;
+    final mins = diffMins > 0 ? diffMins : 1;
+    final hours = (mins / 60.0);
+
+    Activity? act = activities.values.where((a) => a.name.toLowerCase() == 'uyku').firstOrNull;
+    act ??= await addActivity('Uyku', emoji: '🛌', category: 'routine');
+
+    final m = measures.where((x) => x.unitId == 'sa').firstOrNull;
+
+    final res = await addEntry(
+      act.id,
+      measureId: m?.id,
+      qty: double.parse(hours.toStringAsFixed(2)),
+      at: start,
+      endAt: end,
+      note: note,
+    );
+
+    sleepSessionStartTs = null;
+    final d = await db;
+    await d.delete('settings', where: 'key = ?', whereArgs: ['sleep_session_start_ts']);
+    notifyListeners();
+    return res.entry;
+  }
+
+  Future<Entry> logManualSleep({required DateTime start, required DateTime end, String? note}) async {
+    final diffMins = end.difference(start).inMinutes;
+    final mins = diffMins > 0 ? diffMins : 1;
+    final hours = (mins / 60.0);
+
+    Activity? act = activities.values.where((a) => a.name.toLowerCase() == 'uyku').firstOrNull;
+    act ??= await addActivity('Uyku', emoji: '🛌', category: 'routine');
+
+    final m = measures.where((x) => x.unitId == 'sa').firstOrNull;
+
+    final res = await addEntry(
+      act.id,
+      measureId: m?.id,
+      qty: double.parse(hours.toStringAsFixed(2)),
+      at: start,
+      endAt: end,
+      note: note,
+    );
+    return res.entry;
+  }
+
+  double getTodaySleepHours(DateTime day) {
+    final start = dayStart(day);
+    final end = dayEnd(day);
+    final act = activities.values.where((a) => a.name.toLowerCase() == 'uyku').firstOrNull;
+    if (act == null) return 0.0;
+
+    double totalHours = 0.0;
+    for (final e in entries) {
+      if (e.activityId == act.id && e.time.isAfter(start) && e.time.isBefore(end)) {
+        if (e.duration != null && e.duration!.inMinutes > 0) {
+          totalHours += e.duration!.inMinutes / 60.0;
+        } else if (e.unitId == 'sa') {
+          totalHours += (e.value ?? e.qty);
+        } else if (e.unitId == 'dk') {
+          totalHours += (e.value ?? e.qty) / 60.0;
+        } else {
+          totalHours += e.qty;
+        }
+      }
+    }
+    return totalHours;
   }
 
   final Map<String, DaySummary> _daySummaryCache = {};
@@ -730,6 +957,8 @@ class AppStore extends ChangeNotifier {
     String? note,
     DateTime? endAt,
     int? endTs,
+    double? value,
+    String? unitId,
   }) async {
     final m = measureById(measureId);
     if (m != null) {
@@ -743,9 +972,9 @@ class AppStore extends ChangeNotifier {
       e.qty = qty;
     } else {
       e.measureId = null;
-      e.value = null;
-      e.unitId = null;
-      e.qty = 1;
+      e.value = value;
+      e.unitId = unitId;
+      e.qty = qty;
     }
     e.activityId = activityId;
     e.note = (note?.trim().isEmpty ?? true) ? null : note!.trim();

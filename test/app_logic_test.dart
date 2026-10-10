@@ -1034,7 +1034,67 @@ void main() {
       expect(enStrings.timesSuffix, equals('times'));
     });
   });
+
+  group('Health Tracking (Adım & Uyku) Tests', () {
+    test('Step tracker properties and manual increment work correctly', () {
+      final store = AppStore();
+      expect(store.stepTrackerEnabled, isFalse);
+      expect(store.stepDailyGoal, equals(10000));
+      expect(store.todaySteps, equals(0));
+
+      store.todaySteps = 2500;
+      expect(store.todaySteps, equals(2500));
+    });
+
+    test('Sleep tracker calculates today sleep hours correctly', () {
+      final store = AppStore();
+      expect(store.sleepTrackerEnabled, isFalse);
+      expect(store.sleepDailyGoalHours, equals(8.0));
+
+      final act = Activity(id: 99, name: 'Uyku', emoji: '🛌', createdAt: 0);
+      store.activities = {99: act};
+
+      final today = DateTime.now();
+      final sleepStart = DateTime(today.year, today.month, today.day, 0, 30);
+      final sleepEnd = DateTime(today.year, today.month, today.day, 8, 0);
+
+      store.entries = [
+        Entry(
+          id: 1,
+          activityId: 99,
+          ts: sleepStart.millisecondsSinceEpoch,
+          endTs: sleepEnd.millisecondsSinceEpoch,
+          qty: 7.5,
+          unitId: 'sa',
+        ),
+      ];
+
+      final hours = store.getTodaySleepHours(today);
+      expect(hours, closeTo(7.5, 0.01));
+    });
+
+    test('Health Tracking AppStrings provide both Turkish and English labels', () {
+      const tr = AppStrings(AppLanguage.tr);
+      const en = AppStrings(AppLanguage.en);
+
+      expect(tr.sectionHealthTracking, equals('Sağlık & Sensör Takibi'));
+      expect(en.sectionHealthTracking, equals('Health & Sensor Tracking'));
+
+      expect(tr.stepTrackerTitle, contains('Adım Sayar'));
+      expect(en.stepTrackerTitle, contains('Step Counter'));
+
+      expect(tr.sleepTrackerTitle, contains('Uyku Takibi'));
+      expect(en.sleepTrackerTitle, contains('Sleep Tracking'));
+
+      expect(tr.startSleepSession, contains('Uyumaya Başla'));
+      expect(en.startSleepSession, contains('Start Sleeping'));
+
+      expect(tr.wakeUp, contains('Uyandım'));
+      expect(en.wakeUp, contains('Wake Up'));
+    });
+  });
 }
+
 
 
 

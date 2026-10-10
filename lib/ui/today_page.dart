@@ -10,6 +10,7 @@ import '../services/nl_parser.dart';
 import 'common.dart';
 import 'components/active_timer_card.dart';
 import 'components/today_day_summary.dart';
+import 'components/today_health_panel.dart';
 import 'components/today_quick_shortcuts.dart';
 import 'components/today_timeline.dart';
 import 'voice_dialog.dart';
@@ -664,6 +665,10 @@ class _TodayPageState extends State<TodayPage> {
                   ActiveTimersSection(timers: store.activeTimers),
                 _buildComposer(),
                 TodayDaySummary(currentDay: _currentDay),
+                TodayHealthPanel(
+                  currentDay: _currentDay,
+                  onRefresh: () => setState(() {}),
+                ),
                 TodayQuickShortcuts(onStartTimer: _startTimerForActivity),
                 TodayTimeline(
                   currentDay: _currentDay,

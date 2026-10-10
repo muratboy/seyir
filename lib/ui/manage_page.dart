@@ -364,6 +364,238 @@ class _ManagePageState extends State<ManagePage> {
 
               const SizedBox(height: 12),
 
+              // Sağlık & Sensör Takibi (Adım Sayar & Uyku Takibi)
+              SectionTitle(s.sectionHealthTracking),
+              Card(
+                child: Column(
+                  children: [
+                    // Adım Sayar
+                    SwitchListTile(
+                      secondary: const Icon(Icons.directions_walk_rounded, color: Colors.teal),
+                      title: Text(s.stepTrackerTitle),
+                      subtitle: Text(
+                        store.stepTrackerEnabled
+                            ? (s.isTr
+                                ? 'Aktif · Bugün: ${fmtNum(store.todaySteps.toDouble())} / ${fmtNum(store.stepDailyGoal.toDouble())} adım'
+                                : 'Active · Today: ${fmtNum(store.todaySteps.toDouble())} / ${fmtNum(store.stepDailyGoal.toDouble())} steps')
+                            : s.stepTrackerSubtitle,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: store.stepTrackerEnabled,
+                      onChanged: (val) async {
+                        await store.setStepTrackerEnabled(val);
+                        setState(() {});
+                      },
+                    ),
+                    if (store.stepTrackerEnabled) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${s.stepDailyGoal}:',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [6000, 8000, 10000, 12000].map((goal) {
+                                final isSelected = store.stepDailyGoal == goal;
+                                return ChoiceChip(
+                                  label: Text('$goal'),
+                                  selected: isSelected,
+                                  onSelected: (_) async {
+                                    await store.setStepDailyGoal(goal);
+                                    setState(() {});
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 8),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 6,
+                              crossAxisAlignment: WrapCrossAlignment.center,
+                              children: [
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                                  icon: const Icon(Icons.add, size: 14),
+                                  label: Text(s.isTr ? '+500 Adım' : '+500 Steps'),
+                                  onPressed: () async {
+                                    await store.addManualSteps(500);
+                                    setState(() {});
+                                  },
+                                ),
+                                OutlinedButton.icon(
+                                  style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
+                                  icon: const Icon(Icons.add, size: 14),
+                                  label: Text(s.isTr ? '+1000 Adım' : '+1000 Steps'),
+                                  onPressed: () async {
+                                    await store.addManualSteps(1000);
+                                    setState(() {});
+                                  },
+                                ),
+                                FilledButton.tonalIcon(
+                                  style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                                  icon: const Icon(Icons.sync, size: 14),
+                                  label: Text(s.syncSteps),
+                                  onPressed: () async {
+                                    final res = await store.syncTodayStepsToEntry();
+                                    if (context.mounted) {
+                                      showSnack(
+                                        context,
+                                        res != null
+                                            ? (s.isTr
+                                                ? '${fmtNum(store.todaySteps.toDouble())} adım aktivite olarak kaydedildi ✓'
+                                                : '${fmtNum(store.todaySteps.toDouble())} steps synced to journal ✓')
+                                            : (s.isTr ? 'Adım sayısı henüz 0.' : 'Step count is currently 0.'),
+                                      );
+                                    }
+                                  },
+                                ),
+                              ],
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                    const Divider(height: 1),
+                    // Uyku Takibi
+                    SwitchListTile(
+                      secondary: const Icon(Icons.bedtime_outlined, color: Colors.indigo),
+                      title: Text(s.sleepTrackerTitle),
+                      subtitle: Text(
+                        store.sleepTrackerEnabled
+                            ? (s.isTr
+                                ? 'Aktif · Hedef: ${store.sleepDailyGoalHours} saat'
+                                : 'Active · Goal: ${store.sleepDailyGoalHours} hrs')
+                            : s.sleepTrackerSubtitle,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: store.sleepTrackerEnabled,
+                      onChanged: (val) async {
+                        await store.setSleepTrackerEnabled(val);
+                        setState(() {});
+                      },
+                    ),
+                    if (store.sleepTrackerEnabled) ...[
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '${s.sleepDailyGoal}:',
+                              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                            ),
+                            const SizedBox(height: 6),
+                            Wrap(
+                              spacing: 6,
+                              runSpacing: 4,
+                              children: [7.0, 7.5, 8.0, 8.5, 9.0].map((hours) {
+                                final isSelected = store.sleepDailyGoalHours == hours;
+                                return ChoiceChip(
+                                  label: Text('$hours sa'),
+                                  selected: isSelected,
+                                  onSelected: (_) async {
+                                    await store.setSleepDailyGoalHours(hours);
+                                    setState(() {});
+                                  },
+                                );
+                              }).toList(),
+                            ),
+                            const SizedBox(height: 8),
+                            if (store.sleepSessionStartTs != null) ...[
+                              Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: Colors.indigo.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(10),
+                                  border: Border.all(color: Colors.indigo.withValues(alpha: 0.3)),
+                                ),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.nightlight_round, color: Colors.indigo, size: 20),
+                                    const SizedBox(width: 8),
+                                    Expanded(
+                                      child: Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: [
+                                          Text(
+                                            s.sleepSessionActive,
+                                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                                          ),
+                                          Text(
+                                            '${s.isTr ? "Başlangıç" : "Started"}: ${fmtTime(DateTime.fromMillisecondsSinceEpoch(store.sleepSessionStartTs!))}',
+                                            style: const TextStyle(fontSize: 11),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
+                                    FilledButton.icon(
+                                      style: FilledButton.styleFrom(
+                                        backgroundColor: Colors.indigo,
+                                        visualDensity: VisualDensity.compact,
+                                      ),
+                                      icon: const Icon(Icons.wb_sunny_outlined, size: 15),
+                                      label: Text(s.wakeUp),
+                                      onPressed: () async {
+                                        final entry = await store.stopSleepSession();
+                                        if (context.mounted && entry != null) {
+                                          showSnack(
+                                            context,
+                                            s.isTr
+                                                ? 'Günaydın! ${entry.qty} saat uyku kaydedildi 🛌'
+                                                : 'Good morning! ${entry.qty} hrs sleep logged 🛌',
+                                          );
+                                          setState(() {});
+                                        }
+                                      },
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ] else ...[
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      icon: const Icon(Icons.nights_stay_outlined, size: 16, color: Colors.indigo),
+                                      label: Text(s.startSleepSession),
+                                      onPressed: () async {
+                                        await store.startSleepSession();
+                                        if (context.mounted) {
+                                          showSnack(context, s.isTr ? 'İyi geceler! Uyku oturumu başlatıldı 🌙' : 'Good night! Sleep session started 🌙');
+                                          setState(() {});
+                                        }
+                                      },
+                                    ),
+                                  ),
+                                  const SizedBox(width: 8),
+                                  Expanded(
+                                    child: OutlinedButton.icon(
+                                      icon: const Icon(Icons.post_add_outlined, size: 16),
+                                      label: Text(s.logSleep),
+                                      onPressed: () async {
+                                        _showManageSleepDialog(context, s);
+                                      },
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ],
+                          ],
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
               // 4. Yedekleme & Raporlama
               SectionTitle(s.sectionBackupReports),
               Card(
@@ -1053,4 +1285,89 @@ class _ManagePageState extends State<ManagePage> {
       ),
     );
   }
+
+  void _showManageSleepDialog(BuildContext context, AppStrings s) {
+    TimeOfDay bedTime = const TimeOfDay(hour: 23, minute: 30);
+    TimeOfDay wakeTime = const TimeOfDay(hour: 7, minute: 30);
+
+    showDialog<void>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) {
+          final bedDt = DateTime(2026, 1, 1, bedTime.hour, bedTime.minute);
+          var wakeDt = DateTime(2026, 1, 2, wakeTime.hour, wakeTime.minute);
+          if (wakeDt.isBefore(bedDt)) {
+            wakeDt = wakeDt.add(const Duration(days: 1));
+          }
+          final durMins = wakeDt.difference(bedDt).inMinutes;
+          final durHours = durMins / 60.0;
+
+          return AlertDialog(
+            title: Row(
+              children: [
+                const Text('🛌 '),
+                Text(s.isTr ? 'Uyku Kaydı Gir' : 'Log Sleep'),
+              ],
+            ),
+            content: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ListTile(
+                  title: Text(s.isTr ? 'Yatma Saati' : 'Bedtime'),
+                  trailing: TextButton(
+                    child: Text(bedTime.format(ctx)),
+                    onPressed: () async {
+                      final picked = await showTimePicker(context: ctx, initialTime: bedTime);
+                      if (picked != null) setD(() => bedTime = picked);
+                    },
+                  ),
+                ),
+                ListTile(
+                  title: Text(s.isTr ? 'Uyanma Saati' : 'Wake Time'),
+                  trailing: TextButton(
+                    child: Text(wakeTime.format(ctx)),
+                    onPressed: () async {
+                      final picked = await showTimePicker(context: ctx, initialTime: wakeTime);
+                      if (picked != null) setD(() => wakeTime = picked);
+                    },
+                  ),
+                ),
+                const Divider(),
+                Text(
+                  '${s.isTr ? "Toplam Süre" : "Total Duration"}: ${durHours.toStringAsFixed(1)} sa ($durMins dk)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                ),
+              ],
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: Text(s.isTr ? 'İptal' : 'Cancel'),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  Navigator.pop(ctx);
+                  final today = DateTime.now();
+                  final end = DateTime(today.year, today.month, today.day, wakeTime.hour, wakeTime.minute);
+                  final start = end.subtract(Duration(minutes: durMins));
+                  await store.logManualSleep(start: start, end: end);
+                  if (context.mounted) {
+                    showSnack(
+                      context,
+                      s.isTr
+                          ? 'Dün geceki uyku başarıyla kaydedildi ✓'
+                          : 'Sleep logged successfully ✓',
+                    );
+                    setState(() {});
+                  }
+                },
+                child: Text(s.isTr ? 'Kaydet' : 'Save'),
+              ),
+            ],
+          );
+        },
+      ),
+    );
+  }
 }
+
