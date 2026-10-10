@@ -119,6 +119,11 @@ class AppStrings {
   String get addHabit => isTr ? 'Alışkanlık Ekle / Seç' : 'Add / Pick Habit';
   String get addToHabits => isTr ? 'Zinciri Kırma\'ya Ekle' : 'Add to Habits';
   String get viewInHabits => isTr ? 'Zinciri Kırma\'da Görüntüle' : 'View in Habits';
+  String get removeFromHabits => isTr ? 'Zinciri Kırma\'dan Çıkar' : 'Remove from Habits';
+  String get timeSpreadView => isTr ? 'Zamana Yayılmış Görünüm (Isı Haritası)' : 'Timeline Heatmap View';
+  String get allHabits => isTr ? 'Tümü' : 'All';
+  String get habitGoalsTitle => isTr ? 'Hedef & Limitler' : 'Goals & Limits';
+  String get habitActivitiesTitle => isTr ? 'Aktiviteler' : 'Activities';
   String get heatmapLess => isTr ? 'Daha az' : 'Less';
   String get heatmapMore => isTr ? 'Daha çok' : 'More';
 

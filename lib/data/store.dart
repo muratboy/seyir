@@ -503,16 +503,19 @@ class AppStore extends ChangeNotifier {
 
   final Map<String, DaySummary> _daySummaryCache = {};
   final Map<int, HabitStreakInfo> _habitStreakCache = {};
+  final Map<int, HabitStreakInfo> _goalStreakCache = {};
 
   void _changed() {
     _daySummaryCache.clear();
     _habitStreakCache.clear();
+    _goalStreakCache.clear();
     _rebuildStats();
     notifyListeners();
   }
 
   void clearHabitStreakCache() {
     _habitStreakCache.clear();
+    _goalStreakCache.clear();
   }
 
   void _rebuildStats() {
@@ -1567,12 +1570,24 @@ class AppStore extends ChangeNotifier {
   // ---------------------------------------------------------------- zinciri kırma (habit tracker)
 
   List<Activity> get habitActivities => activities.values.where((a) => a.isHabit).toList();
+  List<Goal> get habitGoals => goals.where((g) => g.isHabit).toList();
 
   Future<void> setActivityHabit(int activityId, bool isHabit) async {
     final act = activities[activityId];
     if (act == null) return;
     act.isHabit = isHabit;
     await updateActivity(act);
+  }
+
+  Future<void> setGoalHabit(int goalId, bool isHabit) async {
+    final g = goals.where((x) => x.id == goalId).firstOrNull;
+    if (g == null) return;
+    g.isHabit = isHabit;
+    if (_db != null) {
+      await _db!.update('goals', {'is_habit': isHabit ? 1 : 0}, where: 'id = ?', whereArgs: [goalId]);
+    }
+    clearHabitStreakCache();
+    _changed();
   }
 
   HabitStreakInfo habitStreakInfo(int activityId) {
@@ -1817,6 +1832,171 @@ class AppStore extends ChangeNotifier {
       dailyTooltips: dailyTooltips,
     );
     _habitStreakCache[activityId] = result;
+    return result;
+  }
+
+  HabitStreakInfo goalStreakInfo(Goal g) {
+    final cached = _goalStreakCache[g.id];
+    if (cached != null) return cached;
+
+    final now = DateTime.now();
+    final today = dayStart(now);
+    final goalStartDate = dayStart(DateTime.fromMillisecondsSinceEpoch(g.startDate));
+
+    final earliest = today.subtract(const Duration(days: 140));
+    final evalStart = earliest.isBefore(goalStartDate) ? goalStartDate : earliest;
+
+    final dailyCounts = <DateTime, int>{};
+    final dailyLevels = <DateTime, int>{};
+    final dailyTooltips = <DateTime, String>{};
+    final isTr = language == AppLanguage.tr;
+    final unitSym = goalUnitSymbol(g);
+
+    final pcts = {for (final l in g.links) l.activityId: l.pct};
+    final dayValues = <DateTime, double>{};
+    final dayCounts = <DateTime, int>{};
+
+    for (final e in entries) {
+      final pct = pcts[e.activityId];
+      if (pct == null) continue;
+      final c = contribution(g, e, pct);
+      if (c == null) continue;
+      final d = dayStart(DateTime.fromMillisecondsSinceEpoch(e.ts));
+      dayValues[d] = (dayValues[d] ?? 0.0) + c;
+      dayCounts[d] = (dayCounts[d] ?? 0) + 1;
+    }
+
+    final allActiveDays = <DateTime>{};
+    for (final e in entries) {
+      allActiveDays.add(dayStart(DateTime.fromMillisecondsSinceEpoch(e.ts)));
+    }
+
+    final daysCount = daysBetween(evalStart, today) + 1;
+    for (int i = 0; i < daysCount; i++) {
+      final d = evalStart.add(Duration(days: i));
+      if (d.isAfter(today)) break;
+
+      final val = dayValues[d] ?? 0.0;
+      final count = dayCounts[d] ?? 0;
+      final target = g.target;
+      final valStr = '${fmtNum(val)} $unitSym';
+      final targetStr = '${fmtNum(target)} $unitSym';
+
+      if (g.isLimit) {
+        final hasAnyAppActivity = allActiveDays.contains(d);
+        if (count > 0 || hasAnyAppActivity || d == today) {
+          dailyCounts[d] = count > 0 ? count : 1;
+          if (val <= target) {
+            dailyLevels[d] = 4;
+            dailyTooltips[d] = '$valStr / $targetStr (${isTr ? "Limit korundu ✓" : "Within limit ✓"})';
+          } else {
+            final excessRatio = (val - target) / (target > 0 ? target : 1.0);
+            int lvl;
+            if (excessRatio <= 0.25) {
+              lvl = 3;
+            } else if (excessRatio <= 0.50) {
+              lvl = 2;
+            } else if (excessRatio <= 1.0) {
+              lvl = 1;
+            } else {
+              lvl = 0;
+            }
+            dailyLevels[d] = lvl;
+            final diffStr = '+${fmtNum(val - target)} $unitSym';
+            dailyTooltips[d] = '$valStr / $targetStr ($diffStr ${isTr ? "aşıldı ⚠️" : "exceeded ⚠️"})';
+          }
+        }
+      } else {
+        if (count > 0 || val > 0) {
+          dailyCounts[d] = count > 0 ? count : 1;
+          if (val >= target) {
+            dailyLevels[d] = 4;
+            dailyTooltips[d] = '$valStr / $targetStr (${isTr ? "Hedefe ulaşıldı ✓" : "Goal reached ✓"})';
+          } else if (target > 0) {
+            final ratio = val / target;
+            int lvl;
+            if (ratio >= 0.66) {
+              lvl = 3;
+            } else if (ratio >= 0.33) {
+              lvl = 2;
+            } else if (ratio > 0) {
+              lvl = 1;
+            } else {
+              lvl = 0;
+            }
+            dailyLevels[d] = lvl;
+            final pct = (ratio * 100).round();
+            dailyTooltips[d] = '$valStr / $targetStr (%$pct)';
+          } else {
+            dailyLevels[d] = val > 0 ? 4 : 0;
+            dailyTooltips[d] = '$valStr / $targetStr';
+          }
+        }
+      }
+    }
+
+    final todayStatus = goalStatus(g, at: today);
+    final isDoneToday = todayStatus.done;
+    final todayCount = dayCounts[today] ?? 0;
+
+    int currentStreak = 0;
+    DateTime checkDate = isDoneToday ? today : DateTime(today.year, today.month, today.day - 1);
+    while (checkDate.isAfter(goalStartDate) || checkDate == goalStartDate) {
+      final lvl = dailyLevels[checkDate];
+      if (lvl != null && lvl == 4) {
+        currentStreak++;
+        checkDate = DateTime(checkDate.year, checkDate.month, checkDate.day - 1);
+      } else {
+        break;
+      }
+    }
+
+    int longestStreak = currentStreak;
+    if (dailyLevels.isNotEmpty) {
+      final sortedDays = dailyLevels.keys.toList()..sort();
+      int temp = 0;
+      DateTime? prev;
+      for (final day in sortedDays) {
+        if (dailyLevels[day] == 4) {
+          if (prev == null || daysBetween(prev, day) == 1) {
+            temp++;
+          } else {
+            temp = 1;
+          }
+          if (temp > longestStreak) longestStreak = temp;
+          prev = day;
+        } else {
+          temp = 0;
+          prev = null;
+        }
+      }
+    }
+
+    int successfulIn30 = 0;
+    int evaluatedIn30 = 0;
+    for (int i = 0; i < 30; i++) {
+      final d = DateTime(today.year, today.month, today.day - i);
+      if (d.isBefore(goalStartDate)) break;
+      evaluatedIn30++;
+      final lvl = dailyLevels[d];
+      if (lvl != null && lvl == 4) successfulIn30++;
+    }
+    final consistencyLast30 = evaluatedIn30 > 0
+        ? (successfulIn30 / evaluatedIn30) * 100.0
+        : 0.0;
+
+    final result = HabitStreakInfo(
+      currentStreak: currentStreak,
+      longestStreak: longestStreak,
+      totalActiveDays: dailyCounts.length,
+      isDoneToday: isDoneToday,
+      todayCount: todayCount,
+      consistencyLast30: consistencyLast30,
+      dailyCounts: dailyCounts,
+      dailyLevels: dailyLevels,
+      dailyTooltips: dailyTooltips,
+    );
+    _goalStreakCache[g.id] = result;
     return result;
   }
 

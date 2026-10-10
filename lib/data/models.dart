@@ -306,6 +306,7 @@ class Goal {
   int createdAt;
   int sort;
   List<GoalLink> links;
+  bool isHabit;
 
   Goal({
     required this.id,
@@ -320,6 +321,7 @@ class Goal {
     required this.createdAt,
     this.sort = 0,
     List<GoalLink>? links,
+    this.isHabit = false,
   }) : links = links ?? [];
 
   bool get isCount => mode == 'count';
@@ -338,6 +340,7 @@ class Goal {
         'end_date': endDate,
         'created_at': createdAt,
         'sort': sort,
+        'is_habit': isHabit ? 1 : 0,
       };
 
   factory Goal.fromMap(Map<String, Object?> m) => Goal(
@@ -352,6 +355,7 @@ class Goal {
         endDate: m['end_date'] as int?,
         createdAt: m['created_at'] as int,
         sort: (m['sort'] as int?) ?? 0,
+        isHabit: ((m['is_habit'] as int?) ?? 0) == 1,
       );
 }
 

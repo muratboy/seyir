@@ -65,6 +65,9 @@ class AppDb {
       await db.execute("ALTER TABLE goals ADD COLUMN type TEXT NOT NULL DEFAULT 'target'");
     } catch (_) {}
     try {
+      await db.execute("ALTER TABLE goals ADD COLUMN is_habit INTEGER NOT NULL DEFAULT 0");
+    } catch (_) {}
+    try {
       await db.execute("ALTER TABLE activities ADD COLUMN category TEXT");
     } catch (_) {}
     try {
@@ -127,7 +130,8 @@ class AppDb {
       type TEXT NOT NULL DEFAULT 'target', mode TEXT NOT NULL,
       unit_id TEXT, target REAL NOT NULL, period TEXT NOT NULL,
       start_date INTEGER NOT NULL, end_date INTEGER, created_at INTEGER NOT NULL,
-      sort INTEGER NOT NULL DEFAULT 0)''');
+      sort INTEGER NOT NULL DEFAULT 0,
+      is_habit INTEGER NOT NULL DEFAULT 0)''');
     await db.execute('''CREATE TABLE goal_links(
       goal_id INTEGER NOT NULL, activity_id INTEGER NOT NULL,
       pct REAL NOT NULL DEFAULT 100, PRIMARY KEY(goal_id, activity_id))''');

@@ -352,10 +352,61 @@ void main() {
     await tester.tap(find.textContaining('Zinciri Kırma\'ya Ekle'));
     await tester.pumpAndSettle();
 
-    // Verify activity is now a habit!
-    expect(testAct.isHabit, isTrue);
+    // Verify goal is now a habit!
+    expect(goal.isHabit, isTrue);
 
     // Verify SnackBar feedback
-    expect(find.textContaining('Yürüyüş'), findsWidgets);
+    expect(find.textContaining('Haftalık Yürüyüş'), findsWidgets);
+  });
+
+  test('goalStreakInfo calculates daily values, tooltips and levels for target and limit goals', () {
+    store.clearHabitStreakCache();
+    store.activities.clear();
+    store.entries.clear();
+    store.goals.clear();
+
+    const actId = 501;
+    final act = Activity(
+      id: actId,
+      name: 'Su',
+      emoji: '💧',
+      createdAt: 1000000,
+    );
+    store.activities[actId] = act;
+
+    final targetGoal = Goal(
+      id: 601,
+      name: 'Sıvı Alımı',
+      type: 'target',
+      mode: 'amount',
+      period: GoalPeriod.day,
+      target: 2.0,
+      unitId: 'l',
+      startDate: DateTime.now().subtract(const Duration(days: 10)).millisecondsSinceEpoch,
+      createdAt: 1000000,
+      links: [GoalLink(activityId: actId, pct: 100)],
+      isHabit: true,
+    );
+    store.goals = [targetGoal];
+
+    final now = DateTime.now();
+    // 2.5L entry today -> exceeds 2.0L target -> Level 4
+    store.entries = [
+      Entry(
+        id: 701,
+        activityId: actId,
+        ts: now.millisecondsSinceEpoch,
+        qty: 1,
+        value: 2.5,
+        unitId: 'l',
+      ),
+    ];
+
+    final streakInfo = store.goalStreakInfo(targetGoal);
+    expect(streakInfo.isDoneToday, isTrue);
+    expect(streakInfo.currentStreak, 1);
+    final today = dayStart(now);
+    expect(streakInfo.dailyLevels[today], 4);
+    expect(streakInfo.dailyTooltips[today], contains('Hedefe ulaşıldı ✓'));
   });
 }
