@@ -128,6 +128,8 @@ class AppStore extends ChangeNotifier {
   String timelineView = 'list'; // 'list' | 'grid'
   List<ActiveTimer> activeTimers = [];
   ActiveTimer? get activeTimer => activeTimers.firstOrNull;
+  List<Roadmap> roadmaps = [];
+  Roadmap? get activeRoadmap => roadmaps.where((r) => r.isActive).firstOrNull;
   bool loaded = false;
 
   bool waterReminderEnabled = false;
@@ -229,6 +231,14 @@ class AppStore extends ChangeNotifier {
       }
     }
     unawaited(NotificationService.scheduleReminders(this));
+
+    final stepRows = await d.query('roadmap_steps', orderBy: 'step_order ASC, id ASC');
+    final roadmapRows = await d.query('roadmaps', orderBy: 'created_at DESC, id DESC');
+    roadmaps = roadmapRows.map((m) {
+      final r = Roadmap.fromMap(m);
+      r.steps = stepRows.where((s) => s['roadmap_id'] == r.id).map(RoadmapStep.fromMap).toList();
+      return r;
+    }).toList();
 
     loaded = true;
     _changed();
@@ -2156,5 +2166,148 @@ class AppStore extends ChangeNotifier {
       }
     });
     await load();
+  }
+
+  // ---------------------------------------------------------------- yol haritaları (roadmaps)
+
+  Future<Roadmap> createRoadmap(Roadmap roadmap) async {
+    final d = await db;
+    final id = await d.insert('roadmaps', roadmap.toMap());
+    roadmap.id = id;
+    for (var i = 0; i < roadmap.steps.length; i++) {
+      final step = roadmap.steps[i];
+      step.roadmapId = id;
+      step.order = i + 1;
+      final stepId = await d.insert('roadmap_steps', step.toMap());
+      step.id = stepId;
+    }
+    roadmaps.insert(0, roadmap);
+    _changed();
+    return roadmap;
+  }
+
+  Future<void> updateRoadmap(Roadmap roadmap) async {
+    final d = await db;
+    await d.update('roadmaps', roadmap.toMap(), where: 'id = ?', whereArgs: [roadmap.id]);
+    _changed();
+  }
+
+  Future<void> deleteRoadmap(int roadmapId) async {
+    final d = await db;
+    await d.delete('roadmap_steps', where: 'roadmap_id = ?', whereArgs: [roadmapId]);
+    await d.delete('roadmaps', where: 'id = ?', whereArgs: [roadmapId]);
+    roadmaps.removeWhere((r) => r.id == roadmapId);
+    _changed();
+  }
+
+  Future<void> setRoadmapStatus(int roadmapId, String status) async {
+    final r = roadmaps.where((x) => x.id == roadmapId).firstOrNull;
+    if (r == null) return;
+
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final d = await db;
+
+    if (status == 'active') {
+      // Tek aktif yol haritası kuralı: Diğer aktif olanları duraklat
+      for (final other in roadmaps) {
+        if (other.id != roadmapId && other.isActive) {
+          other.status = 'paused';
+          await d.update('roadmaps', {'status': 'paused'}, where: 'id = ?', whereArgs: [other.id]);
+        }
+      }
+      r.startedAt ??= now;
+    } else if (status == 'completed') {
+      r.completedAt = now;
+    }
+
+    r.status = status;
+    await d.update('roadmaps', {
+      'status': status,
+      if (r.startedAt != null) 'started_at': r.startedAt,
+      if (r.completedAt != null) 'completed_at': r.completedAt,
+    }, where: 'id = ?', whereArgs: [roadmapId]);
+
+    _changed();
+  }
+
+  Future<void> toggleRoadmapStep(int stepId, {bool? completed}) async {
+    for (final r in roadmaps) {
+      final step = r.steps.where((s) => s.id == stepId).firstOrNull;
+      if (step != null) {
+        final targetState = completed ?? !step.isCompleted;
+        step.isCompleted = targetState;
+        step.completedAt = targetState ? DateTime.now().millisecondsSinceEpoch : null;
+        final d = await db;
+        await d.update('roadmap_steps', {
+          'is_completed': step.isCompleted ? 1 : 0,
+          'completed_at': step.completedAt,
+        }, where: 'id = ?', whereArgs: [stepId]);
+
+        // Tüm adımlar tamamlandı mı kontrol et
+        if (r.steps.isNotEmpty && r.steps.every((s) => s.isCompleted)) {
+          r.status = 'completed';
+          r.completedAt = DateTime.now().millisecondsSinceEpoch;
+          await d.update('roadmaps', {
+            'status': 'completed',
+            'completed_at': r.completedAt,
+          }, where: 'id = ?', whereArgs: [r.id]);
+        } else if (r.isCompleted && !targetState) {
+          // Geri alındıysa status active'e dönsün
+          r.status = 'active';
+          r.completedAt = null;
+          await d.update('roadmaps', {
+            'status': 'active',
+            'completed_at': null,
+          }, where: 'id = ?', whereArgs: [r.id]);
+        }
+
+        _changed();
+        break;
+      }
+    }
+  }
+
+  Future<void> addRoadmapStep(int roadmapId, RoadmapStep step) async {
+    final r = roadmaps.where((x) => x.id == roadmapId).firstOrNull;
+    if (r == null) return;
+    final d = await db;
+    step.roadmapId = roadmapId;
+    step.order = r.steps.length + 1;
+    final stepId = await d.insert('roadmap_steps', step.toMap());
+    step.id = stepId;
+    r.steps.add(step);
+    _changed();
+  }
+
+  Future<void> deleteRoadmapStep(int roadmapId, int stepId) async {
+    final r = roadmaps.where((x) => x.id == roadmapId).firstOrNull;
+    if (r == null) return;
+    final d = await db;
+    await d.delete('roadmap_steps', where: 'id = ?', whereArgs: [stepId]);
+    r.steps.removeWhere((s) => s.id == stepId);
+    _changed();
+  }
+
+  Future<void> resetRoadmapProgress(int roadmapId) async {
+    final r = roadmaps.where((x) => x.id == roadmapId).firstOrNull;
+    if (r == null) return;
+    final d = await db;
+    for (final s in r.steps) {
+      s.isCompleted = false;
+      s.completedAt = null;
+    }
+    await d.update('roadmap_steps', {
+      'is_completed': 0,
+      'completed_at': null,
+    }, where: 'roadmap_id = ?', whereArgs: [roadmapId]);
+    r.status = 'paused';
+    r.startedAt = null;
+    r.completedAt = null;
+    await d.update('roadmaps', {
+      'status': 'paused',
+      'started_at': null,
+      'completed_at': null,
+    }, where: 'id = ?', whereArgs: [roadmapId]);
+    _changed();
   }
 }

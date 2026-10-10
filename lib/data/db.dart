@@ -103,6 +103,28 @@ class AppDb {
     try {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_entries_end_ts ON entries(end_ts)');
     } catch (_) {}
+    await db.execute('''CREATE TABLE IF NOT EXISTS roadmaps(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL DEFAULT '',
+      emoji TEXT NOT NULL DEFAULT '🗺️',
+      status TEXT NOT NULL DEFAULT 'not_started',
+      created_at INTEGER NOT NULL,
+      started_at INTEGER,
+      completed_at INTEGER)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS roadmap_steps(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      roadmap_id INTEGER NOT NULL,
+      step_order INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      is_completed INTEGER NOT NULL DEFAULT 0,
+      completed_at INTEGER,
+      type TEXT NOT NULL DEFAULT 'task',
+      target REAL,
+      unit TEXT,
+      linked_activity_id INTEGER)''');
   }
 
   static Future<void> createSchema(DatabaseExecutor db) async {
@@ -147,6 +169,28 @@ class AppDb {
       last_resume_ts INTEGER, is_running INTEGER NOT NULL DEFAULT 1,
       note TEXT, mode TEXT NOT NULL DEFAULT 'stopwatch', target_ms INTEGER NOT NULL DEFAULT 0,
       segments TEXT DEFAULT '[]')''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS roadmaps(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL DEFAULT '',
+      emoji TEXT NOT NULL DEFAULT '🗺️',
+      status TEXT NOT NULL DEFAULT 'not_started',
+      created_at INTEGER NOT NULL,
+      started_at INTEGER,
+      completed_at INTEGER)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS roadmap_steps(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      roadmap_id INTEGER NOT NULL,
+      step_order INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      is_completed INTEGER NOT NULL DEFAULT 0,
+      completed_at INTEGER,
+      type TEXT NOT NULL DEFAULT 'task',
+      target REAL,
+      unit TEXT,
+      linked_activity_id INTEGER)''');
   }
 
   static Future<void> seed(DatabaseExecutor db) async {
@@ -180,5 +224,7 @@ class AppDb {
     'quick_items',
     'settings',
     'active_timers',
+    'roadmaps',
+    'roadmap_steps',
   ];
 }

@@ -12,6 +12,7 @@ import 'components/active_timer_card.dart';
 import 'components/today_day_summary.dart';
 import 'components/today_health_panel.dart';
 import 'components/today_quick_shortcuts.dart';
+import 'components/today_roadmap_panel.dart';
 import 'components/today_timeline.dart';
 import 'voice_dialog.dart';
 
@@ -681,6 +682,8 @@ class _TodayPageState extends State<TodayPage> {
               children: [
                 if (store.activeTimers.isNotEmpty)
                   ActiveTimersSection(timers: store.activeTimers),
+                if (store.activeRoadmap != null)
+                  const TodayRoadmapPanel(),
                 _buildComposer(),
                 TodayDaySummary(currentDay: _currentDay),
                 TodayHealthPanel(

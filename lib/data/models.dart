@@ -676,4 +676,131 @@ class DaySummary {
       );
 }
 
+/// Yol Haritası (Kişisel Gelişim, Beceri, Sınav veya Süreç Rotası)
+class Roadmap {
+  int id;
+  String title;
+  String description;
+  String category;
+  String emoji;
+  String status; // 'not_started', 'active', 'completed', 'paused'
+  int createdAt;
+  int? startedAt;
+  int? completedAt;
+  List<RoadmapStep> steps;
+
+  Roadmap({
+    this.id = 0,
+    required this.title,
+    this.description = '',
+    this.category = '',
+    this.emoji = '🗺️',
+    this.status = 'not_started',
+    int? createdAt,
+    this.startedAt,
+    this.completedAt,
+    List<RoadmapStep>? steps,
+  })  : createdAt = createdAt ?? DateTime.now().millisecondsSinceEpoch,
+        steps = steps ?? [];
+
+  bool get isActive => status == 'active';
+  bool get isCompleted => status == 'completed';
+  bool get isNotStarted => status == 'not_started';
+
+  int get totalSteps => steps.length;
+  int get completedStepsCount => steps.where((s) => s.isCompleted).length;
+  double get progressRatio => totalSteps == 0 ? 0.0 : completedStepsCount / totalSteps;
+  int get progressPercent => (progressRatio * 100).round();
+
+  RoadmapStep? get currentPendingStep {
+    final pending = steps.where((s) => !s.isCompleted).toList();
+    pending.sort((a, b) => a.order.compareTo(b.order));
+    return pending.firstOrNull;
+  }
+
+  Map<String, Object?> toMap() => {
+        if (id != 0) 'id': id,
+        'title': title,
+        'description': description,
+        'category': category,
+        'emoji': emoji,
+        'status': status,
+        'created_at': createdAt,
+        'started_at': startedAt,
+        'completed_at': completedAt,
+      };
+
+  factory Roadmap.fromMap(Map<String, Object?> m) => Roadmap(
+        id: m['id'] as int,
+        title: m['title'] as String,
+        description: (m['description'] as String?) ?? '',
+        category: (m['category'] as String?) ?? '',
+        emoji: (m['emoji'] as String?) ?? '🗺️',
+        status: (m['status'] as String?) ?? 'not_started',
+        createdAt: m['created_at'] as int,
+        startedAt: m['started_at'] as int?,
+        completedAt: m['completed_at'] as int?,
+      );
+}
+
+/// Yol Haritası Adımı (Ölçülü hedef veya ölçüsüz tek seferlik görev)
+class RoadmapStep {
+  int id;
+  int roadmapId;
+  int order;
+  String title;
+  String description;
+  bool isCompleted;
+  int? completedAt;
+  String type; // 'task' (ölçüsüz görev) veya 'goal' (ölçülü hedef)
+  double? target;
+  String? unit;
+  int? linkedActivityId;
+
+  RoadmapStep({
+    this.id = 0,
+    this.roadmapId = 0,
+    this.order = 1,
+    required this.title,
+    this.description = '',
+    this.isCompleted = false,
+    this.completedAt,
+    this.type = 'task',
+    this.target,
+    this.unit,
+    this.linkedActivityId,
+  });
+
+  bool get isTask => type == 'task';
+  bool get isGoal => type == 'goal';
+
+  Map<String, Object?> toMap() => {
+        if (id != 0) 'id': id,
+        'roadmap_id': roadmapId,
+        'step_order': order,
+        'title': title,
+        'description': description,
+        'is_completed': isCompleted ? 1 : 0,
+        'completed_at': completedAt,
+        'type': type,
+        'target': target,
+        'unit': unit,
+        'linked_activity_id': linkedActivityId,
+      };
+
+  factory RoadmapStep.fromMap(Map<String, Object?> m) => RoadmapStep(
+        id: m['id'] as int,
+        roadmapId: m['roadmap_id'] as int,
+        order: (m['step_order'] as int?) ?? 1,
+        title: m['title'] as String,
+        description: (m['description'] as String?) ?? '',
+        isCompleted: ((m['is_completed'] as int?) ?? 0) == 1,
+        completedAt: m['completed_at'] as int?,
+        type: (m['type'] as String?) ?? 'task',
+        target: (m['target'] as num?)?.toDouble(),
+        unit: m['unit'] as String?,
+        linkedActivityId: m['linked_activity_id'] as int?,
+      );
+}
+
 
