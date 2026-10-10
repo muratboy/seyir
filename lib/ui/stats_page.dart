@@ -736,6 +736,8 @@ class _StatsPageState extends State<StatsPage> {
             const SizedBox(height: 14),
             ContributionHeatmap(
               dailyCounts: streakInfo.dailyCounts,
+              dailyLevels: streakInfo.dailyLevels,
+              dailyTooltips: streakInfo.dailyTooltips,
               baseColor: act.displayColor,
               weekCount: 20,
             ),

@@ -80,4 +80,223 @@ void main() {
     expect(find.textContaining('En Uzun Seri'), findsWidgets);
     expect(find.byType(ContributionHeatmap), findsOneWidget);
   });
+
+  test('habitStreakInfo timed activity calculates min 1 min, max >= 60 min levels and tooltips', () {
+    store.clearHabitStreakCache();
+    store.activities.clear();
+    store.entries.clear();
+    store.goals.clear();
+
+    const actId = 101;
+    store.activities[actId] = Activity(
+      id: actId,
+      name: 'Meditasyon',
+      isHabit: true,
+      createdAt: 1000000,
+    );
+
+    final baseDay = dayStart(DateTime(2026, 10, 10));
+    final d1 = baseDay; // 10 dk -> Level 1
+    final d2 = baseDay.subtract(const Duration(days: 1)); // 20 dk -> Level 2
+    final d3 = baseDay.subtract(const Duration(days: 2)); // 45 dk -> Level 3
+    final d4 = baseDay.subtract(const Duration(days: 3)); // 60 dk -> Level 4
+    final d5 = baseDay.subtract(const Duration(days: 4)); // 90 dk -> Level 4
+
+    store.entries = [
+      Entry(
+        id: 1,
+        activityId: actId,
+        ts: d1.millisecondsSinceEpoch,
+        endTs: d1.millisecondsSinceEpoch + 10 * 60 * 1000, // 10 min
+      ),
+      Entry(
+        id: 2,
+        activityId: actId,
+        ts: d2.millisecondsSinceEpoch,
+        endTs: d2.millisecondsSinceEpoch + 20 * 60 * 1000, // 20 min
+      ),
+      Entry(
+        id: 3,
+        activityId: actId,
+        ts: d3.millisecondsSinceEpoch,
+        endTs: d3.millisecondsSinceEpoch + 45 * 60 * 1000, // 45 min
+      ),
+      Entry(
+        id: 4,
+        activityId: actId,
+        ts: d4.millisecondsSinceEpoch,
+        endTs: d4.millisecondsSinceEpoch + 60 * 60 * 1000, // 60 min
+      ),
+      Entry(
+        id: 5,
+        activityId: actId,
+        ts: d5.millisecondsSinceEpoch,
+        endTs: d5.millisecondsSinceEpoch + 90 * 60 * 1000, // 90 min
+      ),
+    ];
+
+    final info = store.habitStreakInfo(actId);
+    expect(info.dailyLevels[d1], equals(1));
+    expect(info.dailyTooltips[d1], contains('10 dk'));
+
+    expect(info.dailyLevels[d2], equals(2));
+    expect(info.dailyTooltips[d2], contains('20 dk'));
+
+    expect(info.dailyLevels[d3], equals(3));
+    expect(info.dailyTooltips[d3], contains('45 dk'));
+
+    expect(info.dailyLevels[d4], equals(4));
+    expect(info.dailyTooltips[d4], contains('1 sa'));
+
+    expect(info.dailyLevels[d5], equals(4));
+    expect(info.dailyTooltips[d5], contains('1 sa 30 dk'));
+  });
+
+  test('habitStreakInfo target goal reaches full level 4 when target is met', () {
+    store.clearHabitStreakCache();
+    store.activities.clear();
+    store.entries.clear();
+    store.goals.clear();
+
+    const actId = 102;
+    store.activities[actId] = Activity(
+      id: actId,
+      name: 'Su İçme',
+      isHabit: true,
+      createdAt: 1000000,
+    );
+
+    // Hedef: Günde 5 adet
+    final goal = Goal(
+      id: 201,
+      name: 'Günlük 5 Su',
+      type: 'target',
+      mode: 'amount',
+      period: GoalPeriod.day,
+      target: 5,
+      unitId: 'adet',
+      startDate: 1000000,
+      createdAt: 1000000,
+      links: [GoalLink(activityId: actId, pct: 100)],
+    );
+    store.goals = [goal];
+
+    final baseDay = dayStart(DateTime(2026, 10, 10));
+    final d1 = baseDay; // 1 adet -> Level 1 (20%)
+    final d2 = baseDay.subtract(const Duration(days: 1)); // 2 adet -> Level 2 (40%)
+    final d3 = baseDay.subtract(const Duration(days: 2)); // 4 adet -> Level 3 (80%)
+    final d4 = baseDay.subtract(const Duration(days: 3)); // 5 adet -> Level 4 (Hedefe ulaşıldı ✓)
+
+    store.entries = [
+      Entry(id: 1, activityId: actId, ts: d1.millisecondsSinceEpoch, qty: 1, value: 1, unitId: 'adet'),
+      Entry(id: 2, activityId: actId, ts: d2.millisecondsSinceEpoch, qty: 2, value: 2, unitId: 'adet'),
+      Entry(id: 3, activityId: actId, ts: d3.millisecondsSinceEpoch, qty: 4, value: 4, unitId: 'adet'),
+      Entry(id: 4, activityId: actId, ts: d4.millisecondsSinceEpoch, qty: 5, value: 5, unitId: 'adet'),
+    ];
+
+    final info = store.habitStreakInfo(actId);
+    expect(info.dailyLevels[d1], equals(1));
+    expect(info.dailyTooltips[d1], contains('%20'));
+
+    expect(info.dailyLevels[d2], equals(2));
+    expect(info.dailyTooltips[d2], contains('%40'));
+
+    expect(info.dailyLevels[d3], equals(3));
+    expect(info.dailyTooltips[d3], contains('%80'));
+
+    expect(info.dailyLevels[d4], equals(4));
+    expect(info.dailyTooltips[d4], contains('Hedefe ulaşıldı ✓'));
+  });
+
+  test('habitStreakInfo limit goal stays full level 4 when within limit, decreases level as excess increases', () {
+    store.clearHabitStreakCache();
+    store.activities.clear();
+    store.entries.clear();
+    store.goals.clear();
+
+    const actId = 103;
+    store.activities[actId] = Activity(
+      id: actId,
+      name: 'Kahve',
+      isHabit: true,
+      createdAt: 1000000,
+    );
+
+    // Limit: Günde en fazla 100 g
+    final goal = Goal(
+      id: 202,
+      name: 'Maks 100 g',
+      type: 'limit',
+      mode: 'amount',
+      period: GoalPeriod.day,
+      target: 100,
+      unitId: 'g',
+      startDate: 1000000,
+      createdAt: 1000000,
+      links: [GoalLink(activityId: actId, pct: 100)],
+    );
+    store.goals = [goal];
+
+    final baseDay = dayStart(DateTime(2026, 10, 10));
+    final d1 = baseDay; // 80 -> Level 4 (Limit korundu ✓)
+    final d2 = baseDay.subtract(const Duration(days: 1)); // 120 -> +20% -> Level 3
+    final d3 = baseDay.subtract(const Duration(days: 2)); // 145 -> +45% -> Level 2
+    final d4 = baseDay.subtract(const Duration(days: 3)); // 180 -> +80% -> Level 1
+    final d5 = baseDay.subtract(const Duration(days: 4)); // 250 -> +150% -> Level 0
+
+    store.entries = [
+      Entry(id: 1, activityId: actId, ts: d1.millisecondsSinceEpoch, qty: 80, value: 80, unitId: 'g'),
+      Entry(id: 2, activityId: actId, ts: d2.millisecondsSinceEpoch, qty: 120, value: 120, unitId: 'g'),
+      Entry(id: 3, activityId: actId, ts: d3.millisecondsSinceEpoch, qty: 145, value: 145, unitId: 'g'),
+      Entry(id: 4, activityId: actId, ts: d4.millisecondsSinceEpoch, qty: 180, value: 180, unitId: 'g'),
+      Entry(id: 5, activityId: actId, ts: d5.millisecondsSinceEpoch, qty: 250, value: 250, unitId: 'g'),
+    ];
+
+    final info = store.habitStreakInfo(actId);
+    expect(info.dailyLevels[d1], equals(4));
+    expect(info.dailyTooltips[d1], contains('Limit korundu ✓'));
+
+    expect(info.dailyLevels[d2], equals(3));
+    expect(info.dailyTooltips[d2], contains('aşıldı ⚠️'));
+
+    expect(info.dailyLevels[d3], equals(2));
+    expect(info.dailyTooltips[d3], contains('aşıldı ⚠️'));
+
+    expect(info.dailyLevels[d4], equals(1));
+    expect(info.dailyTooltips[d4], contains('aşıldı ⚠️'));
+
+    expect(info.dailyLevels[d5], equals(0));
+    expect(info.dailyTooltips[d5], contains('aşıldı ⚠️'));
+  });
+
+  testWidgets('ContributionHeatmap displays custom dailyTooltips on tap', (tester) async {
+    final today = dayStart(DateTime.now());
+    final dailyCounts = <DateTime, int>{today: 1};
+    final dailyLevels = <DateTime, int>{today: 4};
+    final dailyTooltips = <DateTime, String>{today: '1 sa 15 dk (Hedefe ulaşıldı ✓)'};
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: ContributionHeatmap(
+            dailyCounts: dailyCounts,
+            dailyLevels: dailyLevels,
+            dailyTooltips: dailyTooltips,
+            weekCount: 8,
+          ),
+        ),
+      ),
+    );
+
+    await tester.pumpAndSettle();
+
+    final expectedTooltip = '${fmtDateShort(today)}: 1 sa 15 dk (Hedefe ulaşıldı ✓)';
+    final cellFinder = find.byTooltip(expectedTooltip);
+    expect(cellFinder, findsOneWidget);
+    await tester.tap(cellFinder);
+    await tester.pumpAndSettle();
+
+    // Verify detailed tooltip message appears in bottom row
+    expect(find.textContaining('1 sa 15 dk (Hedefe ulaşıldı ✓)'), findsWidgets);
+  });
 }

@@ -93,6 +93,8 @@ class HabitStreakInfo {
   final int todayCount;
   final double consistencyLast30;
   final Map<DateTime, int> dailyCounts; // Normalized to dayStart
+  final Map<DateTime, int> dailyLevels; // 0..4 visual contribution level
+  final Map<DateTime, String> dailyTooltips; // Formatted daily tooltip text
 
   const HabitStreakInfo({
     required this.currentStreak,
@@ -102,6 +104,8 @@ class HabitStreakInfo {
     required this.todayCount,
     required this.consistencyLast30,
     required this.dailyCounts,
+    this.dailyLevels = const {},
+    this.dailyTooltips = const {},
   });
 }
 
@@ -505,6 +509,10 @@ class AppStore extends ChangeNotifier {
     _habitStreakCache.clear();
     _rebuildStats();
     notifyListeners();
+  }
+
+  void clearHabitStreakCache() {
+    _habitStreakCache.clear();
   }
 
   void _rebuildStats() {
@@ -1573,10 +1581,12 @@ class AppStore extends ChangeNotifier {
     final today = dayStart(now);
 
     final dailyCounts = <DateTime, int>{};
+    final dayEntriesMap = <DateTime, List<Entry>>{};
     for (final e in entries) {
       if (e.activityId == activityId) {
         final d = dayStart(DateTime.fromMillisecondsSinceEpoch(e.ts));
         dailyCounts[d] = (dailyCounts[d] ?? 0) + 1;
+        (dayEntriesMap[d] ??= []).add(e);
       }
     }
 
@@ -1627,6 +1637,172 @@ class AppStore extends ChangeNotifier {
     }
     final consistencyLast30 = (activeIn30 / 30.0) * 100.0;
 
+    // --- Heatmap Renk Seviyeleri ve Tooltip Hesaplamaları ---
+    final relatedGoals = goals.where((g) => g.links.any((l) => l.activityId == activityId)).toList();
+    final limitGoal = relatedGoals.cast<Goal?>().firstWhere((g) => g?.isLimit == true, orElse: () => null);
+    final targetGoal = relatedGoals.cast<Goal?>().firstWhere((g) => g?.isTarget == true, orElse: () => null);
+
+    bool hasTimedEntry = false;
+    for (final e in entries) {
+      if (e.activityId == activityId) {
+        if (e.endTs != null) {
+          hasTimedEntry = true;
+          break;
+        }
+        if (e.unitId != null && e.value != null && unit(e.unitId!).dim == 'time') {
+          hasTimedEntry = true;
+          break;
+        }
+      }
+    }
+    final isTimed = hasTimedEntry ||
+        (targetGoal?.unitId != null && unit(targetGoal!.unitId!).dim == 'time') ||
+        (limitGoal?.unitId != null && unit(limitGoal!.unitId!).dim == 'time');
+
+    final dailyLevels = <DateTime, int>{};
+    final dailyTooltips = <DateTime, String>{};
+    final isTr = language == AppLanguage.tr;
+
+    for (final entry in dayEntriesMap.entries) {
+      final day = entry.key;
+      final dayEntries = entry.value;
+      final count = dayEntries.length;
+
+      if (limitGoal != null) {
+        // 1. Limiti belli olan hedeflerde: limit aşılmamışsa full boyalı (4),
+        // limiti geçtiyse limit üstü miktar arttıkça boyanma azalsın (3 -> 2 -> 1 -> 0).
+        final pcts = {for (final l in limitGoal.links) l.activityId: l.pct};
+        var val = 0.0;
+        for (final e in dayEntries) {
+          final pct = pcts[e.activityId];
+          if (pct == null) continue;
+          final c = contribution(limitGoal, e, pct);
+          if (c != null) val += c;
+        }
+        final target = limitGoal.target;
+        final unitSym = goalUnitSymbol(limitGoal);
+        final valStr = '${fmtNum(val)} $unitSym';
+        final targetStr = '${fmtNum(target)} $unitSym';
+
+        int lvl;
+        String tip;
+        if (val <= target) {
+          lvl = 4;
+          tip = '$valStr / $targetStr (${isTr ? "Limit korundu ✓" : "Within limit ✓"})';
+        } else {
+          final excessRatio = (val - target) / (target > 0 ? target : 1.0);
+          if (excessRatio <= 0.25) {
+            lvl = 3;
+          } else if (excessRatio <= 0.50) {
+            lvl = 2;
+          } else if (excessRatio <= 1.0) {
+            lvl = 1;
+          } else {
+            lvl = 0;
+          }
+          final diffStr = '+${fmtNum(val - target)} $unitSym';
+          tip = '$valStr / $targetStr ($diffStr ${isTr ? "aşıldı ⚠️" : "exceeded ⚠️"})';
+        }
+        dailyLevels[day] = lvl;
+        dailyTooltips[day] = tip;
+      } else if (targetGoal != null) {
+        // 2. Sayılı/ölçülü hedeflerde: hedefe ulaşınca full boyanacak şekilde olsun (4),
+        // altında kaldığında orana göre derecelensin.
+        final pcts = {for (final l in targetGoal.links) l.activityId: l.pct};
+        var val = 0.0;
+        for (final e in dayEntries) {
+          final pct = pcts[e.activityId];
+          if (pct == null) continue;
+          final c = contribution(targetGoal, e, pct);
+          if (c != null) val += c;
+        }
+        final target = targetGoal.target;
+        final unitSym = goalUnitSymbol(targetGoal);
+        final valStr = '${fmtNum(val)} $unitSym';
+        final targetStr = '${fmtNum(target)} $unitSym';
+
+        int lvl;
+        String tip;
+        if (val >= target) {
+          lvl = 4;
+          tip = '$valStr / $targetStr (${isTr ? "Hedefe ulaşıldı ✓" : "Goal reached ✓"})';
+        } else if (target > 0) {
+          final ratio = val / target;
+          if (ratio >= 0.66) {
+            lvl = 3;
+          } else if (ratio >= 0.33) {
+            lvl = 2;
+          } else if (ratio > 0) {
+            lvl = 1;
+          } else {
+            lvl = 0;
+          }
+          final pct = (ratio * 100).round();
+          tip = '$valStr / $targetStr (%$pct)';
+        } else {
+          lvl = val > 0 ? 4 : 0;
+          tip = '$valStr / $targetStr';
+        }
+        dailyLevels[day] = lvl;
+        dailyTooltips[day] = tip;
+      } else if (isTimed) {
+        // 3. Süreli görevler: min 1 dk max >=60 dk süreye göre boyansın.
+        double totalMinutes = 0.0;
+        for (final e in dayEntries) {
+          if (e.duration != null) {
+            totalMinutes += e.duration!.inMilliseconds / 60000.0;
+          } else if (e.unitId != null && e.value != null) {
+            final u = unit(e.unitId!);
+            if (u.dim == 'time') {
+              totalMinutes += e.value! * u.factor;
+            }
+          }
+        }
+
+        int lvl;
+        if (totalMinutes < 1.0) {
+          lvl = 0;
+        } else if (totalMinutes < 15.0) {
+          lvl = 1;
+        } else if (totalMinutes < 30.0) {
+          lvl = 2;
+        } else if (totalMinutes < 60.0) {
+          lvl = 3;
+        } else {
+          lvl = 4;
+        }
+
+        String durStr;
+        final totalMinInt = totalMinutes.round();
+        if (totalMinInt < 60) {
+          durStr = '$totalMinInt ${isTr ? "dk" : "min"}';
+        } else {
+          final h = totalMinInt ~/ 60;
+          final m = totalMinInt % 60;
+          durStr = m > 0 ? '$h ${isTr ? "sa" : "h"} $m ${isTr ? "dk" : "min"}' : '$h ${isTr ? "sa" : "h"}';
+        }
+        final logStr = '$count ${isTr ? "kayıt" : "logs"}';
+        dailyLevels[day] = lvl;
+        dailyTooltips[day] = '$durStr ($logStr)';
+      } else {
+        // 4. Belli değilse şimdiki gibi (1, 2, 3, >=4).
+        int lvl;
+        if (count == 0) {
+          lvl = 0;
+        } else if (count == 1) {
+          lvl = 1;
+        } else if (count == 2) {
+          lvl = 2;
+        } else if (count == 3) {
+          lvl = 3;
+        } else {
+          lvl = 4;
+        }
+        dailyLevels[day] = lvl;
+        dailyTooltips[day] = '$count ${isTr ? "kayıt" : "logs"}';
+      }
+    }
+
     final result = HabitStreakInfo(
       currentStreak: currentStreak,
       longestStreak: longestStreak,
@@ -1635,6 +1811,8 @@ class AppStore extends ChangeNotifier {
       todayCount: todayCount,
       consistencyLast30: consistencyLast30,
       dailyCounts: dailyCounts,
+      dailyLevels: dailyLevels,
+      dailyTooltips: dailyTooltips,
     );
     _habitStreakCache[activityId] = result;
     return result;

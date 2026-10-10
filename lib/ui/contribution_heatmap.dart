@@ -6,6 +6,8 @@ import '../logic/l10n.dart';
 /// GitHub stili katkı / alışkanlık ısı haritası (Contributions Heatmap)
 class ContributionHeatmap extends StatefulWidget {
   final Map<DateTime, int> dailyCounts;
+  final Map<DateTime, int>? dailyLevels;
+  final Map<DateTime, String>? dailyTooltips;
   final Color? baseColor;
   final int weekCount;
   final DateTime? endDate;
@@ -17,6 +19,8 @@ class ContributionHeatmap extends StatefulWidget {
   const ContributionHeatmap({
     super.key,
     required this.dailyCounts,
+    this.dailyLevels,
+    this.dailyTooltips,
     this.baseColor,
     this.weekCount = 20,
     this.endDate,
@@ -34,6 +38,7 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
   final ScrollController _scrollController = ScrollController();
   DateTime? _selectedDate;
   int? _selectedCount;
+  String? _selectedTooltip;
 
   @override
   void initState() {
@@ -51,26 +56,31 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
     super.dispose();
   }
 
-  Color _cellColor(BuildContext context, int count, bool isFuture, Color activeColor) {
-    final isDark = Theme.of(context).brightness == Brightness.dark;
+  Color _cellColor(BuildContext context, int level, bool isFuture, Color activeColor) {
     if (isFuture) {
       return Colors.transparent;
     }
-    if (count == 0) {
-      return isDark
-          ? Colors.white.withValues(alpha: 0.08)
-          : const Color(0xFFEBEDF0);
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+    final emptyColor = isDark ? const Color(0xFF22272E) : const Color(0xFFEBEDF0);
+    if (level <= 0) {
+      return emptyColor;
     }
-    if (count == 1) {
-      return activeColor.withValues(alpha: 0.35);
+
+    final hsl = HSLColor.fromColor(activeColor);
+    final vibrantColor = isDark && hsl.lightness < 0.40
+        ? hsl.withLightness((hsl.lightness + 0.18).clamp(0.0, 0.85)).toColor()
+        : activeColor;
+
+    if (level == 1) {
+      return Color.lerp(emptyColor, vibrantColor, isDark ? 0.46 : 0.38)!;
     }
-    if (count == 2) {
-      return activeColor.withValues(alpha: 0.58);
+    if (level == 2) {
+      return Color.lerp(emptyColor, vibrantColor, isDark ? 0.68 : 0.60)!;
     }
-    if (count == 3) {
-      return activeColor.withValues(alpha: 0.80);
+    if (level == 3) {
+      return Color.lerp(emptyColor, vibrantColor, isDark ? 0.86 : 0.82)!;
     }
-    return activeColor;
+    return vibrantColor;
   }
 
   @override
@@ -200,14 +210,27 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                                     _selectedDate!.month == cellDate.month &&
                                     _selectedDate!.day == cellDate.day;
 
-                                final bg = _cellColor(context, count, isFuture, activeColor);
+                                final level = widget.dailyLevels != null
+                                    ? (widget.dailyLevels![normalizedDay] ?? 0).clamp(0, 4)
+                                    : (count == 0
+                                        ? 0
+                                        : count == 1
+                                            ? 1
+                                            : count == 2
+                                                ? 2
+                                                : count == 3
+                                                    ? 3
+                                                    : 4);
+                                final tooltipMsg = widget.dailyTooltips?[normalizedDay] ??
+                                    '$count ${s.isTr ? "kayıt" : "logs"}';
+                                final bg = _cellColor(context, level, isFuture, activeColor);
 
                                 return Padding(
                                   padding: const EdgeInsets.only(bottom: cellSpacing),
                                   child: Tooltip(
                                     message: isFuture
                                         ? ''
-                                        : '${fmtDateShort(cellDate)}: $count ${s.isTr ? "kayıt" : "logs"}',
+                                        : '${fmtDateShort(cellDate)}: $tooltipMsg',
                                     child: InkWell(
                                       borderRadius: BorderRadius.circular(3),
                                       onTap: isFuture
@@ -216,6 +239,7 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                                               setState(() {
                                                 _selectedDate = cellDate;
                                                 _selectedCount = count;
+                                                _selectedTooltip = tooltipMsg;
                                               });
                                               widget.onDayTapped?.call(cellDate);
                                             },
@@ -241,7 +265,14 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                                                               .withValues(alpha: 0.15),
                                                           width: 0.5,
                                                         )
-                                                      : null)),
+                                                      : (level == 0
+                                                          ? Border.all(
+                                                              color: Theme.of(context).brightness == Brightness.dark
+                                                                  ? Colors.white.withValues(alpha: 0.08)
+                                                                  : Colors.black.withValues(alpha: 0.06),
+                                                              width: 0.5,
+                                                            )
+                                                          : null))),
                                         ),
                                       ),
                                     ),
@@ -276,14 +307,23 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                           width: 8,
                           height: 8,
                           decoration: BoxDecoration(
-                            color: _cellColor(context, _selectedCount ?? 0, false, activeColor),
+                            color: _selectedDate != null
+                                ? _cellColor(
+                                    context,
+                                    widget.dailyLevels != null
+                                        ? (widget.dailyLevels![dayStart(_selectedDate!)] ?? 0).clamp(0, 4)
+                                        : (_selectedCount == 0 ? 0 : (_selectedCount! >= 4 ? 4 : _selectedCount!)),
+                                    false,
+                                    activeColor,
+                                  )
+                                : activeColor,
                             shape: BoxShape.circle,
                           ),
                         ),
                         const SizedBox(width: 6),
                         Flexible(
                           child: Text(
-                            '${fmtDateShort(_selectedDate!)}: ${_selectedCount ?? 0} ${s.isTr ? "kayıt" : "logs"}',
+                            '${fmtDateShort(_selectedDate!)}: ${_selectedTooltip ?? "$_selectedCount ${s.isTr ? "kayıt" : "logs"}"}',
                             style: TextStyle(
                               fontSize: 11.5,
                               fontWeight: FontWeight.bold,
@@ -324,6 +364,14 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                       decoration: BoxDecoration(
                         color: _cellColor(context, lvl, false, activeColor),
                         borderRadius: BorderRadius.circular(2),
+                        border: lvl == 0
+                            ? Border.all(
+                                color: Theme.of(context).brightness == Brightness.dark
+                                    ? Colors.white.withValues(alpha: 0.12)
+                                    : Colors.black.withValues(alpha: 0.08),
+                                width: 0.5,
+                              )
+                            : null,
                       ),
                     ),
                   ],

@@ -1143,6 +1143,8 @@ class _GoalsPageState extends State<GoalsPage> {
             // GitHub Contributions Heatmap
             ContributionHeatmap(
               dailyCounts: streakInfo.dailyCounts,
+              dailyLevels: streakInfo.dailyLevels,
+              dailyTooltips: streakInfo.dailyTooltips,
               baseColor: habit.displayColor,
               weekCount: 20,
             ),
