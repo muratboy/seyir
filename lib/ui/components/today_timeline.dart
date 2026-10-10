@@ -442,7 +442,23 @@ class TodayTimeline extends StatelessWidget {
     var measureId = e.measureId;
     var qty = e.qty;
     final noteCtrl = TextEditingController(text: e.note ?? '');
-    var entryTime = e.time;
+    var refTime = e.time;
+    var isEndMode = false;
+
+    int calcDurMins(int? mId, double q) {
+      final currentM = store.measureById(mId);
+      if (currentM != null && (currentM.unitId == 'dk' || currentM.unitId == 'sa')) {
+        return (currentM.amount * q * (currentM.unitId == 'sa' ? 60 : 1)).round();
+      } else if (e.duration != null && e.duration!.inMinutes > 0) {
+        return e.duration!.inMinutes;
+      }
+      return 0;
+    }
+
+    DateTime calcStartTime(DateTime ref, bool endMode, int dur) {
+      if (dur <= 0 || !endMode) return ref;
+      return ref.subtract(Duration(minutes: dur));
+    }
 
     showModalBottomSheet<void>(
       context: context,
@@ -532,18 +548,13 @@ class TodayTimeline extends StatelessWidget {
                             ],
                           ),
                           Builder(builder: (ctx) {
-                            final currentM = store.measureById(measureId);
-                            int durMins = 0;
-                            if (currentM != null && (currentM.unitId == 'dk' || currentM.unitId == 'sa')) {
-                              durMins = (currentM.amount * qty * (currentM.unitId == 'sa' ? 60 : 1)).round();
-                            } else if (e.duration != null && e.duration!.inMinutes > 0) {
-                              durMins = e.duration!.inMinutes;
-                            }
-                            final cEnd = entryTime.add(Duration(minutes: durMins));
+                            final durMins = calcDurMins(measureId, qty);
+                            final startTime = calcStartTime(refTime, isEndMode, durMins);
+                            final endTime = startTime.add(Duration(minutes: durMins));
                             return Text(
                               durMins > 0
-                                  ? '${s.isTr ? "Süre Aralığı" : "Interval"}: ${fmtTime(entryTime)}–${fmtTime(cEnd)} (${fmtDateShort(entryTime)})'
-                                  : '${s.isTr ? "Eklenme" : "Logged"}: ${fmtTime(entryTime)} - ${fmtDateShort(entryTime)}',
+                                  ? '${s.isTr ? "Süre Aralığı" : "Interval"}: ${fmtTime(startTime)}–${fmtTime(endTime)} (${fmtDateShort(startTime)})'
+                                  : '${s.isTr ? "Eklenme" : "Logged"}: ${fmtTime(refTime)} - ${fmtDateShort(refTime)}',
                               style: TextStyle(
                                 fontSize: 12,
                                 color: Theme.of(c).colorScheme.onSurfaceVariant,
@@ -563,18 +574,18 @@ class TodayTimeline extends StatelessWidget {
                     ),
                     IconButton(
                       icon: const Icon(Icons.access_time),
-                      tooltip: s.isTr ? 'Başlangıç saatini değiştir' : 'Change time',
+                      tooltip: s.isTr ? 'Saati değiştir' : 'Change time',
                       onPressed: () async {
                         final t = await showTimePicker(
                           context: c,
-                          initialTime: TimeOfDay.fromDateTime(entryTime),
+                          initialTime: TimeOfDay.fromDateTime(refTime),
                         );
                         if (t != null) {
                           setS(() {
-                            entryTime = DateTime(
-                              entryTime.year,
-                              entryTime.month,
-                              entryTime.day,
+                            refTime = DateTime(
+                              refTime.year,
+                              refTime.month,
+                              refTime.day,
                               t.hour,
                               t.minute,
                             );
@@ -585,48 +596,176 @@ class TodayTimeline extends StatelessWidget {
                   ],
                 ),
                 Builder(builder: (ctx) {
-                  final currentM = store.measureById(measureId);
-                  int durMins = 0;
-                  if (currentM != null && (currentM.unitId == 'dk' || currentM.unitId == 'sa')) {
-                    durMins = (currentM.amount * qty * (currentM.unitId == 'sa' ? 60 : 1)).round();
-                  } else if (e.duration != null && e.duration!.inMinutes > 0) {
-                    durMins = e.duration!.inMinutes;
-                  }
+                  final durMins = calcDurMins(measureId, qty);
                   if (durMins <= 0) return const SizedBox.shrink();
-                  final cEnd = entryTime.add(Duration(minutes: durMins));
+                  final startTime = calcStartTime(refTime, isEndMode, durMins);
+                  final endTime = startTime.add(Duration(minutes: durMins));
+
                   return Padding(
-                    padding: const EdgeInsets.only(top: 8),
+                    padding: const EdgeInsets.only(top: 10, bottom: 4),
                     child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: Theme.of(c).colorScheme.surfaceContainerHighest.withValues(alpha: 0.45),
-                        borderRadius: BorderRadius.circular(10),
+                        borderRadius: BorderRadius.circular(16),
+                        border: Border.all(
+                          color: Theme.of(c).colorScheme.outlineVariant.withValues(alpha: 0.5),
+                        ),
                       ),
-                      child: Row(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
-                          Icon(Icons.schedule, size: 16, color: Theme.of(c).colorScheme.primary),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              '${fmtTime(entryTime)}–${fmtTime(cEnd)} (${fmtAmount(durMins.toDouble(), 'time')})',
-                              style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                            ),
+                          Row(
+                            children: [
+                              Icon(Icons.schedule_rounded, size: 18, color: Theme.of(c).colorScheme.primary),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text.rich(
+                                  TextSpan(
+                                    children: [
+                                      TextSpan(
+                                        text: s.isTr ? 'Girilen Zaman: ' : 'Entered Time: ',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Theme.of(c).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: fmtTime(refTime),
+                                        style: const TextStyle(
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.bold,
+                                        ),
+                                      ),
+                                      TextSpan(
+                                        text: ' (${fmtAmount(durMins.toDouble(), 'time')})',
+                                        style: TextStyle(
+                                          fontSize: 12,
+                                          color: Theme.of(c).colorScheme.primary,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              TextButton.icon(
+                                style: TextButton.styleFrom(
+                                  visualDensity: VisualDensity.compact,
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                                ),
+                                icon: const Icon(Icons.edit_outlined, size: 14),
+                                label: Text(
+                                  s.isTr ? 'Değiştir' : 'Change',
+                                  style: const TextStyle(fontSize: 11.5),
+                                ),
+                                onPressed: () async {
+                                  final t = await showTimePicker(
+                                    context: c,
+                                    initialTime: TimeOfDay.fromDateTime(refTime),
+                                  );
+                                  if (t != null) {
+                                    setS(() {
+                                      refTime = DateTime(
+                                        refTime.year,
+                                        refTime.month,
+                                        refTime.day,
+                                        t.hour,
+                                        t.minute,
+                                      );
+                                    });
+                                  }
+                                },
+                              ),
+                            ],
                           ),
-                          TextButton.icon(
-                            style: TextButton.styleFrom(
+                          const SizedBox(height: 10),
+                          SegmentedButton<bool>(
+                            showSelectedIcon: true,
+                            style: SegmentedButton.styleFrom(
                               visualDensity: VisualDensity.compact,
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
                             ),
-                            icon: const Icon(Icons.history, size: 14),
-                            label: Text(
-                              s.isTr ? '$durMins dk geriye al' : 'Shift back',
-                              style: const TextStyle(fontSize: 11.5),
-                            ),
-                            onPressed: () {
+                            segments: [
+                              ButtonSegment<bool>(
+                                value: false,
+                                icon: const Icon(Icons.play_arrow_rounded, size: 18),
+                                label: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        s.isTr ? 'Başlangıç Al' : 'As Start',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                      Text(
+                                        '${fmtTime(refTime)}–${fmtTime(refTime.add(Duration(minutes: durMins)))}',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: !isEndMode
+                                              ? Theme.of(c).colorScheme.onPrimaryContainer
+                                              : Theme.of(c).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                              ButtonSegment<bool>(
+                                value: true,
+                                icon: const Icon(Icons.flag_rounded, size: 18),
+                                label: Padding(
+                                  padding: const EdgeInsets.symmetric(vertical: 4),
+                                  child: Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Text(
+                                        s.isTr ? 'Bitiş Al' : 'As End',
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                      ),
+                                      Text(
+                                        '${fmtTime(refTime.subtract(Duration(minutes: durMins)))}–${fmtTime(refTime)}',
+                                        style: TextStyle(
+                                          fontSize: 10.5,
+                                          color: isEndMode
+                                              ? Theme.of(c).colorScheme.onPrimaryContainer
+                                              : Theme.of(c).colorScheme.onSurfaceVariant,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ),
+                            ],
+                            selected: {isEndMode},
+                            onSelectionChanged: (Set<bool> sel) {
                               setS(() {
-                                entryTime = entryTime.subtract(Duration(minutes: durMins));
+                                isEndMode = sel.first;
                               });
                             },
+                          ),
+                          const SizedBox(height: 8),
+                          Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                            decoration: BoxDecoration(
+                              color: Theme.of(c).colorScheme.primaryContainer.withValues(alpha: 0.45),
+                              borderRadius: BorderRadius.circular(10),
+                            ),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Icon(Icons.check_circle_outline, size: 14, color: Theme.of(c).colorScheme.primary),
+                                const SizedBox(width: 6),
+                                Text(
+                                  '${s.isTr ? "Kayıt Aralığı" : "Interval"}: ${fmtTime(startTime)} – ${fmtTime(endTime)}',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: FontWeight.w600,
+                                    color: Theme.of(c).colorScheme.primary,
+                                  ),
+                                ),
+                              ],
+                            ),
                           ),
                         ],
                       ),
@@ -752,21 +891,16 @@ class TodayTimeline extends StatelessWidget {
                     const Spacer(),
                     FilledButton(
                       onPressed: () async {
-                        final currentM = store.measureById(measureId);
-                        int durMins = 0;
-                        if (currentM != null && (currentM.unitId == 'dk' || currentM.unitId == 'sa')) {
-                          durMins = (currentM.amount * qty * (currentM.unitId == 'sa' ? 60 : 1)).round();
-                        } else if (e.duration != null && e.duration!.inMinutes > 0) {
-                          durMins = e.duration!.inMinutes;
-                        }
+                        final durMins = calcDurMins(measureId, qty);
+                        final startTime = calcStartTime(refTime, isEndMode, durMins);
                         await store.updateEntry(
                           e,
                           activityId: e.activityId,
-                          time: entryTime,
+                          time: startTime,
                           measureId: measureId,
                           qty: qty,
                           note: noteCtrl.text,
-                          endTs: durMins > 0 ? entryTime.add(Duration(minutes: durMins)).millisecondsSinceEpoch : null,
+                          endTs: durMins > 0 ? startTime.add(Duration(minutes: durMins)).millisecondsSinceEpoch : null,
                         );
                         if (c.mounted) Navigator.pop(c);
                       },

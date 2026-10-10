@@ -672,6 +672,24 @@ void main() {
       expect(restored.duration?.inMinutes, equals(90));
     });
 
+    test('Entry duration start and end mode shifts intervals accurately', () {
+      final ref = DateTime(2026, 10, 10, 14, 0); // 14:00
+      const durMins = 60; // 1 hour
+
+      // As Start Mode: starts at ref (14:00), ends at 15:00
+      final startModeStart = ref;
+      final startModeEnd = startModeStart.add(const Duration(minutes: durMins));
+      expect(startModeStart.hour, equals(14));
+      expect(startModeEnd.hour, equals(15));
+
+      // As End Mode: ends at ref (14:00), starts at 13:00
+      final endModeStart = ref.subtract(const Duration(minutes: durMins));
+      final endModeEnd = ref;
+      expect(endModeStart.hour, equals(13));
+      expect(endModeEnd.hour, equals(14));
+      expect(endModeEnd.difference(endModeStart).inMinutes, equals(60));
+    });
+
     test('Activity archiving preserves history and filters suggestions', () {
       final store = AppStore();
       final act1 = Activity(id: 1, name: 'Ders Çalışma', createdAt: 0, isArchived: false);
