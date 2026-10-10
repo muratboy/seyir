@@ -117,6 +117,8 @@ class AppStrings {
       ? 'İstediğin aktiviteleri alışkanlığa dönüştürerek günlük serilerini ve GitHub katkı grafiğini takip edebilirsin.'
       : 'Turn activities into habits to track your daily streaks and GitHub-style contribution heatmap.';
   String get addHabit => isTr ? 'Alışkanlık Ekle / Seç' : 'Add / Pick Habit';
+  String get addToHabits => isTr ? 'Zinciri Kırma\'ya Ekle' : 'Add to Habits';
+  String get viewInHabits => isTr ? 'Zinciri Kırma\'da Görüntüle' : 'View in Habits';
   String get heatmapLess => isTr ? 'Daha az' : 'Less';
   String get heatmapMore => isTr ? 'Daha çok' : 'More';
 

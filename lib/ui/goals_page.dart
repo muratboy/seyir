@@ -176,6 +176,13 @@ class _GoalsPageState extends State<GoalsPage> {
     final isDone = status.done;
     final streak = store.goalStreak(goal);
 
+    final linkedActivities = goal.links
+        .map((l) => store.activities[l.activityId])
+        .whereType<Activity>()
+        .toList();
+    final nonHabitLinkedActivities = linkedActivities.where((a) => !a.isHabit).toList();
+    final allAlreadyHabits = linkedActivities.isNotEmpty && nonHabitLinkedActivities.isEmpty;
+
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
       elevation: isDone ? 2 : 1,
@@ -337,9 +344,69 @@ class _GoalsPageState extends State<GoalsPage> {
                         '${goal.name} ${s.deleteConfirmDesc}',
                       );
                       if (ok) store.deleteGoal(goal);
+                    } else if (val == 'add_to_habits') {
+                      if (allAlreadyHabits) {
+                        setState(() => _currentTab = GoalsPageTab.habits);
+                        return;
+                      }
+                      if (nonHabitLinkedActivities.length == 1) {
+                        final act = nonHabitLinkedActivities.first;
+                        await store.setActivityHabit(act.id, true);
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                s.isTr
+                                    ? '🔥 "${act.name}" Zinciri Kırma\'ya eklendi!'
+                                    : '🔥 "${act.name}" added to Habits!',
+                              ),
+                              behavior: SnackBarBehavior.floating,
+                              action: SnackBarAction(
+                                label: s.isTr ? 'Görüntüle' : 'View',
+                                onPressed: () {
+                                  setState(() => _currentTab = GoalsPageTab.habits);
+                                },
+                              ),
+                            ),
+                          );
+                        }
+                      } else if (nonHabitLinkedActivities.length > 1) {
+                        await _showSelectActivitiesForHabitDialog(context, goal, nonHabitLinkedActivities);
+                      } else {
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(
+                                s.isTr
+                                    ? 'Bu hedefe bağlı bir aktivite bulunmuyor.'
+                                    : 'No activities linked to this goal.',
+                              ),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      }
                     }
                   },
                   itemBuilder: (c) => [
+                    if (linkedActivities.isNotEmpty)
+                      PopupMenuItem(
+                        value: 'add_to_habits',
+                        child: Row(
+                          children: [
+                            const Text('🔥', style: TextStyle(fontSize: 16)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                allAlreadyHabits
+                                    ? (s.isTr ? 'Zinciri Kırma\'da Görüntüle' : s.viewInHabits)
+                                    : (s.isTr ? 'Zinciri Kırma\'ya Ekle' : s.addToHabits),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
                     PopupMenuItem(value: 'edit', child: Text(s.edit)),
                     PopupMenuItem(
                       value: 'delete',
@@ -1271,6 +1338,113 @@ class _GoalsPageState extends State<GoalsPage> {
                   : '"${picked.name}" is now a habit! Keep the streak 🔥',
             ),
             behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  Future<void> _showSelectActivitiesForHabitDialog(
+    BuildContext context,
+    Goal goal,
+    List<Activity> activities,
+  ) async {
+    final s = strings.value;
+    final selectedIds = <int>{...activities.map((a) => a.id)};
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Row(
+                children: [
+                  const Text('🔥', style: TextStyle(fontSize: 20)),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s.isTr ? 'Zinciri Kırma\'ya Ekle' : 'Add to Habits',
+                      style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    s.isTr
+                        ? '"${goal.name}" hedefine bağlı aktiviteler:'
+                        : 'Activities linked to "${goal.name}":',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  ...activities.map((act) {
+                    final isChecked = selectedIds.contains(act.id);
+                    return CheckboxListTile(
+                      dense: true,
+                      contentPadding: EdgeInsets.zero,
+                      value: isChecked,
+                      title: Row(
+                        children: [
+                          ActivityAvatar(act.id, size: 24),
+                          const SizedBox(width: 8),
+                          Expanded(child: Text(act.name)),
+                        ],
+                      ),
+                      onChanged: (val) {
+                        setDialogState(() {
+                          if (val == true) {
+                            selectedIds.add(act.id);
+                          } else {
+                            selectedIds.remove(act.id);
+                          }
+                        });
+                      },
+                    );
+                  }),
+                ],
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx, false),
+                  child: Text(s.cancel),
+                ),
+                FilledButton(
+                  onPressed: selectedIds.isEmpty ? null : () => Navigator.pop(ctx, true),
+                  child: Text(s.isTr ? 'Ekle (${selectedIds.length})' : 'Add (${selectedIds.length})'),
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+
+    if (confirmed == true && selectedIds.isNotEmpty) {
+      for (final id in selectedIds) {
+        await store.setActivityHabit(id, true);
+      }
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              s.isTr
+                  ? '🔥 Seçilen aktiviteler Zinciri Kırma\'ya eklendi!'
+                  : '🔥 Selected activities added to Habits!',
+            ),
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: s.isTr ? 'Görüntüle' : 'View',
+              onPressed: () {
+                setState(() => _currentTab = GoalsPageTab.habits);
+              },
+            ),
           ),
         );
       }

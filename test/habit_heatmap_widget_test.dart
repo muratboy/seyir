@@ -299,4 +299,63 @@ void main() {
     // Verify detailed tooltip message appears in bottom row
     expect(find.textContaining('1 sa 15 dk (Hedefe ulaşıldı ✓)'), findsWidgets);
   });
+
+  testWidgets('Goal card 3-dots popup menu shows Zinciri Kırma option and toggles habit', (tester) async {
+    store.clearHabitStreakCache();
+    store.activities.clear();
+    store.goals.clear();
+
+    const actId = 301;
+    final testAct = Activity(
+      id: actId,
+      name: 'Yürüyüş',
+      emoji: '🚶',
+      isHabit: false,
+      createdAt: 1000000,
+    );
+    store.activities[actId] = testAct;
+
+    final goal = Goal(
+      id: 401,
+      name: 'Haftalık Yürüyüş',
+      type: 'target',
+      mode: 'count',
+      period: GoalPeriod.week,
+      target: 3,
+      unitId: 'adet',
+      startDate: 1000000,
+      createdAt: 1000000,
+      links: [GoalLink(activityId: actId, pct: 100)],
+    );
+    store.goals = [goal];
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: GoalsPage(),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // Verify goal card is rendered
+    expect(find.text('Haftalık Yürüyüş'), findsOneWidget);
+
+    // Tap 3-dots menu on the goal card
+    final popupBtn = find.byIcon(Icons.more_vert);
+    expect(popupBtn, findsOneWidget);
+    await tester.tap(popupBtn);
+    await tester.pumpAndSettle();
+
+    // Verify 🔥 Zinciri Kırma'ya Ekle is in popup menu
+    expect(find.textContaining('Zinciri Kırma\'ya Ekle'), findsOneWidget);
+
+    // Tap the menu option
+    await tester.tap(find.textContaining('Zinciri Kırma\'ya Ekle'));
+    await tester.pumpAndSettle();
+
+    // Verify activity is now a habit!
+    expect(testAct.isHabit, isTrue);
+
+    // Verify SnackBar feedback
+    expect(find.textContaining('Yürüyüş'), findsWidgets);
+  });
 }

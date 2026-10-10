@@ -711,7 +711,9 @@ class AppStore extends ChangeNotifier {
       exactMatch(name) ?? await addActivity(name);
 
   Future<void> updateActivity(Activity a) async {
-    await (await db).update('activities', a.toMap(), where: 'id=?', whereArgs: [a.id]);
+    if (_db != null) {
+      await (await db).update('activities', a.toMap(), where: 'id=?', whereArgs: [a.id]);
+    }
     _changed();
   }
 
