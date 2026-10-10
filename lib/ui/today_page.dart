@@ -579,7 +579,8 @@ class _TodayPageState extends State<TodayPage> {
         final isToday = sameDay(_currentDay, DateTime.now());
         return Scaffold(
           appBar: AppBar(
-            titleSpacing: 8,
+            automaticallyImplyLeading: false,
+            titleSpacing: 4,
             title: Row(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -587,46 +588,55 @@ class _TodayPageState extends State<TodayPage> {
                   icon: const Icon(Icons.chevron_left, size: 22),
                   tooltip: s.isTr ? 'Önceki gün' : 'Previous day',
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
                   onPressed: () => setState(() => _currentDay = subDays(_currentDay, 1)),
                 ),
-                InkWell(
-                  borderRadius: BorderRadius.circular(10),
-                  onTap: () async {
-                    final picked = await showDatePicker(
-                      context: context,
-                      initialDate: _currentDay,
-                      firstDate: DateTime(2020),
-                      lastDate: addDays(DateTime.now(), 365),
-                    );
-                    if (picked != null) setState(() => _currentDay = dayStart(picked));
-                  },
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Text(
-                              fmtDayTitle(_currentDay, isTr: s.isTr),
-                              style: const TextStyle(fontSize: 15.5, fontWeight: FontWeight.bold),
-                            ),
-                            const SizedBox(width: 3),
-                            const Icon(Icons.arrow_drop_down, size: 18),
-                          ],
-                        ),
-                        Text(
-                          fmtDateShort(_currentDay, isTr: s.isTr),
-                          style: TextStyle(
-                            fontSize: 11,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
-                            fontWeight: FontWeight.w500,
+                Flexible(
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(10),
+                    onTap: () async {
+                      final picked = await showDatePicker(
+                        context: context,
+                        initialDate: _currentDay,
+                        firstDate: DateTime(2020),
+                        lastDate: addDays(DateTime.now(), 365),
+                      );
+                      if (picked != null) setState(() => _currentDay = dayStart(picked));
+                    },
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Flexible(
+                                child: Text(
+                                  fmtDayTitle(_currentDay, isTr: s.isTr),
+                                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              const Icon(Icons.arrow_drop_down, size: 18),
+                            ],
                           ),
-                        ),
-                      ],
+                          Text(
+                            fmtDateShort(_currentDay, isTr: s.isTr),
+                            style: TextStyle(
+                              fontSize: 11,
+                              color: Theme.of(context).colorScheme.onSurfaceVariant,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ),
                     ),
                   ),
                 ),
@@ -634,7 +644,8 @@ class _TodayPageState extends State<TodayPage> {
                   icon: const Icon(Icons.chevron_right, size: 22),
                   tooltip: s.isTr ? 'Sonraki gün' : 'Next day',
                   padding: EdgeInsets.zero,
-                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
                   onPressed: () => setState(() => _currentDay = addDays(_currentDay, 1)),
                 ),
               ],
@@ -644,16 +655,23 @@ class _TodayPageState extends State<TodayPage> {
                 IconButton(
                   icon: const Icon(Icons.today_rounded),
                   tooltip: s.isTr ? 'Bugüne dön' : 'Go to today',
+                  padding: EdgeInsets.zero,
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   onPressed: () => setState(() => _currentDay = dayStart(DateTime.now())),
                 ),
               IconButton(
                 icon: const Icon(Icons.search),
                 tooltip: s.isTr ? 'Aktivite Ara' : 'Search Activity',
+                padding: EdgeInsets.zero,
+                visualDensity: VisualDensity.compact,
+                constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                 onPressed: () async {
                   final a = await showActivityPicker(context);
                   if (a != null) _selectActivity(a);
                 },
               ),
+              const SizedBox(width: 4),
             ],
           ),
           body: SingleChildScrollView(
