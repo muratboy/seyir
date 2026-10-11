@@ -7,6 +7,8 @@ import 'package:takip/data/store.dart';
 import 'package:takip/logic/format.dart';
 import 'package:takip/ui/contribution_heatmap.dart';
 import 'package:takip/ui/goals_page.dart';
+import 'package:takip/ui/tabs/habits_tab.dart';
+import 'package:takip/ui/tabs/roadmaps_tab.dart';
 
 void main() {
   setUp(() async {
@@ -74,11 +76,33 @@ void main() {
     await tester.tap(find.textContaining('Zinciri Kırma'));
     await tester.pumpAndSettle();
 
-    // Verify habit card for Kitap Okuma is shown
+    // Verify HabitsTab is mounted and habit card for Kitap Okuma is shown
+    expect(find.byType(HabitsTab), findsOneWidget);
     expect(find.text('Kitap Okuma'), findsOneWidget);
     expect(find.textContaining('Mevcut Seri'), findsWidgets);
     expect(find.textContaining('En Uzun Seri'), findsWidgets);
     expect(find.byType(ContributionHeatmap), findsOneWidget);
+
+    // Tap on Yol Haritası tab
+    await tester.tap(find.textContaining('Yol Haritası'));
+    await tester.pumpAndSettle();
+
+    // Verify RoadmapsTab is mounted
+    expect(find.byType(RoadmapsTab), findsOneWidget);
+  });
+
+  testWidgets('RoadmapsTab renders empty state when no roadmaps exist', (tester) async {
+    store.roadmaps.clear();
+
+    await tester.pumpWidget(
+      const MaterialApp(
+        home: Scaffold(body: RoadmapsTab()),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    expect(find.textContaining('Henüz Bir Yol Haritası Yok'), findsOneWidget);
+    expect(find.textContaining('AI Kalıbı ile İçe Aktar'), findsOneWidget);
   });
 
   test('habitStreakInfo timed activity calculates min 1 min, max >= 60 min levels and tooltips', () {
