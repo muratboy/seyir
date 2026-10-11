@@ -256,6 +256,7 @@ class NotificationService {
     required int remainingMs,
     required bool isPomodoro,
     bool soundEnabled = true,
+    bool autoSaveEnabled = true,
   }) async {
     if (kIsWeb || !Platform.isAndroid || remainingMs <= 0) return;
     await init();
@@ -265,7 +266,33 @@ class NotificationService {
       final alarmId = 10000 + timerId;
 
       final title = isPomodoro ? '🍅 Pomodoro Tamamlandı!' : '⏱️ Süre Doldu!';
-      final body = '$activityName için hedeflenen süre tamamlandı. Oturumu kaydetmek için dokun.';
+      final body = autoSaveEnabled
+          ? '$activityName oturumu tamamlandı ve otomatik kaydedildi.'
+          : '$activityName için hedeflenen süre tamamlandı. Oturumu kaydetmek için dokun.';
+
+      final actions = autoSaveEnabled
+          ? const [
+              AndroidNotificationAction(
+                'alarm_dismiss',
+                'Tamam',
+                showsUserInterface: false,
+                cancelNotification: true,
+              ),
+            ]
+          : const [
+              AndroidNotificationAction(
+                'alarm_finish',
+                '⏹️ Bitir & Kaydet',
+                showsUserInterface: true,
+                cancelNotification: true,
+              ),
+              AndroidNotificationAction(
+                'alarm_dismiss',
+                'Kapat',
+                showsUserInterface: false,
+                cancelNotification: true,
+              ),
+            ];
 
       final androidDetails = AndroidNotificationDetails(
         'takip_alarms_channel',
@@ -277,20 +304,7 @@ class NotificationService {
         enableVibration: true,
         vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]),
         category: AndroidNotificationCategory.alarm,
-        actions: const [
-          AndroidNotificationAction(
-            'alarm_finish',
-            '⏹️ Bitir & Kaydet',
-            showsUserInterface: true,
-            cancelNotification: true,
-          ),
-          AndroidNotificationAction(
-            'alarm_dismiss',
-            'Kapat',
-            showsUserInterface: false,
-            cancelNotification: true,
-          ),
-        ],
+        actions: actions,
       );
 
       await _plugin.zonedSchedule(
@@ -307,6 +321,51 @@ class NotificationService {
       debugPrint('Timer alarm scheduled at $finishTime for timer #$timerId');
     } catch (e) {
       debugPrint('Error scheduling timer alarm: $e');
+    }
+  }
+
+  /// Pomodoro veya Geri Sayım tamamlandığında bildirimin ekranda kalmasını sağlayan anlık bildirim
+  static Future<void> showTimerCompletedNotification({
+    required int timerId,
+    required String activityName,
+    required bool isPomodoro,
+    bool soundEnabled = true,
+  }) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    await init();
+    try {
+      final title = isPomodoro ? '🍅 Pomodoro Tamamlandı!' : '⏱️ Süre Doldu!';
+      final body = '$activityName oturumu tamamlandı ve otomatik kaydedildi.';
+
+      final androidDetails = AndroidNotificationDetails(
+        'takip_alarms_channel',
+        'Sayaç ve Pomodoro Alarmları',
+        channelDescription: 'Pomodoro ve geri sayım süresi tamamlandığında çalar',
+        importance: Importance.max,
+        priority: Priority.high,
+        playSound: soundEnabled,
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]),
+        category: AndroidNotificationCategory.alarm,
+        actions: const [
+          AndroidNotificationAction(
+            'alarm_dismiss',
+            'Tamam',
+            showsUserInterface: false,
+            cancelNotification: true,
+          ),
+        ],
+      );
+
+      await _plugin.show(
+        10000 + timerId,
+        title,
+        body,
+        NotificationDetails(android: androidDetails),
+        payload: timerId.toString(),
+      );
+    } catch (e) {
+      debugPrint('Error showing timer completed notification: $e');
     }
   }
 

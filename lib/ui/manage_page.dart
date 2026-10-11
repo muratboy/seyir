@@ -218,6 +218,20 @@ class _ManagePageState extends State<ManagePage> {
                     ),
                     const Divider(height: 1),
                     SwitchListTile(
+                      secondary: const Icon(Icons.save_as_outlined, color: Colors.teal),
+                      title: Text(s.timerAutoSaveTitle),
+                      subtitle: Text(
+                        s.timerAutoSaveSubtitle,
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      value: store.timerAutoSaveCompleted,
+                      onChanged: (val) {
+                        store.setTimerAutoSaveCompleted(val);
+                        setState(() {});
+                      },
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
                       secondary: const Icon(Icons.water_drop_outlined, color: Colors.blue),
                       title: Text(s.isTr ? 'Gün İçi Su Hatırlatıcısı' : 'Daily Hydration Reminder'),
                       subtitle: Text(

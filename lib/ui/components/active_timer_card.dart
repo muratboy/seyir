@@ -416,13 +416,19 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
     if (widget.timer.isRunning) {
       _ticker = Timer.periodic(const Duration(seconds: 1), (_) {
         if (!mounted) return;
-        if (widget.timer.isTargetReached && !_alertPlayed) {
-          _alertPlayed = true;
-          if (store.timerSoundEnabled) {
-            HapticFeedback.heavyImpact();
-            SystemSound.play(SystemSoundType.alert);
+        if (widget.timer.isTargetReached) {
+          if (store.timerAutoSaveCompleted) {
+            store.checkCompletedTimers();
+            return;
           }
-        } else if (!widget.timer.isTargetReached) {
+          if (!_alertPlayed) {
+            _alertPlayed = true;
+            if (store.timerSoundEnabled) {
+              HapticFeedback.heavyImpact();
+              SystemSound.play(SystemSoundType.alert);
+            }
+          }
+        } else {
           _alertPlayed = false;
         }
         setState(() {});

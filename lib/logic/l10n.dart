@@ -238,6 +238,17 @@ class AppStrings {
   String get completedStepsCount => isTr ? 'adım tamamlandı' : 'steps completed';
   String get activeRoadmapTargets => isTr ? 'Yol Haritası Hedefleri' : 'Roadmap Targets';
   String get allRoadmaps => isTr ? 'Tüm Haritalar' : 'All Roadmaps';
+
+  // Timer & Pomodoro Auto-Save
+  String get timerAutoSaveTitle => isTr ? 'Bitişte Otomatik Kaydet' : 'Auto-Save on Finish';
+  String get timerAutoSaveSubtitle => isTr
+      ? 'Geri sayım ve Pomodoro bitince otomatik kaydeder, bildirim açık kalır'
+      : 'Automatically saves countdown and Pomodoro on finish while keeping notification';
+  String get timerCompletedTitle => isTr ? '⏱️ Süre Doldu!' : '⏱️ Time is Up!';
+  String get pomodoroCompletedTitle => isTr ? '🍅 Pomodoro Tamamlandı!' : '🍅 Pomodoro Completed!';
+  String get timerCompletedBody => isTr
+      ? 'Oturum tamamlandı ve otomatik kaydedildi.'
+      : 'Session completed and automatically logged.';
 }
 
 final strings = ValueNotifier<AppStrings>(const AppStrings(AppLanguage.tr));

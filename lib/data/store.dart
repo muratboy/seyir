@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:sqflite/sqflite.dart';
 
 import '../logic/format.dart';
@@ -138,6 +139,7 @@ class AppStore extends ChangeNotifier {
   bool dailySummaryReminderEnabled = false;
   String dailySummaryReminderTime = '21:30';
   bool timerSoundEnabled = true;
+  bool timerAutoSaveCompleted = true;
 
   bool stepTrackerEnabled = false;
   int stepDailyGoal = 10000;
@@ -188,6 +190,7 @@ class AppStore extends ChangeNotifier {
     dailySummaryReminderEnabled = settingsMap['reminder_daily_summary_enabled'] == 'true';
     dailySummaryReminderTime = settingsMap['reminder_daily_summary_time'] ?? '21:30';
     timerSoundEnabled = settingsMap['reminder_timer_sound'] != 'false';
+    timerAutoSaveCompleted = settingsMap['timer_auto_save_completed'] != 'false';
 
     stepTrackerEnabled = settingsMap['step_tracker_enabled'] == 'true';
     stepDailyGoal = int.tryParse(settingsMap['step_daily_goal'] ?? '10000') ?? 10000;
@@ -217,6 +220,7 @@ class AppStore extends ChangeNotifier {
 
     final timerRows = await d.query('active_timers', orderBy: 'id ASC');
     activeTimers = timerRows.map(ActiveTimer.fromMap).toList();
+    await checkCompletedTimers();
     await NotificationService.updateTimerNotification(activeTimers, activities);
 
     for (final t in activeTimers) {
@@ -228,9 +232,11 @@ class AppStore extends ChangeNotifier {
           remainingMs: t.remainingMs,
           isPomodoro: t.isPomodoro,
           soundEnabled: timerSoundEnabled,
+          autoSaveEnabled: timerAutoSaveCompleted,
         );
       }
     }
+    _ensureTimerTicker();
     unawaited(NotificationService.scheduleReminders(this));
 
     final stepRows = await d.query('roadmap_steps', orderBy: 'step_order ASC, id ASC');
@@ -304,6 +310,14 @@ class AppStore extends ChangeNotifier {
     timerSoundEnabled = enabled;
     final d = await db;
     await d.insert('settings', {'key': 'reminder_timer_sound', 'value': enabled.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    notifyListeners();
+  }
+
+  Future<void> setTimerAutoSaveCompleted(bool enabled) async {
+    timerAutoSaveCompleted = enabled;
+    final d = await db;
+    await d.insert('settings', {'key': 'timer_auto_save_completed', 'value': enabled.toString()},
         conflictAlgorithm: ConflictAlgorithm.replace);
     notifyListeners();
   }
@@ -1100,8 +1114,10 @@ class AppStore extends ChangeNotifier {
         remainingMs: timer.remainingMs,
         isPomodoro: timer.isPomodoro,
         soundEnabled: timerSoundEnabled,
+        autoSaveEnabled: timerAutoSaveCompleted,
       );
     }
+    _ensureTimerTicker();
     notifyListeners();
     return timer;
   }
@@ -1131,6 +1147,7 @@ class AppStore extends ChangeNotifier {
 
     await NotificationService.cancelTimerAlarm(timer.id);
     await NotificationService.updateTimerNotification(activeTimers, activities);
+    _ensureTimerTicker();
     notifyListeners();
   }
 
@@ -1158,8 +1175,10 @@ class AppStore extends ChangeNotifier {
         remainingMs: updated.remainingMs,
         isPomodoro: updated.isPomodoro,
         soundEnabled: timerSoundEnabled,
+        autoSaveEnabled: timerAutoSaveCompleted,
       );
     }
+    _ensureTimerTicker();
     notifyListeners();
   }
 
@@ -1219,6 +1238,7 @@ class AppStore extends ChangeNotifier {
   Future<AddResult?> finishTimer([
     int? id,
     MidnightSplitChoice splitChoice = MidnightSplitChoice.startDay,
+    bool cancelAlarmNotification = false,
   ]) async {
     final timer = id != null ? getTimer(id) : activeTimer;
     if (timer == null) return null;
@@ -1273,16 +1293,20 @@ class AppStore extends ChangeNotifier {
       }
     } else {
       // Tek parça kayıt: startDay (başlangıç saati) veya endDay (bitiş saati)
-      final totalMs = timer.elapsedMs;
+      final isCompletedCountdown = timer.isCountdown && timer.isTargetReached;
+      final totalMs = isCompletedCountdown ? timer.targetMs : timer.elapsedMs;
       final (finalUnitId, finalQty, measureId) = _calculateTimerUnitAndQty(totalMs);
       final recordTime = splitChoice == MidnightSplitChoice.endDay ? endTime : startTime;
       final m = measureById(measureId);
+      final calculatedEndTs = isCompletedCountdown
+          ? startTime.add(Duration(milliseconds: timer.targetMs)).millisecondsSinceEpoch
+          : endTime.millisecondsSinceEpoch;
 
       entriesToSave.add(Entry(
         id: 0,
         activityId: actId,
         ts: recordTime.millisecondsSinceEpoch,
-        endTs: endTime.millisecondsSinceEpoch,
+        endTs: calculatedEndTs,
         measureId: measureId,
         qty: finalQty,
         value: m != null ? m.amount * finalQty : finalQty,
@@ -1306,14 +1330,20 @@ class AppStore extends ChangeNotifier {
       await tx.delete('active_timers', where: 'id=?', whereArgs: [timer.id]);
     });
 
-    // Veritabanı başarılı oldu -> bellek durumunu ve bildirimleri güvenle güncelle
-    await NotificationService.cancelTimerAlarm(timer.id);
+    // Veritabanı başarılı oldu -> bellek durumunu ve bildirimleri güvenle güncelle.
+    // Hedef henüz tamamlanmadan manuel bitirildiyse veya açıkça istenmişse alarmı iptal et.
+    // Ancak süre bitip otomatik kaydedildiyse bildirim ekranda kalmaya devam etsin!
+    final shouldCancelAlarm = cancelAlarmNotification || !timer.isTargetReached;
+    if (shouldCancelAlarm) {
+      await NotificationService.cancelTimerAlarm(timer.id);
+    }
     activeTimers.removeWhere((t) => t.id == timer.id);
     for (final e in createdEntries) {
       _insertSorted(e);
     }
     _changed();
     await NotificationService.updateTimerNotification(activeTimers, activities);
+    _ensureTimerTicker();
 
     // Hedef ve limit durumlarını kontrol et
     final achieved = <Goal>[];
@@ -1355,10 +1385,69 @@ class AppStore extends ChangeNotifier {
     await NotificationService.cancelTimerAlarm(timer.id);
     activeTimers.removeWhere((t) => t.id == timer.id);
     await NotificationService.updateTimerNotification(activeTimers, activities);
+    _ensureTimerTicker();
     notifyListeners();
   }
 
   Future<void> discardTimer([int? id]) => cancelTimer(id);
+
+  Timer? _timerTicker;
+
+  void _ensureTimerTicker() {
+    if (activeTimers.any((t) => t.isRunning)) {
+      if (_timerTicker == null || !_timerTicker!.isActive) {
+        _timerTicker = Timer.periodic(const Duration(seconds: 1), (_) {
+          _onTimerTick();
+        });
+      }
+    } else {
+      _timerTicker?.cancel();
+      _timerTicker = null;
+    }
+  }
+
+  void _onTimerTick() {
+    if (!activeTimers.any((t) => t.isRunning)) {
+      _timerTicker?.cancel();
+      _timerTicker = null;
+      return;
+    }
+
+    if (timerAutoSaveCompleted &&
+        activeTimers.any((t) => t.isCountdown && t.isRunning && t.isTargetReached)) {
+      checkCompletedTimers();
+    }
+  }
+
+  Future<void> checkCompletedTimers() async {
+    if (!timerAutoSaveCompleted) return;
+
+    final completed = activeTimers
+        .where((t) => t.isCountdown && t.isRunning && t.isTargetReached)
+        .toList();
+    for (final timer in completed) {
+      final act = activities[timer.activityId];
+      final actName = act?.name ?? 'Aktivite';
+
+      // Otomatik bitir ve kaydet (tamamlama bildirimi açık kalacak şekilde)
+      await finishTimer(timer.id, MidnightSplitChoice.startDay, false);
+
+      // Bildirimin bildirim çekmecesinde görünmeye devam etmesini sağla
+      await NotificationService.showTimerCompletedNotification(
+        timerId: timer.id,
+        activityName: actName,
+        isPomodoro: timer.isPomodoro,
+        soundEnabled: timerSoundEnabled,
+      );
+
+      if (timerSoundEnabled) {
+        try {
+          HapticFeedback.heavyImpact();
+          SystemSound.play(SystemSoundType.alert);
+        } catch (_) {}
+      }
+    }
+  }
 
   // ---------------------------------------------------------------- istatistik
 
