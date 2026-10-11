@@ -139,13 +139,13 @@ class TodayRoadmapPanel extends StatelessWidget {
               const SizedBox(height: 8),
               // Öncelikli ilk 3 bekleyen adımı listele
               ...pendingSteps.take(3).map((step) {
-                return Container(
-                  margin: const EdgeInsets.only(bottom: 6),
-                  decoration: BoxDecoration(
+                return Padding(
+                  padding: const EdgeInsets.only(bottom: 6),
+                  child: Material(
                     color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
                     borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: ListTile(
+                    clipBehavior: Clip.antiAlias,
+                    child: ListTile(
                     dense: true,
                     contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
                     onTap: () async {
@@ -220,8 +220,9 @@ class TodayRoadmapPanel extends StatelessWidget {
                             ),
                           ),
                   ),
-                );
-              }),
+                ),
+              );
+            }),
             ],
           ],
         ),

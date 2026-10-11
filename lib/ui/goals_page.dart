@@ -54,27 +54,40 @@ class _GoalsPageState extends State<GoalsPage> {
           ),
           body: Column(
             children: [
-              // Segmented switcher: [ Hedefler & Limitler | 🔥 Zinciri Kırma | 🗺️ Yol Haritası ]
+              // Segmented switcher: [ Hedefler | 🔥 Zinciri Kırma | 🗺️ Yol Haritası ]
               Padding(
-                padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
                 child: SizedBox(
                   width: double.infinity,
                   child: SegmentedButton<GoalsPageTab>(
-                    style: const ButtonStyle(
+                    showSelectedIcon: false,
+                    style: SegmentedButton.styleFrom(
                       visualDensity: VisualDensity.compact,
+                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
                     ),
                     segments: [
                       ButtonSegment(
                         value: GoalsPageTab.goals,
-                        label: Text(s.goalsTitle),
-                        icon: const Icon(Icons.flag_outlined, size: 16),
+                        label: Text(
+                          s.isTr ? 'Hedefler' : 'Goals',
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, letterSpacing: -0.2),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                        icon: const Icon(Icons.flag_outlined, size: 14),
                       ),
                       ButtonSegment(
                         value: GoalsPageTab.habits,
                         label: Text(
-                          totalHabitsCount == 0 ? s.tabHabits : '${s.tabHabits} ($totalHabitsCount)',
+                          totalHabitsCount == 0
+                              ? (s.isTr ? 'Zinciri Kırma' : 'Habits')
+                              : '${s.isTr ? "Zinciri Kırma" : "Habits"} ($totalHabitsCount)',
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, letterSpacing: -0.2),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        icon: const Icon(Icons.local_fire_department_rounded, size: 16),
+                        icon: const Icon(Icons.local_fire_department_rounded, size: 14),
                       ),
                       ButtonSegment(
                         value: GoalsPageTab.roadmaps,
@@ -82,8 +95,11 @@ class _GoalsPageState extends State<GoalsPage> {
                           roadmapsCount == 0
                               ? (s.isTr ? 'Yol Haritası' : 'Roadmaps')
                               : '${s.isTr ? "Yol Haritası" : "Roadmaps"} ($roadmapsCount)',
+                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, letterSpacing: -0.2),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
                         ),
-                        icon: const Icon(Icons.alt_route_rounded, size: 16),
+                        icon: const Icon(Icons.alt_route_rounded, size: 14),
                       ),
                     ],
                     selected: {_currentTab},
