@@ -1597,11 +1597,17 @@ class AppStore extends ChangeNotifier {
 
     final dailyCounts = <DateTime, int>{};
     final dayEntriesMap = <DateTime, List<Entry>>{};
+    bool hasTimedEntry = false;
     for (final e in entries) {
       if (e.activityId == activityId) {
         final d = dayStart(DateTime.fromMillisecondsSinceEpoch(e.ts));
         dailyCounts[d] = (dailyCounts[d] ?? 0) + 1;
         (dayEntriesMap[d] ??= []).add(e);
+        if (!hasTimedEntry) {
+          if (e.endTs != null || (e.unitId != null && e.value != null && unit(e.unitId!).dim == 'time')) {
+            hasTimedEntry = true;
+          }
+        }
       }
     }
 
@@ -1657,19 +1663,6 @@ class AppStore extends ChangeNotifier {
     final limitGoal = relatedGoals.cast<Goal?>().firstWhere((g) => g?.isLimit == true, orElse: () => null);
     final targetGoal = relatedGoals.cast<Goal?>().firstWhere((g) => g?.isTarget == true, orElse: () => null);
 
-    bool hasTimedEntry = false;
-    for (final e in entries) {
-      if (e.activityId == activityId) {
-        if (e.endTs != null) {
-          hasTimedEntry = true;
-          break;
-        }
-        if (e.unitId != null && e.value != null && unit(e.unitId!).dim == 'time') {
-          hasTimedEntry = true;
-          break;
-        }
-      }
-    }
     final isTimed = hasTimedEntry ||
         (targetGoal?.unitId != null && unit(targetGoal!.unitId!).dim == 'time') ||
         (limitGoal?.unitId != null && unit(limitGoal!.unitId!).dim == 'time');
@@ -1854,19 +1847,16 @@ class AppStore extends ChangeNotifier {
     final dayValues = <DateTime, double>{};
     final dayCounts = <DateTime, int>{};
 
+    final allActiveDays = <DateTime>{};
     for (final e in entries) {
+      final d = dayStart(DateTime.fromMillisecondsSinceEpoch(e.ts));
+      allActiveDays.add(d);
       final pct = pcts[e.activityId];
       if (pct == null) continue;
       final c = contribution(g, e, pct);
       if (c == null) continue;
-      final d = dayStart(DateTime.fromMillisecondsSinceEpoch(e.ts));
       dayValues[d] = (dayValues[d] ?? 0.0) + c;
       dayCounts[d] = (dayCounts[d] ?? 0) + 1;
-    }
-
-    final allActiveDays = <DateTime>{};
-    for (final e in entries) {
-      allActiveDays.add(dayStart(DateTime.fromMillisecondsSinceEpoch(e.ts)));
     }
 
     final daysCount = daysBetween(evalStart, today) + 1;

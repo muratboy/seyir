@@ -48,7 +48,7 @@ class _GoalsPageState extends State<GoalsPage> {
                   ? (s.isTr ? 'Hedefler' : 'Goals')
                   : (_currentTab == GoalsPageTab.habits
                       ? s.habitTitle
-                      : (s.isTr ? 'Yol Haritaları' : 'Roadmaps')),
+                      : s.roadmapsTitle),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
@@ -93,8 +93,8 @@ class _GoalsPageState extends State<GoalsPage> {
                         value: GoalsPageTab.roadmaps,
                         label: Text(
                           roadmapsCount == 0
-                              ? (s.isTr ? 'Yol Haritası' : 'Roadmaps')
-                              : '${s.isTr ? "Yol Haritası" : "Roadmaps"} ($roadmapsCount)',
+                              ? s.tabRoadmaps
+                              : '${s.tabRoadmaps} ($roadmapsCount)',
                           style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, letterSpacing: -0.2),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -452,7 +452,7 @@ class _GoalsPageState extends State<GoalsPage> {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        '${s.endDate}: ${fmtDate(DateTime.fromMillisecondsSinceEpoch(goal.endDate!))} (${fmtDaysLeft(status.daysLeft ?? 0)})',
+                        '${s.endDate}: ${fmtDate(DateTime.fromMillisecondsSinceEpoch(goal.endDate!), isTr: s.isTr)} (${fmtDaysLeft(status.daysLeft ?? 0, isTr: s.isTr)})',
                         style: const TextStyle(fontSize: 12),
                       ),
                     ),
@@ -831,8 +831,8 @@ class _GoalsPageState extends State<GoalsPage> {
                   ListTile(
                     contentPadding: EdgeInsets.zero,
                     leading: const Icon(Icons.calendar_month),
-                    title: Text(fmtDate(endDate!)),
-                    subtitle: Text(fmtDaysLeft(daysBetween(DateTime.now(), endDate!))),
+                    title: Text(fmtDate(endDate!, isTr: s.isTr)),
+                    subtitle: Text(fmtDaysLeft(daysBetween(DateTime.now(), endDate!), isTr: s.isTr)),
                     trailing: const Icon(Icons.edit),
                     onTap: () async {
                       final picked = await showDatePicker(

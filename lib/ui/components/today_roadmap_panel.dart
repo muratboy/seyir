@@ -64,7 +64,7 @@ class TodayRoadmapPanel extends StatelessWidget {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              s.isTr ? '🚀 Yolculukta' : '🚀 In Journey',
+                              '🚀 ${s.journeyActive}',
                               style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.bold, color: Colors.orange),
                             ),
                           ),
@@ -72,7 +72,7 @@ class TodayRoadmapPanel extends StatelessWidget {
                       ),
                       const SizedBox(height: 3),
                       Text(
-                        '${active.completedStepsCount}/${active.totalSteps} ${s.isTr ? "adım tamamlandı" : "steps completed"} (%${active.progressPercent})',
+                        '${active.completedStepsCount}/${active.totalSteps} ${s.completedStepsCount} (%${active.progressPercent})',
                         style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
                       ),
                     ],
@@ -80,7 +80,7 @@ class TodayRoadmapPanel extends StatelessWidget {
                 ),
                 IconButton(
                   icon: const Icon(Icons.arrow_forward_ios_rounded, size: 16),
-                  tooltip: s.isTr ? 'Yol Haritasına Git' : 'Go to Roadmap',
+                  tooltip: s.tabRoadmaps,
                   onPressed: () {
                     Navigator.push(
                       context,

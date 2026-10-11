@@ -220,6 +220,22 @@ class AppStrings {
   String get wakeUp => isTr ? 'Uyandım ☀️' : 'Wake Up ☀️';
   String get logSleep => isTr ? 'Uyku Kaydet 🛌' : 'Log Sleep 🛌';
   String get syncSteps => isTr ? 'Adımı Senkronize Et' : 'Sync Steps';
+
+  // Roadmaps (Yol Haritaları)
+  String get tabRoadmaps => isTr ? 'Yol Haritası' : 'Roadmaps';
+  String get roadmapsTitle => isTr ? 'Yol Haritaları' : 'Roadmaps';
+  String get newRoadmap => isTr ? 'Yeni Yol Haritası Ekle' : 'Add New Roadmap';
+  String get roadmapDesc => isTr ? 'Kişisel gelişim veya hedef yol haritası' : 'Personal growth or goal roadmap';
+  String get startJourney => isTr ? 'Yolculuğu Başlat' : 'Start Journey';
+  String get continueJourney => isTr ? 'Yolculuğa Devam Et' : 'Continue Journey';
+  String get pauseJourney => isTr ? 'Yolculuğu Duraklat' : 'Pause Journey';
+  String get journeyActive => isTr ? 'Yolculukta' : 'In Progress';
+  String get journeyCompleted => isTr ? 'Tamamlandı' : 'Completed';
+  String get roadmapEmpty => isTr ? 'Henüz bir yol haritası eklenmedi.' : 'No roadmaps added yet.';
+  String get copyTemplate => isTr ? 'Kalıbı Kopyala' : 'Copy Template';
+  String get pasteRoadmap => isTr ? 'Yol Haritası Yükle' : 'Import Roadmap';
+  String get nextStep => isTr ? 'Sıradaki:' : 'Next:';
+  String get completedStepsCount => isTr ? 'adım tamamlandı' : 'steps completed';
 }
 
 final strings = ValueNotifier<AppStrings>(const AppStrings(AppLanguage.tr));

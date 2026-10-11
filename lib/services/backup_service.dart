@@ -105,12 +105,8 @@ class BackupService {
     return result;
   }
 
-  /// Bir yedek dosyasını geri yükler. Önce otomatik güvenlik yedeği alır.
+  /// Bir yedek dosyasını geri yükler. store.importJson kendi içinde işlem öncesi güvenlik yedeği alır.
   static Future<void> restoreFromFile(AppStore store, File file) async {
-    // 1. Önce güvenlik için anlık durumun yedeğini al
-    await createPreRestoreSnapshot(store);
-
-    // 2. Dosyayı oku ve içe aktar
     final jsonStr = await file.readAsString();
     await store.importJson(jsonStr);
   }

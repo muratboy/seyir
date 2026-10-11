@@ -246,29 +246,7 @@ class NaturalLanguageParser {
     }
 
     // 3. Find Measure
-    Measure? matchedMeasure;
-    for (final m in measures) {
-      final mName = normalizeTr(m.name).toLowerCase();
-      if (lower.contains(mName)) {
-        matchedMeasure = m;
-        break;
-      }
-    }
-
-    // If measure not found by exact name, try common keywords
-    if (matchedMeasure == null) {
-      if (lower.contains('çay bardağı') || lower.contains('cay bardagi')) {
-        matchedMeasure = measures.firstWhere((m) => m.name.toLowerCase().contains('çay'), orElse: () => measures.first);
-      } else if (lower.contains('su bardağı') || lower.contains('su bardagi') || lower.contains('bardak')) {
-        matchedMeasure = measures.firstWhere((m) => m.name.toLowerCase().contains('bardak'), orElse: () => measures.first);
-      } else if (lower.contains('kupa')) {
-        matchedMeasure = measures.firstWhere((m) => m.name.toLowerCase().contains('kupa'), orElse: () => measures.first);
-      } else if (lower.contains('demlik')) {
-        matchedMeasure = measures.firstWhere((m) => m.name.toLowerCase().contains('demlik'), orElse: () => measures.first);
-      } else if (lower.contains('litre') || lower.contains(' lt')) {
-        matchedMeasure = measures.firstWhere((m) => m.name.toLowerCase().contains('litre') || m.unitId == 'l', orElse: () => measures.first);
-      }
-    }
+    final matchedMeasure = _findMeasure(lower, measures);
 
     // 4. Extract Activity Name by filtering out numbers, measures, timer triggers and fillers
     final remainingWords = <String>[];
@@ -298,40 +276,7 @@ class NaturalLanguageParser {
     }
 
     // 5. Match with Existing Activities
-    Activity? matchedActivity;
-    double confidence = 0.5;
-
-    // Exact match
-    final exact = activities.where((a) => normalizeTr(a.name).toLowerCase() == normalizeTr(extractedActivity).toLowerCase()).firstOrNull;
-    if (exact != null) {
-      matchedActivity = exact;
-      confidence = 1.0;
-    } else {
-      // Substring match
-      final sub = activities.where((a) {
-        final aNorm = normalizeTr(a.name).toLowerCase();
-        final eNorm = normalizeTr(extractedActivity).toLowerCase();
-        return aNorm.contains(eNorm) || eNorm.contains(aNorm);
-      }).firstOrNull;
-
-      if (sub != null) {
-        matchedActivity = sub;
-        confidence = 0.85;
-      } else {
-        // Word token overlap match
-        for (final act in activities) {
-          final actWords = normalizeTr(act.name).toLowerCase().split(' ');
-          final hasOverlap = actWords.any((aw) => remainingWords.contains(aw));
-          if (hasOverlap) {
-            matchedActivity = act;
-            confidence = 0.75;
-            break;
-          }
-        }
-      }
-    }
-
-    // Capitalize activity name if not matched
+    final (matchedActivity, confidence) = _matchActivity(extractedActivity, remainingWords, activities);
     final finalActivityName = matchedActivity?.name ?? trCapitalize(extractedActivity);
 
     // If still no measure, but activity has a default measure or only one measure
@@ -349,5 +294,74 @@ class NaturalLanguageParser {
       targetMinutes: targetMinutes,
       confidence: confidence,
     );
+  }
+
+  /// Bulunan metin içerisinden ölçü eşleştirmesi yapar (null-safe, boş liste korumalı).
+  static Measure? _findMeasure(String lower, List<Measure> measures) {
+    if (measures.isEmpty) return null;
+
+    // 1. Birebir veya tam ad araması
+    for (final m in measures) {
+      final mName = normalizeTr(m.name).toLowerCase();
+      if (lower.contains(mName)) {
+        return m;
+      }
+    }
+
+    // 2. Yaygın anahtar kelimeler ve eş anlamlılar üzerinden güvenli arama (firstOrNull)
+    if (lower.contains('çay bardağı') || lower.contains('cay bardagi')) {
+      return measures.where((m) => m.name.toLowerCase().contains('çay')).firstOrNull;
+    } else if (lower.contains('su bardağı') || lower.contains('su bardagi') || lower.contains('bardak')) {
+      return measures.where((m) => m.name.toLowerCase().contains('bardak')).firstOrNull;
+    } else if (lower.contains('kupa')) {
+      return measures.where((m) => m.name.toLowerCase().contains('kupa')).firstOrNull;
+    } else if (lower.contains('demlik')) {
+      return measures.where((m) => m.name.toLowerCase().contains('demlik')).firstOrNull;
+    } else if (lower.contains('litre') || lower.contains(' lt')) {
+      return measures.where((m) => m.name.toLowerCase().contains('litre') || m.unitId == 'l').firstOrNull;
+    }
+
+    return null;
+  }
+
+  /// Ayıklanan aktivite adını mevcut aktiviteler ile eşleştirir (tam, alt dize veya kelime çakışması).
+  static (Activity?, double) _matchActivity(
+    String extractedActivity,
+    List<String> remainingWords,
+    List<Activity> activities,
+  ) {
+    if (activities.isEmpty || extractedActivity.isEmpty) {
+      return (null, 0.5);
+    }
+
+    final eNorm = normalizeTr(extractedActivity).toLowerCase();
+
+    // 1. Tam ad eşleşmesi
+    final exact = activities
+        .where((a) => normalizeTr(a.name).toLowerCase() == eNorm)
+        .firstOrNull;
+    if (exact != null) {
+      return (exact, 1.0);
+    }
+
+    // 2. Alt dize eşleşmesi
+    final sub = activities.where((a) {
+      final aNorm = normalizeTr(a.name).toLowerCase();
+      return aNorm.contains(eNorm) || eNorm.contains(aNorm);
+    }).firstOrNull;
+    if (sub != null) {
+      return (sub, 0.85);
+    }
+
+    // 3. Kelime bazlı çakışma eşleşmesi
+    for (final act in activities) {
+      final actWords = normalizeTr(act.name).toLowerCase().split(' ');
+      final hasOverlap = actWords.any((aw) => remainingWords.contains(aw));
+      if (hasOverlap) {
+        return (act, 0.75);
+      }
+    }
+
+    return (null, 0.5);
   }
 }

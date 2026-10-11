@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:takip/data/db.dart';
 import 'package:takip/data/models.dart';
 import 'package:takip/data/store.dart';
 import 'package:takip/logic/format.dart';
@@ -1091,6 +1092,64 @@ void main() {
 
       expect(tr.wakeUp, contains('Uyandım'));
       expect(en.wakeUp, contains('Wake Up'));
+    });
+
+    group('Code Review Priority Hardening Tests', () {
+      test('NaturalLanguageParser handles empty measures without StateError', () {
+        final res = NaturalLanguageParser.parse(
+          '2 bardak su',
+          activities: [Activity(id: 1, name: 'Su', createdAt: 0)],
+          measures: [],
+        );
+        expect(res.matchedMeasure, isNull);
+        expect(res.activityName, equals('Su'));
+        expect(res.quantity, equals(2.0));
+      });
+
+      test('NaturalLanguageParser does not pick arbitrary fallback measure when keyword is unmatched', () {
+        final measures = [
+          Measure(id: 1, name: 'Saat', unitId: 'sa', amount: 1),
+          Measure(id: 2, name: 'Kilometre', unitId: 'km', amount: 1),
+        ];
+        final res = NaturalLanguageParser.parse(
+          '2 bardak su',
+          activities: [Activity(id: 1, name: 'Su', createdAt: 0)],
+          measures: measures,
+        );
+        // "bardak" is not in measures, so it must return null instead of falling back to "Saat"
+        expect(res.matchedMeasure, isNull);
+      });
+
+      test('fmtDaysLeft and fmtRelative support both Turkish and English', () {
+        expect(fmtDaysLeft(5, isTr: true), equals('5 gün kaldı'));
+        expect(fmtDaysLeft(5, isTr: false), equals('5 days left'));
+        expect(fmtDaysLeft(0, isTr: true), equals('Bugün son gün'));
+        expect(fmtDaysLeft(0, isTr: false), equals('Last day today'));
+        expect(fmtDaysLeft(-1, isTr: true), equals('Süre doldu'));
+        expect(fmtDaysLeft(-1, isTr: false), equals('Expired'));
+
+        final nowMs = DateTime.now().millisecondsSinceEpoch;
+        expect(fmtRelative(nowMs, isTr: true), equals('az önce'));
+        expect(fmtRelative(nowMs, isTr: false), equals('just now'));
+      });
+
+      test('AppDb version is upgraded to version 3', () {
+        expect(AppDb.currentVersion, equals(3));
+      });
+
+      test('Roadmaps AppStrings provide both Turkish and English localization', () {
+        const tr = AppStrings(AppLanguage.tr);
+        const en = AppStrings(AppLanguage.en);
+
+        expect(tr.tabRoadmaps, equals('Yol Haritası'));
+        expect(en.tabRoadmaps, equals('Roadmaps'));
+        expect(tr.roadmapsTitle, equals('Yol Haritaları'));
+        expect(en.roadmapsTitle, equals('Roadmaps'));
+        expect(tr.startJourney, equals('Yolculuğu Başlat'));
+        expect(en.startJourney, equals('Start Journey'));
+        expect(tr.journeyActive, equals('Yolculukta'));
+        expect(en.journeyActive, equals('In Progress'));
+      });
     });
   });
 }

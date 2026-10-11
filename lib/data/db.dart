@@ -2,7 +2,7 @@ import 'package:path/path.dart' as p;
 import 'package:sqflite/sqflite.dart';
 
 class AppDb {
-  static const int currentVersion = 2;
+  static const int currentVersion = 3;
 
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), 'takip.db');
@@ -26,83 +26,112 @@ class AppDb {
     );
   }
 
-  static Future<void> upgradeSchema(DatabaseExecutor db, int oldVersion, int newVersion) async {
-    if (oldVersion < 2) {
+  static Future<bool> hasColumn(DatabaseExecutor db, String table, String column) async {
+    try {
+      final cols = await db.rawQuery('PRAGMA table_info($table)');
+      return cols.any((c) => c['name'] == column);
+    } catch (_) {
+      return false;
+    }
+  }
+
+  static Future<void> ensureColumn(
+    DatabaseExecutor db,
+    String table,
+    String column,
+    String typeDef,
+  ) async {
+    if (!await hasColumn(db, table, column)) {
       try {
-        await db.execute('ALTER TABLE entries ADD COLUMN end_ts INTEGER');
-      } catch (_) {}
-      try {
-        await db.execute('ALTER TABLE activities ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0');
-      } catch (_) {}
-      try {
-        await db.execute("ALTER TABLE active_timers ADD COLUMN segments TEXT DEFAULT '[]'");
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_entries_activity_ts ON entries(activity_id, ts)');
-      } catch (_) {}
-      try {
-        await db.execute('CREATE INDEX IF NOT EXISTS idx_entries_end_ts ON entries(end_ts)');
+        await db.execute('ALTER TABLE $table ADD COLUMN $column $typeDef');
       } catch (_) {}
     }
   }
 
-  static Future<void> ensureUpToDate(DatabaseExecutor db) async {
-    await db.execute('''CREATE TABLE IF NOT EXISTS settings(
-      key TEXT PRIMARY KEY, value TEXT NOT NULL)''');
-    try {
-      await db.execute("ALTER TABLE measures ADD COLUMN qty_mode TEXT NOT NULL DEFAULT 'stepper'");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE measures ADD COLUMN choices TEXT DEFAULT '1,2,3,4,5'");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE measures ADD COLUMN grid_rows INTEGER NOT NULL DEFAULT 2");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE measures ADD COLUMN grid_cols INTEGER NOT NULL DEFAULT 5");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE goals ADD COLUMN type TEXT NOT NULL DEFAULT 'target'");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE goals ADD COLUMN is_habit INTEGER NOT NULL DEFAULT 0");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE activities ADD COLUMN category TEXT");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE activities ADD COLUMN color INTEGER");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE activities ADD COLUMN is_habit INTEGER NOT NULL DEFAULT 0");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE activities ADD COLUMN is_archived INTEGER NOT NULL DEFAULT 0");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE entries ADD COLUMN end_ts INTEGER");
-    } catch (_) {}
-    await db.execute('''CREATE TABLE IF NOT EXISTS active_timers(
-      id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER NOT NULL,
-      start_ts INTEGER NOT NULL, accumulated_ms INTEGER NOT NULL DEFAULT 0,
-      last_resume_ts INTEGER, is_running INTEGER NOT NULL DEFAULT 1,
-      note TEXT, mode TEXT NOT NULL DEFAULT 'stopwatch', target_ms INTEGER NOT NULL DEFAULT 0,
-      segments TEXT DEFAULT '[]')''');
-    try {
-      await db.execute("ALTER TABLE active_timers ADD COLUMN mode TEXT NOT NULL DEFAULT 'stopwatch'");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE active_timers ADD COLUMN target_ms INTEGER NOT NULL DEFAULT 0");
-    } catch (_) {}
-    try {
-      await db.execute("ALTER TABLE active_timers ADD COLUMN segments TEXT DEFAULT '[]'");
-    } catch (_) {}
+  static Future<void> upgradeSchema(DatabaseExecutor db, int oldVersion, int newVersion) async {
+    if (oldVersion < 2) {
+      await _upgradeToV2(db);
+    }
+    if (oldVersion < 3) {
+      await _upgradeToV3(db);
+    }
+  }
+
+  static Future<void> _upgradeToV2(DatabaseExecutor db) async {
+    await ensureColumn(db, 'entries', 'end_ts', 'INTEGER');
+    await ensureColumn(db, 'activities', 'is_archived', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(db, 'active_timers', 'segments', "TEXT DEFAULT '[]'");
     try {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_entries_activity_ts ON entries(activity_id, ts)');
     } catch (_) {}
     try {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_entries_end_ts ON entries(end_ts)');
     } catch (_) {}
+  }
+
+  static Future<void> _upgradeToV3(DatabaseExecutor db) async {
+    await ensureColumn(db, 'measures', 'qty_mode', "TEXT NOT NULL DEFAULT 'stepper'");
+    await ensureColumn(db, 'measures', 'choices', "TEXT DEFAULT '1,2,3,4,5'");
+    await ensureColumn(db, 'measures', 'grid_rows', 'INTEGER NOT NULL DEFAULT 2');
+    await ensureColumn(db, 'measures', 'grid_cols', 'INTEGER NOT NULL DEFAULT 5');
+    await ensureColumn(db, 'goals', 'type', "TEXT NOT NULL DEFAULT 'target'");
+    await ensureColumn(db, 'activities', 'category', 'TEXT');
+    await ensureColumn(db, 'activities', 'color', 'INTEGER');
+    await ensureColumn(db, 'activities', 'is_habit', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(db, 'activities', 'is_archived', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(db, 'entries', 'end_ts', 'INTEGER');
+    await ensureColumn(db, 'active_timers', 'mode', "TEXT NOT NULL DEFAULT 'stopwatch'");
+    await ensureColumn(db, 'active_timers', 'target_ms', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(db, 'active_timers', 'segments', "TEXT DEFAULT '[]'");
+
+    await db.execute('''CREATE TABLE IF NOT EXISTS settings(
+      key TEXT PRIMARY KEY, value TEXT NOT NULL)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS active_timers(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER NOT NULL,
+      start_ts INTEGER NOT NULL, accumulated_ms INTEGER NOT NULL DEFAULT 0,
+      last_resume_ts INTEGER, is_running INTEGER NOT NULL DEFAULT 1,
+      note TEXT, mode TEXT NOT NULL DEFAULT 'stopwatch', target_ms INTEGER NOT NULL DEFAULT 0,
+      segments TEXT DEFAULT '[]')''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS roadmaps(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL DEFAULT '',
+      emoji TEXT NOT NULL DEFAULT '🗺️',
+      status TEXT NOT NULL DEFAULT 'not_started',
+      created_at INTEGER NOT NULL,
+      started_at INTEGER,
+      completed_at INTEGER)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS roadmap_steps(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      roadmap_id INTEGER NOT NULL,
+      step_order INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL DEFAULT '',
+      is_completed INTEGER NOT NULL DEFAULT 0,
+      completed_at INTEGER,
+      type TEXT NOT NULL DEFAULT 'task',
+      target REAL,
+      unit TEXT,
+      linked_activity_id INTEGER)''');
+    try {
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_entries_activity_ts ON entries(activity_id, ts)');
+    } catch (_) {}
+    try {
+      await db.execute('CREATE INDEX IF NOT EXISTS idx_entries_end_ts ON entries(end_ts)');
+    } catch (_) {}
+  }
+
+  static Future<void> ensureUpToDate(DatabaseExecutor db) async {
+    // onOpen yalnızca eksik temel tabloların varlığını teyit eder; log kirleten gereksiz ALTER çalıştırmaz
+    await db.execute('''CREATE TABLE IF NOT EXISTS settings(
+      key TEXT PRIMARY KEY, value TEXT NOT NULL)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS active_timers(
+      id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER NOT NULL,
+      start_ts INTEGER NOT NULL, accumulated_ms INTEGER NOT NULL DEFAULT 0,
+      last_resume_ts INTEGER, is_running INTEGER NOT NULL DEFAULT 1,
+      note TEXT, mode TEXT NOT NULL DEFAULT 'stopwatch', target_ms INTEGER NOT NULL DEFAULT 0,
+      segments TEXT DEFAULT '[]')''');
     await db.execute('''CREATE TABLE IF NOT EXISTS roadmaps(
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       title TEXT NOT NULL,

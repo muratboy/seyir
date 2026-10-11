@@ -37,17 +37,17 @@ String fmtDayTitle(DateTime d, {bool isTr = true}) {
   return DateFormat('d MMMM EEEE', isTr ? 'tr_TR' : 'en_US').format(d);
 }
 
-String fmtRelative(int ts) {
+String fmtRelative(int ts, {bool isTr = true}) {
   final d = DateTime.fromMillisecondsSinceEpoch(ts);
   final now = DateTime.now();
   final diff = now.difference(d);
-  if (diff.inMinutes < 1) return 'az önce';
-  if (diff.inMinutes < 60) return '${diff.inMinutes} dk önce';
-  if (sameDay(d, now)) return 'bugün ${fmtTime(d)}';
+  if (diff.inMinutes < 1) return isTr ? 'az önce' : 'just now';
+  if (diff.inMinutes < 60) return isTr ? '${diff.inMinutes} dk önce' : '${diff.inMinutes} min ago';
+  if (sameDay(d, now)) return isTr ? 'bugün ${fmtTime(d)}' : 'today ${fmtTime(d)}';
   final days = dayStart(now).difference(dayStart(d)).inDays;
-  if (days == 1) return 'dün';
-  if (days < 7) return '$days gün önce';
-  return fmtDateShort(d);
+  if (days == 1) return isTr ? 'dün' : 'yesterday';
+  if (days < 7) return isTr ? '$days gün önce' : '$days days ago';
+  return fmtDateShort(d, isTr: isTr);
 }
 
 /// Temel birimdeki (L, g, dk, m, adet...) miktarı okunaklı biçimde yazar.
@@ -79,9 +79,9 @@ String fmtAmount(double base, String dim, {Unit? customUnit}) {
 
 String fmtInUnit(double v, Unit u) => '${fmtNum(v)} ${u.symbol}';
 
-String fmtDaysLeft(int days) {
-  if (days < 0) return 'Süre doldu';
-  if (days == 0) return 'Bugün son gün';
-  if (days == 1) return 'Yarın son gün';
-  return '$days gün kaldı';
+String fmtDaysLeft(int days, {bool isTr = true}) {
+  if (days < 0) return isTr ? 'Süre doldu' : 'Expired';
+  if (days == 0) return isTr ? 'Bugün son gün' : 'Last day today';
+  if (days == 1) return isTr ? 'Yarın son gün' : 'Last day tomorrow';
+  return isTr ? '$days gün kaldı' : '$days days left';
 }
