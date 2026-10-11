@@ -16,168 +16,246 @@ class TimerConfig {
 }
 
 Future<TimerConfig?> showTimerModeDialog(BuildContext context, Activity act) async {
-  final s = strings.value;
   return showModalBottomSheet<TimerConfig>(
     context: context,
     isScrollControlled: true,
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (ctx) {
-      int customMinutes = 15;
-      return StatefulBuilder(
-        builder: (ctx, setSheetState) {
-          return Padding(
-            padding: EdgeInsets.only(
-              left: 20,
-              right: 20,
-              top: 20,
-              bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+    builder: (ctx) => _TimerModeSheet(act: act),
+  );
+}
+
+class _TimerModeSheet extends StatefulWidget {
+  final Activity act;
+  const _TimerModeSheet({required this.act});
+
+  @override
+  State<_TimerModeSheet> createState() => _TimerModeSheetState();
+}
+
+class _TimerModeSheetState extends State<_TimerModeSheet> {
+  late final TextEditingController _minCtrl;
+  int _customMinutes = 15;
+  static const _presetMinutes = [5, 10, 15, 20, 25, 30, 45, 60];
+
+  @override
+  void initState() {
+    super.initState();
+    _minCtrl = TextEditingController(text: '$_customMinutes');
+  }
+
+  @override
+  void dispose() {
+    _minCtrl.dispose();
+    super.dispose();
+  }
+
+  void _onMinutesChanged(String text) {
+    final parsed = int.tryParse(text.trim());
+    setState(() {
+      _customMinutes = (parsed != null && parsed > 0) ? parsed : 0;
+    });
+  }
+
+  void _selectPreset(int minutes) {
+    setState(() {
+      _customMinutes = minutes;
+      _minCtrl.text = '$minutes';
+      _minCtrl.selection = TextSelection.fromPosition(
+        TextPosition(offset: _minCtrl.text.length),
+      );
+    });
+  }
+
+  void _startCountdown() {
+    final parsed = int.tryParse(_minCtrl.text.trim()) ?? _customMinutes;
+    if (parsed > 0) {
+      Navigator.pop(
+        context,
+        TimerConfig(mode: 'countdown', targetMs: parsed * 60 * 1000),
+      );
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = strings.value;
+    final act = widget.act;
+    final bottomInset = MediaQuery.of(context).viewInsets.bottom;
+
+    return Padding(
+      padding: EdgeInsets.only(
+        left: 20,
+        right: 20,
+        top: 20,
+        bottom: bottomInset + 24,
+      ),
+      child: SingleChildScrollView(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey.withValues(alpha: 0.4),
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
             ),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            const SizedBox(height: 16),
+            Row(
               children: [
-                Center(
-                  child: Container(
-                    width: 40,
-                    height: 4,
-                    decoration: BoxDecoration(
-                      color: Colors.grey.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(2),
-                    ),
-                  ),
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    ActivityAvatar(act.id, size: 36),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text(
-                            act.name,
-                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                          ),
-                          Text(
-                            s.isTr ? 'Sayaç türünü seçin' : 'Select timer mode',
-                            style: TextStyle(fontSize: 13, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
-                          ),
-                        ],
+                ActivityAvatar(act.id, size: 36),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        act.name,
+                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
                       ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 20),
-
-                // 1. Standart Kronometre
-                Card(
-                  elevation: 0,
-                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: Colors.blue,
-                      child: Icon(Icons.timer_outlined, color: Colors.white, size: 20),
-                    ),
-                    title: Text(s.isTr ? '⏱️ Kronometre' : '⏱️ Stopwatch', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(s.isTr ? 'İleriye doğru sayar (00:00 → ...)' : 'Counts forward from 00:00'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.pop(ctx, const TimerConfig(mode: 'stopwatch', targetMs: 0)),
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                // 2. Pomodoro (25 Dk)
-                Card(
-                  elevation: 0,
-                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: ListTile(
-                    leading: const CircleAvatar(
-                      backgroundColor: Colors.redAccent,
-                      child: Text('🍅', style: TextStyle(fontSize: 18)),
-                    ),
-                    title: Text(s.isTr ? '🍅 Pomodoro (25 Dk)' : '🍅 Pomodoro (25 Min)', style: const TextStyle(fontWeight: FontWeight.bold)),
-                    subtitle: Text(s.isTr ? '25 dakika odaklanma periyodu' : '25-minute focus session'),
-                    trailing: const Icon(Icons.chevron_right),
-                    onTap: () => Navigator.pop(ctx, const TimerConfig(mode: 'pomodoro', targetMs: 25 * 60 * 1000)),
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                // 3. Özel Geri Sayım
-                Card(
-                  elevation: 0,
-                  color: Theme.of(ctx).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        Row(
-                          children: [
-                            const CircleAvatar(
-                              backgroundColor: Colors.orange,
-                              child: Icon(Icons.hourglass_bottom, color: Colors.white, size: 20),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    s.isTr ? '⏳ Özel Geri Sayım' : '⏳ Custom Countdown',
-                                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                                  ),
-                                  Text(
-                                    s.isTr ? 'Süre bitince otomatik uyarır' : 'Alerts when time is up',
-                                    style: TextStyle(fontSize: 12, color: Theme.of(ctx).colorScheme.onSurfaceVariant),
-                                  ),
-                                ],
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: 12),
-                        Wrap(
-                          spacing: 8,
-                          runSpacing: 4,
-                          children: [5, 10, 15, 30, 45, 60].map((m) {
-                            final sel = customMinutes == m;
-                            return ChoiceChip(
-                              label: Text('$m dk'),
-                              selected: sel,
-                              onSelected: (_) => setSheetState(() => customMinutes = m),
-                            );
-                          }).toList(),
-                        ),
-                        const SizedBox(height: 8),
-                        Align(
-                          alignment: Alignment.centerRight,
-                          child: FilledButton.icon(
-                            icon: const Icon(Icons.play_arrow, size: 18),
-                            label: Text(s.isTr ? '$customMinutes Dk Başlat' : 'Start $customMinutes Min'),
-                            onPressed: () => Navigator.pop(
-                              ctx,
-                              TimerConfig(mode: 'countdown', targetMs: customMinutes * 60 * 1000),
-                            ),
-                          ),
-                        ),
-                      ],
-                    ),
+                      Text(
+                        s.isTr ? 'Sayaç türünü seçin' : 'Select timer mode',
+                        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                      ),
+                    ],
                   ),
                 ),
               ],
             ),
-          );
-        },
-      );
-    },
-  );
+            const SizedBox(height: 20),
+
+            // 1. Standart Kronometre
+            Card(
+              elevation: 0,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Colors.blue,
+                  child: Icon(Icons.timer_outlined, color: Colors.white, size: 20),
+                ),
+                title: Text(s.isTr ? '⏱️ Kronometre' : '⏱️ Stopwatch', style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(s.isTr ? 'İleriye doğru sayar (00:00 → ...)' : 'Counts forward from 00:00'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pop(context, const TimerConfig(mode: 'stopwatch', targetMs: 0)),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // 2. Pomodoro (25 Dk)
+            Card(
+              elevation: 0,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: ListTile(
+                leading: const CircleAvatar(
+                  backgroundColor: Colors.redAccent,
+                  child: Text('🍅', style: TextStyle(fontSize: 18)),
+                ),
+                title: Text(s.isTr ? '🍅 Pomodoro (25 Dk)' : '🍅 Pomodoro (25 Min)', style: const TextStyle(fontWeight: FontWeight.bold)),
+                subtitle: Text(s.isTr ? '25 dakika odaklanma periyodu' : '25-minute focus session'),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () => Navigator.pop(context, const TimerConfig(mode: 'pomodoro', targetMs: 25 * 60 * 1000)),
+              ),
+            ),
+            const SizedBox(height: 8),
+
+            // 3. Özel Geri Sayım
+            Card(
+              elevation: 0,
+              color: Theme.of(context).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+              child: Padding(
+                padding: const EdgeInsets.all(12),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const CircleAvatar(
+                          backgroundColor: Colors.orange,
+                          child: Icon(Icons.hourglass_bottom, color: Colors.white, size: 20),
+                        ),
+                        const SizedBox(width: 12),
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                s.isTr ? '⏳ Özel Geri Sayım' : '⏳ Custom Countdown',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                              ),
+                              Text(
+                                s.isTr ? 'Süre bitince otomatik uyarır' : 'Alerts when time is up',
+                                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 4,
+                      children: _presetMinutes.map((m) {
+                        final sel = _customMinutes == m;
+                        return ChoiceChip(
+                          label: Text('$m dk'),
+                          selected: sel,
+                          onSelected: (_) => _selectPreset(m),
+                        );
+                      }).toList(),
+                    ),
+                    const SizedBox(height: 12),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextField(
+                            controller: _minCtrl,
+                            keyboardType: TextInputType.number,
+                            inputFormatters: [
+                              FilteringTextInputFormatter.digitsOnly,
+                              LengthLimitingTextInputFormatter(4),
+                            ],
+                            decoration: InputDecoration(
+                              labelText: s.isTr ? 'Süre (dk)' : 'Minutes',
+                              hintText: 'Örn: 20',
+                              suffixText: s.isTr ? 'dk' : 'min',
+                              prefixIcon: const Icon(Icons.keyboard_outlined, size: 20),
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            ),
+                            onChanged: _onMinutesChanged,
+                            onSubmitted: (_) => _startCountdown(),
+                          ),
+                        ),
+                        const SizedBox(width: 8),
+                        FilledButton.icon(
+                          icon: const Icon(Icons.play_arrow, size: 18),
+                          label: Text(_customMinutes > 0
+                              ? (s.isTr ? '$_customMinutes Dk Başlat' : 'Start $_customMinutes Min')
+                              : (s.isTr ? 'Başlat' : 'Start')),
+                          onPressed: _customMinutes > 0 ? _startCountdown : null,
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class ActiveTimersSection extends StatefulWidget {
