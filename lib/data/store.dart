@@ -130,6 +130,7 @@ class AppStore extends ChangeNotifier {
   ActiveTimer? get activeTimer => activeTimers.firstOrNull;
   List<Roadmap> roadmaps = [];
   Roadmap? get activeRoadmap => roadmaps.where((r) => r.isActive).firstOrNull;
+  List<Roadmap> get activeRoadmaps => roadmaps.where((r) => r.isActive).toList();
   bool loaded = false;
 
   bool waterReminderEnabled = false;
@@ -2198,13 +2199,6 @@ class AppStore extends ChangeNotifier {
     final d = await db;
 
     if (status == 'active') {
-      // Tek aktif yol haritası kuralı: Diğer aktif olanları duraklat
-      for (final other in roadmaps) {
-        if (other.id != roadmapId && other.isActive) {
-          other.status = 'paused';
-          await d.update('roadmaps', {'status': 'paused'}, where: 'id = ?', whereArgs: [other.id]);
-        }
-      }
       r.startedAt ??= now;
     } else if (status == 'completed') {
       r.completedAt = now;

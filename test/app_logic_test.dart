@@ -1150,6 +1150,17 @@ void main() {
         expect(tr.journeyActive, equals('Yolculukta'));
         expect(en.journeyActive, equals('In Progress'));
       });
+
+      test('Multiple roadmaps can be simultaneously active and activeRoadmaps returns all of them', () {
+        final r1 = Roadmap(id: 1, title: 'Roadmap 1', status: 'active');
+        final r2 = Roadmap(id: 2, title: 'Roadmap 2', status: 'active');
+        final r3 = Roadmap(id: 3, title: 'Roadmap 3', status: 'paused');
+        store.roadmaps = [r1, r2, r3];
+
+        expect(store.activeRoadmaps.length, equals(2));
+        expect(store.activeRoadmaps.map((r) => r.id).toList(), containsAll([1, 2]));
+        expect(store.activeRoadmap?.id, equals(1));
+      });
     });
   });
 }

@@ -236,6 +236,8 @@ class AppStrings {
   String get pasteRoadmap => isTr ? 'Yol Haritası Yükle' : 'Import Roadmap';
   String get nextStep => isTr ? 'Sıradaki:' : 'Next:';
   String get completedStepsCount => isTr ? 'adım tamamlandı' : 'steps completed';
+  String get activeRoadmapTargets => isTr ? 'Yol Haritası Hedefleri' : 'Roadmap Targets';
+  String get allRoadmaps => isTr ? 'Tüm Haritalar' : 'All Roadmaps';
 }
 
 final strings = ValueNotifier<AppStrings>(const AppStrings(AppLanguage.tr));

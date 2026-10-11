@@ -682,8 +682,6 @@ class _TodayPageState extends State<TodayPage> {
               children: [
                 if (store.activeTimers.isNotEmpty)
                   ActiveTimersSection(timers: store.activeTimers),
-                if (store.activeRoadmap != null)
-                  const TodayRoadmapPanel(),
                 _buildComposer(),
                 TodayDaySummary(currentDay: _currentDay),
                 TodayHealthPanel(
@@ -691,6 +689,8 @@ class _TodayPageState extends State<TodayPage> {
                   onRefresh: () => setState(() {}),
                 ),
                 TodayQuickShortcuts(onStartTimer: _startTimerForActivity),
+                if (store.activeRoadmaps.isNotEmpty)
+                  TodayRoadmapPanel(onStartTimer: _startTimerForActivity),
                 TodayTimeline(
                   currentDay: _currentDay,
                   onStartTimer: _startTimerForActivity,
