@@ -31,9 +31,16 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  sqflite_common_ffi: ^2.4.3
 
 flutter:
   uses-material-design: true
   assets:
     - assets/fonts/NotoSans-Regular.ttf
     - assets/fonts/NotoSans-Bold.ttf
+
+# Testler gerçek SQLite ile çalışır (sqflite_common_ffi); ikili indirmek yerine makinedeki libsqlite3 kullanılır.
+hooks:
+  user_defines:
+    sqlite3:
+      source: system
