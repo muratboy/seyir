@@ -13,6 +13,7 @@ import '../services/nl_parser.dart';
 import 'common.dart';
 import 'components/active_timer_card.dart';
 import 'components/today_day_summary.dart';
+import 'components/today_summary_card.dart';
 import 'components/today_health_panel.dart';
 import 'components/today_quick_shortcuts.dart';
 import 'components/today_roadmap_panel.dart';
@@ -22,13 +23,14 @@ import 'app_font.dart';
 
 class TodayPage extends StatelessWidget {
   final ValueNotifier<int> focusRequest;
-  const TodayPage({super.key, required this.focusRequest});
+  final ValueNotifier<int>? voiceRequest;
+  const TodayPage({super.key, required this.focusRequest, this.voiceRequest});
 
   @override
   Widget build(BuildContext context) {
     // Sayfanın kendi bildirim alanı vardır: snackbar'lar alta sabitlenmiş giriş kutusunun üstünde belirir,
     // onu örtmez.
-    return ScaffoldMessenger(child: _TodayView(focusRequest: focusRequest));
+    return ScaffoldMessenger(child: _TodayView(focusRequest: focusRequest, voiceRequest: voiceRequest));
   }
 }
 
@@ -109,7 +111,8 @@ class _ComposerPreview extends StatelessWidget {
 
 class _TodayView extends StatefulWidget {
   final ValueNotifier<int> focusRequest;
-  const _TodayView({required this.focusRequest});
+  final ValueNotifier<int>? voiceRequest;
+  const _TodayView({required this.focusRequest, this.voiceRequest});
 
   @override
   State<_TodayView> createState() => _TodayViewState();
@@ -142,6 +145,7 @@ class _TodayViewState extends State<_TodayView> {
   void initState() {
     super.initState();
     widget.focusRequest.addListener(_onFocusRequested);
+    widget.voiceRequest?.addListener(_onVoiceRequested);
     // Öneriler giriş kutusu odaklanınca da gösterilir.
     _inputFocus.addListener(_onFocusChanged);
   }
@@ -149,11 +153,18 @@ class _TodayViewState extends State<_TodayView> {
   @override
   void dispose() {
     widget.focusRequest.removeListener(_onFocusRequested);
+    widget.voiceRequest?.removeListener(_onVoiceRequested);
     _inputFocus.removeListener(_onFocusChanged);
     _inputFocus.dispose();
     _textController.dispose();
     _noteController.dispose();
     super.dispose();
+  }
+
+  void _onVoiceRequested() {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) _openVoiceInput();
+    });
   }
 
   void _onFocusChanged() {
@@ -806,6 +817,10 @@ class _TodayViewState extends State<_TodayView> {
                   if (store.activeTimers.isNotEmpty)
                     ActiveTimersSection(timers: store.activeTimers),
                   TodayDaySummary(currentDay: _currentDay),
+                  TodaySummaryCard(
+                    currentDay: _currentDay,
+                    onStartTimer: _startTimerForActivity,
+                  ),
                   TodayHealthPanel(
                     currentDay: _currentDay,
                     onRefresh: () => setState(() {}),

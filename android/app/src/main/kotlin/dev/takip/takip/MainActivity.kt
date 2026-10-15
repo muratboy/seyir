@@ -2,13 +2,29 @@ package dev.takip.takip
 
 import android.Manifest
 import android.content.pm.PackageManager
+import android.content.Intent
 import android.os.Build
+import android.os.Bundle
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
     private var pendingPermissionResult: MethodChannel.Result? = null
+
+    override fun onCreate(savedInstanceState: Bundle?) {
+        if (intent?.data?.scheme == "takip" && intent.action == Intent.ACTION_VIEW) {
+            intent.action = "es.antonborri.home_widget.action.LAUNCH"
+        }
+        super.onCreate(savedInstanceState)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        if (intent.data?.scheme == "takip" && intent.action == Intent.ACTION_VIEW) {
+            intent.action = "es.antonborri.home_widget.action.LAUNCH"
+        }
+        super.onNewIntent(intent)
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)

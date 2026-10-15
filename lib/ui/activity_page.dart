@@ -16,6 +16,7 @@ import 'components/activity_format_views.dart';
 import 'components/stats_common.dart';
 import 'components/today_timeline.dart';
 import 'contribution_heatmap.dart';
+import 'activity_merge_page.dart';
 
 /// Aktivite Sayfası: Kayıt biçimine (Süre, Miktar, Olay) göre özelleşmiş
 /// detaylı görünüm, istatistikler, takvim, hedefler ve geçmiş kayıtlar.
@@ -139,6 +140,44 @@ class _ActivityPageState extends State<ActivityPage> {
                 tooltip: isTr ? 'Aktiviteyi düzenle' : 'Edit activity',
                 icon: const Icon(Icons.edit_outlined),
                 onPressed: () => showActivityEditDialog(context, act),
+              ),
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert_rounded),
+                onSelected: (val) async {
+                  if (val == 'merge') {
+                    final merged = await Navigator.push<bool>(
+                      context,
+                      MaterialPageRoute(builder: (_) => ActivityMergePage(initialFromActivity: act)),
+                    );
+                    if (merged == true && context.mounted) {
+                      Navigator.pop(context);
+                    }
+                  } else if (val == 'archive') {
+                    await store.archiveActivity(act.id, archived: !act.isArchived);
+                  }
+                },
+                itemBuilder: (context) => [
+                  PopupMenuItem(
+                    value: 'merge',
+                    child: Row(
+                      children: [
+                        const Icon(Icons.call_merge_rounded, size: 20),
+                        const SizedBox(width: 10),
+                        Text(isTr ? 'Başka aktiviteyle birleştir' : 'Merge with another'),
+                      ],
+                    ),
+                  ),
+                  PopupMenuItem(
+                    value: 'archive',
+                    child: Row(
+                      children: [
+                        Icon(act.isArchived ? Icons.unarchive_outlined : Icons.archive_outlined, size: 20),
+                        const SizedBox(width: 10),
+                        Text(act.isArchived ? (isTr ? 'Arşivden Çıkar' : 'Unarchive') : (isTr ? 'Arşivle' : 'Archive')),
+                      ],
+                    ),
+                  ),
+                ],
               ),
             ],
           ),

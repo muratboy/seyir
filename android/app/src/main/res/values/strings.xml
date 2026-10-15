@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Takip</string>
+    <string name="shortcut_voice_short">Sesle Kaydet</string>
+    <string name="shortcut_voice_long">Sesli kayıt başlat</string>
+    <string name="shortcut_repeat_short">Son Kayıt</string>
+    <string name="shortcut_repeat_long">Son kaydı tekrarla</string>
+    <string name="shortcut_add_short">Hızlı Kayıt</string>
+    <string name="shortcut_add_long">Yeni kayıt ekle</string>
+</resources>

@@ -9,6 +9,7 @@ import 'common.dart';
 import 'settings_pages.dart';
 import 'app_font.dart';
 import 'activity_page.dart';
+import 'activity_merge_page.dart';
 
 class ManagePage extends StatefulWidget {
   const ManagePage({super.key});
@@ -143,15 +144,60 @@ class _ManagePageState extends State<ManagePage> {
                       ),
                       trailing: FilledButton.tonal(
                         onPressed: () async {
-                          final pinned = await WidgetSync.requestPin();
-                          if (context.mounted && !pinned) {
-                            showSnack(
-                              context,
-                              s.isTr
-                                  ? 'Ana ekrana boş bir alana basılı tutup Widgetlar > Takip seçebilirsiniz.'
-                                  : 'Long press home screen -> Widgets -> Takip to add.',
-                            );
-                          }
+                          showModalBottomSheet(
+                            context: context,
+                            showDragHandle: true,
+                            builder: (ctx) => SafeArea(
+                              child: Column(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  ListTile(
+                                    leading: const Icon(Icons.grid_view_rounded),
+                                    title: Text(s.isTr ? 'Geniş Widget (4x2)' : 'Grid Widget (4x2)'),
+                                    subtitle: Text(
+                                      s.isTr
+                                          ? 'Kısayollar, hedefler ve sesli kayıt'
+                                          : 'Shortcuts, goals and voice log',
+                                    ),
+                                    onTap: () async {
+                                      Navigator.pop(ctx);
+                                      final pinned = await WidgetSync.requestPin();
+                                      if (context.mounted && !pinned) {
+                                        showSnack(
+                                          context,
+                                          s.isTr
+                                              ? 'Ana ekrana basılı tutup Widgetlar > Takip seçebilirsiniz.'
+                                              : 'Long press home screen -> Widgets -> Takip to add.',
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  ListTile(
+                                    leading: const Icon(Icons.crop_square_rounded),
+                                    title: Text(s.isTr ? 'Mini Widget (1x1)' : 'Mini Widget (1x1)'),
+                                    subtitle: Text(
+                                      s.isTr
+                                          ? 'Tek dokunuşla sıradaki/öncelikli aktivite kaydı'
+                                          : 'One-tap next/priority activity log',
+                                    ),
+                                    onTap: () async {
+                                      Navigator.pop(ctx);
+                                      final pinned = await WidgetSync.requestPinSingle();
+                                      if (context.mounted && !pinned) {
+                                        showSnack(
+                                          context,
+                                          s.isTr
+                                              ? 'Ana ekrana basılı tutup Widgetlar > Takip seçebilirsiniz.'
+                                              : 'Long press home screen -> Widgets -> Takip to add.',
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  const SizedBox(height: 12),
+                                ],
+                              ),
+                            ),
+                          );
                         },
                         child: Text(s.isTr ? 'Ekle' : 'Add'),
                       ),
@@ -266,6 +312,14 @@ class _ManagePageState extends State<ManagePage> {
           appBar: AppBar(
             title: Text(s.activitiesManagement),
             actions: [
+              IconButton(
+                icon: const Icon(Icons.call_merge_rounded),
+                tooltip: s.isTr ? 'Aktiviteleri Birleştir' : 'Merge Activities',
+                onPressed: () => Navigator.push(
+                  c,
+                  MaterialPageRoute(builder: (_) => const ActivityMergePage()),
+                ),
+              ),
               IconButton(
                 icon: const Icon(Icons.add),
                 tooltip: s.isTr ? 'Yeni aktivite' : 'New activity',

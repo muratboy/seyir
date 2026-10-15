@@ -2648,24 +2648,75 @@ class AppStore extends ChangeNotifier {
 
   Map<String, Object?> widgetPayload() {
     final now = DateTime.now();
-    final items = quickItems.take(8).map((q) {
+    final isTr = strings.value.isTr;
+    final items = <Map<String, Object?>>[];
+    final seenActIds = <int>{};
+
+    for (final q in quickItems) {
       final n = todayCount(q.activityId);
       final done = quickDone(q);
       String sub;
       if (!q.isTodo) {
-        sub = n > 0 ? (strings.value.isTr ? 'Bugün $n' : 'Today $n') : '';
+        sub = n > 0 ? (isTr ? 'Bugün $n' : 'Today $n') : '';
       } else {
-        sub = q.daily ? '' : (strings.value.isTr ? 'bir kez' : 'once');
+        sub = q.daily ? '' : (isTr ? 'bir kez' : 'once');
       }
-      return {
+      seenActIds.add(q.activityId);
+      items.add({
         'id': q.id,
         't': activityLabel(q.activityId),
         'k': q.kind,
         'd': done,
         's': sub,
         'o': q.isTodo && !q.daily,
-      };
-    }).toList();
+        'actId': q.activityId,
+      });
+      if (items.length >= 8) break;
+    }
+
+    // Saate göre öğeler: 4'ten az kısayol varsa saat ve gün örüntüsüne göre tamamla
+    if (items.length < 4) {
+      final suggestions = timeBasedSuggestions(now: now);
+      for (final a in suggestions) {
+        if (seenActIds.contains(a.id)) continue;
+        final n = todayCount(a.id);
+        seenActIds.add(a.id);
+        items.add({
+          'id': -a.id, // Negatif ID: doğrudan aktivite kaydı
+          't': activityLabel(a.id),
+          'k': 'suggestion',
+          'd': n > 0,
+          's': n > 0 ? (isTr ? 'Bugün $n' : 'Today $n') : (isTr ? 'Öneri' : 'Suggested'),
+          'o': false,
+          'actId': a.id,
+        });
+        if (items.length >= 8) break;
+      }
+    }
+
+    // 1x1 Tek Öğe Widget Verisi (Single Widget)
+    // Öncelik: Yapılmamış alışkanlık > Kalan günlük hedef > Saate göre öneri > Son kayıt
+    Activity? singleAct;
+    String singleSub = isTr ? 'Hızlı Kayıt' : 'Quick Log';
+    final uncompletedHabit = activities.values.where((a) => a.isHabit && !a.isArchived && todayCount(a.id) == 0).firstOrNull;
+    if (uncompletedHabit != null) {
+      singleAct = uncompletedHabit;
+      singleSub = isTr ? 'Alışkanlık' : 'Habit';
+    } else {
+      final uncompletedGoal = goals.where((g) => g.period == GoalPeriod.day && !goalStatus(g, at: now).done).firstOrNull;
+      if (uncompletedGoal != null && uncompletedGoal.links.isNotEmpty) {
+        singleAct = activities[uncompletedGoal.links.first.activityId];
+        final st = goalStatus(uncompletedGoal, at: now);
+        singleSub = isTr ? 'Kalan: ${goalValueText(uncompletedGoal, st.remaining)}' : 'Left: ${goalValueText(uncompletedGoal, st.remaining)}';
+      } else {
+        singleAct = timeBasedSuggestions(now: now).firstOrNull ?? activities[entries.lastOrNull?.activityId];
+        if (singleAct != null) {
+          final n = todayCount(singleAct.id);
+          singleSub = n > 0 ? (isTr ? 'Bugün $n' : 'Today $n') : (isTr ? 'Dokun: Kaydet' : 'Tap to log');
+        }
+      }
+    }
+
     final goalParts = <String>[];
     for (final g in goals.where((g) => g.period == GoalPeriod.day)) {
       final st = goalStatus(g);
@@ -2680,6 +2731,11 @@ class AppStore extends ChangeNotifier {
       'date': dayKey(now),
       'items': items,
       'goals': goalParts.isEmpty ? '' : '🎯 ${goalParts.join('  ·  ')}',
+      'single_title': singleAct != null ? singleAct.name : (isTr ? 'Kayıt Ekle' : 'Add Entry'),
+      'single_sub': singleSub,
+      'single_emoji': singleAct?.emoji ?? '⚡',
+      'single_act_id': singleAct?.id ?? 0,
+      'single_done': singleAct != null && todayCount(singleAct.id) > 0,
     };
   }
 

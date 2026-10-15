@@ -32,6 +32,15 @@ class TakipWidgetProvider : HomeWidgetProvider() {
             views.setOnClickPendingIntent(R.id.widget_add_btn, addPendingIntent)
             views.setOnClickPendingIntent(R.id.widget_title, addPendingIntent)
 
+            // Voice input button opens app directly into voice recording
+            val voiceUri = Uri.parse("takip://voice")
+            val voicePendingIntent = HomeWidgetLaunchIntent.getActivity(
+                context,
+                MainActivity::class.java,
+                voiceUri
+            )
+            views.setOnClickPendingIntent(R.id.widget_mic_btn, voicePendingIntent)
+
             val payloadStr = widgetData.getString("payload", null)
             if (payloadStr != null) {
                 try {

@@ -114,6 +114,7 @@ class HomeShell extends StatefulWidget {
 class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
   int _tab = 0;
   final _focusComposer = ValueNotifier<int>(0);
+  final _voiceRequest = ValueNotifier<int>(0);
   StreamSubscription<Uri?>? _widgetSub;
 
   @override
@@ -142,6 +143,17 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
     setState(() => _tab = 0);
     if (uri.host == 'add') {
       WidgetsBinding.instance.addPostFrameCallback((_) => _focusComposer.value++);
+    } else if (uri.host == 'voice') {
+      WidgetsBinding.instance.addPostFrameCallback((_) => _voiceRequest.value++);
+    } else if (uri.host == 'quick_repeat') {
+      final lastActId = store.entries.lastOrNull?.activityId;
+      if (lastActId != null) {
+        store.repeatLastEntry(lastActId).then((msg) {
+          if (msg != null && mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+          }
+        });
+      }
     }
   }
 
@@ -155,7 +167,7 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
           body: IndexedStack(
             index: _tab,
             children: [
-              TodayPage(focusRequest: _focusComposer),
+              TodayPage(focusRequest: _focusComposer, voiceRequest: _voiceRequest),
               const GoalsPage(),
               const StatsPage(),
               const ManagePage(),

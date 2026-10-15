@@ -9,6 +9,7 @@ import 'data/store.dart';
 import 'services/store_sync.dart';
 
 const widgetProviderName = 'dev.takip.takip.TakipWidgetProvider';
+const singleWidgetProviderName = 'dev.takip.takip.TakipSingleWidgetProvider';
 
 /// Ana ekran widget'ına veri gönderir.
 class WidgetSync {
@@ -28,6 +29,11 @@ class WidgetSync {
         androidName: 'TakipWidgetProvider',
         qualifiedAndroidName: widgetProviderName,
       );
+      await HomeWidget.updateWidget(
+        name: 'TakipSingleWidgetProvider',
+        androidName: 'TakipSingleWidgetProvider',
+        qualifiedAndroidName: singleWidgetProviderName,
+      );
     } catch (e) {
       debugPrint('Widget güncellenemedi: $e');
     }
@@ -46,6 +52,20 @@ class WidgetSync {
     } catch (_) {}
     return false;
   }
+
+  static Future<bool> requestPinSingle() async {
+    try {
+      if (await HomeWidget.isRequestPinWidgetSupported() ?? false) {
+        await HomeWidget.requestPinWidget(
+          name: 'TakipSingleWidgetProvider',
+          androidName: 'TakipSingleWidgetProvider',
+          qualifiedAndroidName: singleWidgetProviderName,
+        );
+        return true;
+      }
+    } catch (_) {}
+    return false;
+  }
 }
 
 /// Widget'taki bir öğeye dokunulduğunda uygulama açılmadan arka planda çalışır.
@@ -57,7 +77,23 @@ Future<void> widgetBackgroundCallback(Uri? uri) async {
   if (uri.host == 'tap') {
     final id = int.tryParse(uri.queryParameters['id'] ?? '');
     if (id != null) {
-      await store.tapQuickItem(id);
+      if (id < 0) {
+        await store.repeatLastEntry(-id);
+      } else {
+        await store.tapQuickItem(id);
+      }
+      StoreSync.notifyChanged();
+    }
+  } else if (uri.host == 'repeat') {
+    final actId = int.tryParse(uri.queryParameters['actId'] ?? '');
+    if (actId != null && actId > 0) {
+      await store.repeatLastEntry(actId);
+      StoreSync.notifyChanged();
+    }
+  } else if (uri.host == 'single_tap') {
+    final actId = int.tryParse(uri.queryParameters['actId'] ?? '');
+    if (actId != null && actId > 0) {
+      await store.repeatLastEntry(actId);
       StoreSync.notifyChanged();
     }
   }

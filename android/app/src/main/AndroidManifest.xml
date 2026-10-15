@@ -30,6 +30,9 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="takip" />
             </intent-filter>
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
         </activity>
         <!-- Takip Home Screen Widget Provider -->
         <receiver
@@ -41,6 +44,18 @@
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/takip_widget_info" />
+        </receiver>
+
+        <!-- Takip 1x1 Single Item Widget Provider -->
+        <receiver
+            android:name=".TakipSingleWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/takip_single_widget_info" />
         </receiver>
 
         <!-- HomeWidget Background Receiver for immediate background taps -->

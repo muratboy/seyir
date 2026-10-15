@@ -41,6 +41,20 @@
         </LinearLayout>
 
         <TextView
+            android:id="@+id/widget_mic_btn"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/widget_button_bg"
+            android:paddingStart="10dp"
+            android:paddingEnd="10dp"
+            android:paddingTop="7dp"
+            android:paddingBottom="7dp"
+            android:text="🎙️"
+            android:textColor="#FFFFFF"
+            android:textSize="13sp" />
+
+        <TextView
             android:id="@+id/widget_add_btn"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"

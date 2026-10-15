@@ -6,6 +6,7 @@ import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/text_match.dart';
 import 'app_font.dart';
+import 'activity_merge_page.dart';
 
 // ---------------------------------------------------------------- avatar
 
@@ -1501,6 +1502,18 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
           ),
         ),
         actions: [
+          TextButton.icon(
+            icon: const Icon(Icons.call_merge_rounded, size: 16),
+            label: Text(s.isTr ? 'Birleştir' : 'Merge'),
+            onPressed: () {
+              Navigator.pop(c);
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => ActivityMergePage(initialFromActivity: activity)),
+              );
+            },
+          ),
+          const Spacer(),
           TextButton(onPressed: () => Navigator.pop(c), child: Text(s.cancel)),
           FilledButton(
             onPressed: () async {
