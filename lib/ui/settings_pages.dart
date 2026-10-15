@@ -114,6 +114,32 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     ),
                     const Divider(height: 1),
                     SwitchListTile(
+                      secondary: const Icon(Icons.flash_on_outlined, color: Colors.amber),
+                      title: Text(s.persistentQuickLogTitle),
+                      subtitle: Text(
+                        s.persistentQuickLogSubtitle,
+                        style: const TextStyle(fontSize: AppFont.caption),
+                      ),
+                      value: store.persistentQuickLogEnabled,
+                      onChanged: (val) async {
+                        if (val) {
+                          final granted = await NotificationService.requestPermission();
+                          if (!granted && context.mounted) {
+                            showSnack(
+                              context,
+                              s.isTr
+                                  ? 'Kilit ekranında bildirim göstermek için bildirim izni gerekiyor.'
+                                  : 'Notification permission is needed to show lock screen quick log.',
+                            );
+                            return;
+                          }
+                        }
+                        await store.setPersistentQuickLogEnabled(val);
+                        setState(() {});
+                      },
+                    ),
+                    const Divider(height: 1),
+                    SwitchListTile(
                       secondary: const Icon(Icons.water_drop_outlined, color: Colors.blue),
                       title: Text(s.isTr ? 'Gün İçi Su Hatırlatıcısı' : 'Daily Hydration Reminder'),
                       subtitle: Text(

@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
@@ -583,10 +584,22 @@ class _TodayViewState extends State<_TodayView> {
                         },
                       ),
                     for (final a in suggestions)
-                      ActionChip(
-                        avatar: a.emoji != null ? Text(a.emoji!, style: const TextStyle(fontSize: AppFont.subtitle)) : null,
-                        label: Text(a.name),
-                        onPressed: () => _selectActivity(a),
+                      GestureDetector(
+                        onLongPress: () async {
+                          HapticFeedback.mediumImpact();
+                          final msg = await store.repeatLastEntry(a.id);
+                          if (msg != null && mounted) {
+                            showSnack(context, msg);
+                          }
+                        },
+                        child: ActionChip(
+                          tooltip: s.isTr
+                              ? 'Dokun: seç · Basılı tut: son kaydı tekrarla'
+                              : 'Tap: select · Long press: repeat last entry',
+                          avatar: a.emoji != null ? Text(a.emoji!, style: const TextStyle(fontSize: AppFont.subtitle)) : null,
+                          label: Text(a.name),
+                          onPressed: () => _selectActivity(a),
+                        ),
                       ),
                     if (canAddNew)
                       ActionChip(

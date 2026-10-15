@@ -110,9 +110,10 @@ void main() {
     ]);
     await pumpStats(tester);
 
-    // All activities together are counted by entries.
+    // All activities together are counted by entries; units are never mixed.
     expect(find.text('3'), findsWidgets);
-    expect(tester.widget<ChoiceChip>(chip('Kayıt')).selected, isTrue);
+    expect(chip('Süre'), findsNothing, reason: 'duration is not shown in all-activities view');
+    expect(chip('Mesafe'), findsNothing, reason: 'distance is not shown in all-activities view');
 
     await tester.tap(filter('Ders (2)'));
     await tester.pumpAndSettle();
@@ -137,8 +138,8 @@ void main() {
     ]);
     await pumpStats(tester);
 
-    expect(chip('Kayıt'), findsOneWidget);
-    expect(chip('Mesafe'), findsOneWidget);
+    // Different activities never mix units on the All view
+    expect(chip('Mesafe'), findsNothing, reason: 'distance belongs to running, not all');
     expect(chip('Hacim'), findsNothing, reason: 'nothing was measured in litres');
     expect(chip('Adet'), findsNothing, reason: 'pieces of different activities do not add up');
     expect(find.textContaining('adet'), findsOneWidget, reason: 'only the row of the activity itself');

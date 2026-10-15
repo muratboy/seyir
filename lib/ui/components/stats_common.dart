@@ -38,18 +38,15 @@ IconData metricIcon(String? dim) => dim == null ? Icons.format_list_bulleted_rou
 /// Ölçütün değeri, birimiyle: "5 kayıt", "1 sa 20 dk", "2,4 L".
 String fmtMetric(double value, String? dim) => dim == null ? entriesText(value.round()) : store.fmtBase(value, dim);
 
-/// Farklı aktiviteler arasında toplanması anlamlı olan boyutlar. "Adet" ve kullanıcının kendi birimleri
-/// aktiviteye özeldir: şınav adediyle elma adedi toplanınca ortaya bir şey çıkmaz.
-const _summableDims = ['time', 'volume', 'distance', 'mass', 'energy'];
-
 /// Bu toplamda gösterilebilecek ölçütler; ilk sırada kayıt sayısı (null) vardır.
+///
+/// Ürün ilkesi: İstatistikte farklı aktiviteler ASLA toplanmaz (su + benzin + mesafe toplamı anlamsız).
+/// Miktar ve boyutlar yalnızca tek bir aktivite seçiliyken sunulur; birden fazla aktivite birlikteyken
+/// ("Tümü") yalnızca kayıt sayısı (null) sunulur.
 List<String?> availableMetrics(PeriodTotal total, {required bool singleActivity}) => [
       null,
-      for (final dim in _summableDims)
-        if (total.byDim.containsKey(dim)) dim,
       if (singleActivity)
-        for (final dim in total.byDim.keys)
-          if (!_summableDims.contains(dim)) dim,
+        for (final dim in total.byDim.keys) dim,
     ];
 
 /// Grafiğin altına yazılan kısa etiket; boşsa o dilime etiket yazılmaz (24 saat ya da 31 gün sığmaz).

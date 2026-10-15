@@ -9,6 +9,7 @@ import 'package:sqflite/sqflite.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/text_match.dart';
+import '../logic/time_suggestions.dart';
 import '../services/backup_service.dart';
 import '../services/health_tracker_service.dart';
 import '../services/nl_parser.dart';
@@ -162,6 +163,7 @@ class AppStore extends ChangeNotifier {
   String dailySummaryReminderTime = '21:30';
   bool timerSoundEnabled = true;
   bool timerAutoSaveCompleted = true;
+  bool persistentQuickLogEnabled = false;
 
   bool stepTrackerEnabled = false;
   int stepDailyGoal = 10000;
@@ -284,6 +286,7 @@ class AppStore extends ChangeNotifier {
     dailySummaryReminderTime = settingsMap['reminder_daily_summary_time'] ?? '21:30';
     timerSoundEnabled = settingsMap['reminder_timer_sound'] != 'false';
     timerAutoSaveCompleted = settingsMap['timer_auto_save_completed'] != 'false';
+    persistentQuickLogEnabled = settingsMap['persistent_quick_log_enabled'] == 'true';
 
     stepTrackerEnabled = settingsMap['step_tracker_enabled'] == 'true';
     stepDailyGoal = int.tryParse(settingsMap['step_daily_goal'] ?? '10000') ?? 10000;
@@ -370,6 +373,9 @@ class AppStore extends ChangeNotifier {
       }
     }
     unawaited(NotificationService.scheduleReminders(this));
+    if (persistentQuickLogEnabled) {
+      unawaited(NotificationService.updatePersistentQuickLogNotification(this));
+    }
     if (stepTrackerEnabled) {
       HealthTrackerService.instance.startStepTracking(this);
     }
@@ -458,6 +464,81 @@ class AppStore extends ChangeNotifier {
     await d.insert('settings', {'key': 'timer_auto_save_completed', 'value': enabled.toString()},
         conflictAlgorithm: ConflictAlgorithm.replace);
     notifyListeners();
+  }
+
+  Future<void> setPersistentQuickLogEnabled(bool enabled) async {
+    persistentQuickLogEnabled = enabled;
+    final d = await db;
+    await d.insert('settings', {'key': 'persistent_quick_log_enabled', 'value': enabled.toString()},
+        conflictAlgorithm: ConflictAlgorithm.replace);
+    if (enabled) {
+      await NotificationService.updatePersistentQuickLogNotification(this);
+    } else {
+      await NotificationService.cancelPersistentQuickLogNotification();
+    }
+    notifyListeners();
+  }
+
+  /// Kilit ekranı / bildirim kutusundan gelen serbest metni (veya sayaç komutunu) kaydeder.
+  Future<String?> logFromQuickText(String text) async {
+    final trimmed = text.trim();
+    if (trimmed.isEmpty) return null;
+    final result = NaturalLanguageParser.parse(
+      trimmed,
+      activities: activities.values.toList(),
+      measures: measures,
+    );
+    final act = result.matchedActivity ?? exactMatch(result.activityName) ?? await addActivity(result.activityName);
+
+    final command = result.timerCommand;
+    if (command != null) {
+      await startTimer(act.id, mode: command.mode, targetMs: command.targetMs);
+      final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+      final mins = command.targetMs ~/ 60000;
+      final modeStr = switch (command.mode) {
+        'pomodoro' => 'Pomodoro ($mins dk)',
+        'countdown' => '$mins dk Geri Sayım',
+        _ => strings.value.isTr ? 'Kronometre' : 'Stopwatch',
+      };
+      return strings.value.isTr ? '$emoji${act.name}: $modeStr başlatıldı' : '$emoji${act.name}: $modeStr started';
+    }
+
+    int? measureId = result.matchedMeasure?.id;
+    double qty = result.quantity > 0 ? result.quantity : 1.0;
+    if (measureId == null) {
+      final lastMId = stats[act.id]?.lastMeasureId;
+      if (lastMId != null) {
+        measureId = lastMId;
+      }
+    }
+
+    await addEntry(
+      act.id,
+      measureId: measureId,
+      qty: qty,
+      at: DateTime.now(),
+    );
+
+    final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+    final amount = amountDetail(measureId, qty);
+    final detail = amount.isEmpty ? '' : ' ($amount)';
+    return strings.value.isTr ? '$emoji${act.name}$detail kaydedildi' : '$emoji${act.name}$detail logged';
+  }
+
+  /// Bildirimdeki hızlı butona tıklandığında ilgili aktiviteye son ölçüsüyle 1 adet kayıt ekler.
+  Future<String?> logQuickActivity(int activityId) async {
+    final act = activity(activityId);
+    final lastMId = stats[activityId]?.lastMeasureId;
+    await addEntry(
+      activityId,
+      measureId: lastMId,
+      qty: 1.0,
+      at: DateTime.now(),
+    );
+    final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+    final amount = amountDetail(lastMId, 1.0);
+    final detail = amount.isEmpty ? '' : ' ($amount)';
+    return strings.value.isTr ? '$emoji${act.name}$detail kaydedildi' : '$emoji${act.name}$detail logged';
   }
 
   // ---------------------------------------------------------------- Sağlık & Sensör Takibi
@@ -906,20 +987,34 @@ class AppStore extends ChangeNotifier {
     return null;
   }
 
-  /// Yazarken öneriler: benzerlik + kullanım sıklığı (arşivlenenler hariç).
-  List<Activity> suggest(String text, {int limit = 6}) {
+  /// Yazarken veya boşken öneriler: zaman ve gün örüntüsü + benzerlik (arşivlenenler hariç).
+  List<Activity> suggest(String text, {DateTime? now, int limit = 6}) {
     final q = normalizeTr(text);
-    if (q.isEmpty) return frequent(limit: limit);
+    final currentTime = now ?? DateTime.now();
+    if (q.isEmpty) return timeBasedSuggestions(now: currentTime, limit: limit);
     final scored = <(Activity, double)>[];
     for (final a in activities.values.where((a) => !a.isArchived)) {
       var s = matchScore(q, a.norm);
       if (s <= 0) continue;
       final st = stats[a.id];
       if (st != null) s += min(10, log(1 + st.count) * 2 + st.recent * 0.3);
+      final affinity = TimeSuggestions.timeAffinity(a.id, entries, currentTime);
+      s += affinity * 0.5;
       scored.add((a, s));
     }
     scored.sort((a, b) => b.$2.compareTo(a.$2));
     return scored.take(limit).map((e) => e.$1).toList();
+  }
+
+  /// Günün saati (±2 saatlik aralık), haftanın günü ve geçmiş sıklığa göre zaman bazlı akıllı öneriler.
+  List<Activity> timeBasedSuggestions({DateTime? now, int limit = 8}) {
+    return TimeSuggestions.compute(
+      activities: activities,
+      entries: entries,
+      stats: stats,
+      now: now,
+      limit: limit,
+    );
   }
 
   /// Son 30 günde en sık yapılanlar (arşivlenenler hariç).
@@ -931,6 +1026,40 @@ class AppStore extends ChangeNotifier {
       return c != 0 ? c : sb.lastTs.compareTo(sa.lastTs);
     });
     return list.take(limit).toList();
+  }
+
+  /// Bir aktivitenin son kaydını aynı ölçü, miktar, birim ve notla aynen tekrar kaydeder.
+  Future<String?> repeatLastEntry(int activityId) async {
+    final act = activities[activityId];
+    if (act == null) return null;
+
+    final last = entries.where((e) => e.activityId == activityId).lastOrNull;
+    final added = last != null
+        ? (await addEntry(
+            activityId,
+            measureId: last.measureId,
+            qty: last.qty,
+            value: last.value,
+            unitId: last.unitId,
+            note: last.note,
+          )).entry
+        : (await addEntry(activityId)).entry;
+
+    final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+    final isTr = strings.value.isTr;
+    String msg;
+    if (added.value != null && added.unitId != null) {
+      final u = unit(added.unitId!);
+      final amt = fmtAmount(added.value! * u.factor, u.dim, customUnit: u);
+      msg = isTr ? '$emoji${act.name} tekrarlandı ($amt)' : '$emoji${act.name} repeated ($amt)';
+    } else {
+      msg = isTr ? '$emoji${act.name} tekrarlandı' : '$emoji${act.name} repeated';
+    }
+
+    if (persistentQuickLogEnabled) {
+      await NotificationService.updatePersistentQuickLogNotification(this, lastLogMessage: msg);
+    }
+    return msg;
   }
 
   Future<Activity> addActivity(

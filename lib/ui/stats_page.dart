@@ -2,14 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
+import '../logic/activity_rhythm.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/period_stats.dart';
+import '../logic/trend_insights.dart';
 import '../services/export_service.dart';
 import 'app_font.dart';
 import 'common.dart';
+import 'components/activity_dot_strip.dart';
 import 'components/stats_category_chart.dart';
 import 'components/stats_common.dart';
+import 'components/stats_insights_card.dart';
 import 'components/stats_overview_cards.dart';
 import 'components/stats_trend_chart.dart';
 import 'contribution_heatmap.dart';
@@ -157,6 +161,10 @@ class _StatsPageState extends State<StatsPage> {
                     ),
                   ),
                 ] else if (stats.total.count > 0) ...[
+                  StatsInsightsCard(
+                    insights: computeWeeklyInsights(store: store, now: now, isTr: s.isTr),
+                    onSelectActivity: _selectActivity,
+                  ),
                   _activityList(byActivity, periodCount),
                   const SizedBox(height: 8),
                   StatsCategoryChart(entries: store.entriesIn(period.from, period.to).toList()),
@@ -410,9 +418,17 @@ class _StatsPageState extends State<StatsPage> {
   }
 
   Widget _activityRow(Activity act, PeriodTotal total, int maxCount, int periodCount) {
+    final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
     final dim = total.mainDim;
     final share = fmtPercent((total.count / periodCount * 100).round());
+
+    final entries = store.entries.where((e) => e.activityId == act.id);
+    final rhythm = ActivityRhythm.compute(
+      entries: entries,
+      now: DateTime.now(),
+      isTr: s.isTr,
+    );
 
     return InkWell(
       onTap: () => _selectActivity(act.id),
@@ -420,7 +436,7 @@ class _StatsPageState extends State<StatsPage> {
         padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
         child: Row(
           children: [
-            ActivityAvatar(act.id, size: 34),
+            ActivityAvatar(act.id, size: 36),
             const SizedBox(width: 12),
             Expanded(
               child: Column(
@@ -432,16 +448,19 @@ class _StatsPageState extends State<StatsPage> {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  const SizedBox(height: 6),
-                  // Dönemin en çok kaydedilen aktivitesine oranla.
-                  ClipRRect(
-                    borderRadius: BorderRadius.circular(3),
-                    child: LinearProgressIndicator(
-                      value: total.count / maxCount,
-                      minHeight: 4,
-                      backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                      valueColor: AlwaysStoppedAnimation<Color>(act.displayColor),
-                    ),
+                  const SizedBox(height: 3),
+                  Text(
+                    rhythm.lastTimeText != null
+                        ? '${rhythm.cadenceText} · ${rhythm.lastTimeText}'
+                        : rhythm.cadenceText,
+                    style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 5),
+                  ActivityDotStrip(
+                    dots: rhythm.last30Days,
+                    color: act.displayColor,
                   ),
                 ],
               ),

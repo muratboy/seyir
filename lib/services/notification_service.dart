@@ -95,6 +95,21 @@ class NotificationService {
             importance: Importance.defaultImportance,
           ),
         );
+
+        // 5. Kilit Ekranı Hızlı Kayıt kanalı (Sessiz, kalıcı bildirim)
+        await androidImpl.createNotificationChannel(
+          AndroidNotificationChannel(
+            'takip_quick_log_channel',
+            (_tr ? 'Kilit Ekranı Hızlı Kayıt' : 'Lock Screen Quick Log'),
+            description: (_tr
+                ? 'Kilit ekranında ve bildirim panelinde hızlı kayıt çubuğu'
+                : 'Quick log bar on lock screen and notification shade'),
+            importance: Importance.low,
+            playSound: false,
+            enableVibration: false,
+            showBadge: false,
+          ),
+        );
       }
       _initialized = true;
     } catch (e) {
@@ -102,20 +117,21 @@ class NotificationService {
     }
   }
 
-  /// Bildirim aksiyonları veya tıklamalarını işler (Durdur, Devam Et, Bitir)
+  /// Bildirim aksiyonları veya tıklamalarını işler (Durdur, Devam Et, Bitir, Hızlı Kayıt)
   @pragma('vm:entry-point')
   static Future<void> handleNotificationAction(NotificationResponse response) async {
     final actionId = response.actionId;
     final payload = response.payload;
-    debugPrint('Notification action: actionId=$actionId, payload=$payload');
+    debugPrint('Notification action: actionId=$actionId, payload=$payload, input=${response.input}');
 
     final timerId = int.tryParse(payload ?? '');
-    if (timerId == null && actionId != 'alarm_dismiss') return;
+    final isQuickLog = actionId != null && actionId.startsWith('quick_log_');
+    if (timerId == null && actionId != 'alarm_dismiss' && !isQuickLog) return;
 
     // Arka plan isolate'ı süreç boyunca yaşar ve kendi AppStore kopyasını taşır. Uygulama bu arada
-    // sayaçları değiştirmiş olabileceği için her aksiyondan önce veriler yeniden okunur.
+    // sayaçları veya verileri değiştirmiş olabileceği için her aksiyondan önce veriler yeniden okunur.
     const storeActions = {'timer_pause', 'timer_resume', 'timer_finish', 'alarm_finish'};
-    final changesStore = timerId != null && storeActions.contains(actionId);
+    final changesStore = (timerId != null && storeActions.contains(actionId)) || isQuickLog;
     if (changesStore) {
       await store.refresh();
     }
@@ -132,6 +148,33 @@ class NotificationService {
     } else if (actionId == 'alarm_dismiss') {
       if (timerId != null) {
         await cancelTimerAlarm(timerId);
+      }
+    } else if (isQuickLog) {
+      String? logMsg;
+      if (actionId == 'quick_log_input') {
+        final text = response.input;
+        if (text != null && text.trim().isNotEmpty) {
+          logMsg = await store.logFromQuickText(text.trim());
+        }
+      } else if (actionId.startsWith('quick_log_item_')) {
+        final itemId = int.tryParse(actionId.replaceFirst('quick_log_item_', ''));
+        if (itemId != null) {
+          final res = await store.tapQuickItem(itemId);
+          if (res.added != null) {
+            final act = store.activity(res.added!.activityId);
+            final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+            logMsg = _tr ? '$emoji${act.name} kaydedildi' : '$emoji${act.name} logged';
+          }
+        }
+      } else if (actionId.startsWith('quick_log_act_')) {
+        final actId = int.tryParse(actionId.replaceFirst('quick_log_act_', ''));
+        if (actId != null) {
+          logMsg = await store.logQuickActivity(actId);
+        }
+      }
+
+      if (store.persistentQuickLogEnabled) {
+        await updatePersistentQuickLogNotification(store, lastLogMessage: logMsg);
       }
     }
 
@@ -546,6 +589,105 @@ class NotificationService {
       );
     } catch (e) {
       debugPrint('Error showing reminder: $e');
+    }
+  }
+
+  static const int _quickLogNotificationId = 1002;
+
+  /// Kilit ekranı ve bildirim panelinde sürekli duran hızlı kayıt çubuğunu günceller.
+  static Future<void> updatePersistentQuickLogNotification(
+    AppStore store, {
+    String? lastLogMessage,
+  }) async {
+    if (kIsWeb || !Platform.isAndroid || !store.persistentQuickLogEnabled) return;
+    await init();
+
+    try {
+      final s = strings.value;
+      final title = s.quickLogNotificationTitle;
+      final body = lastLogMessage != null
+          ? (_tr ? 'Son: $lastLogMessage' : 'Last: $lastLogMessage')
+          : s.quickLogNotificationBodyEmpty;
+
+      // Hızlı aksiyon düğmeleri (En fazla 2 düğme + 1 RemoteInput = toplam 3)
+      final quickActions = <AndroidNotificationAction>[
+        AndroidNotificationAction(
+          'quick_log_input',
+          s.quickLogActionType,
+          inputs: [
+            AndroidNotificationActionInput(
+              label: s.quickLogInputLabel,
+              allowFreeFormInput: true,
+            ),
+          ],
+          showsUserInterface: false,
+          cancelNotification: false,
+        ),
+      ];
+
+      // Kısayollardan veya sık yapılan aktivitelerden ilk 2 tanesini buton yap
+      final items = store.quickItems.where((i) => !i.isTodo).take(2).toList();
+      if (items.isNotEmpty) {
+        for (final item in items) {
+          final act = store.activity(item.activityId);
+          final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+          quickActions.add(
+            AndroidNotificationAction(
+              'quick_log_item_${item.id}',
+              '$emoji${act.name}'.trim(),
+              showsUserInterface: false,
+              cancelNotification: false,
+            ),
+          );
+        }
+      } else {
+        final topActs = store.timeBasedSuggestions(limit: 2);
+        for (final act in topActs) {
+          final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+          quickActions.add(
+            AndroidNotificationAction(
+              'quick_log_act_${act.id}',
+              '$emoji${act.name}'.trim(),
+              showsUserInterface: false,
+              cancelNotification: false,
+            ),
+          );
+        }
+      }
+
+      final androidDetails = AndroidNotificationDetails(
+        'takip_quick_log_channel',
+        (_tr ? 'Kilit Ekranı Hızlı Kayıt' : 'Lock Screen Quick Log'),
+        channelDescription: (_tr
+            ? 'Kilit ekranında ve bildirim panelinde hızlı kayıt çubuğu'
+            : 'Quick log bar on lock screen and notification shade'),
+        importance: Importance.low,
+        priority: Priority.low,
+        ongoing: true,
+        autoCancel: false,
+        visibility: NotificationVisibility.public,
+        actions: quickActions,
+      );
+
+      await _plugin.show(
+        _quickLogNotificationId,
+        title,
+        body,
+        NotificationDetails(android: androidDetails),
+      );
+    } catch (e) {
+      debugPrint('Error updating persistent quick log notification: $e');
+    }
+  }
+
+  /// Kilit ekranı hızlı kayıt bildirimini kaldırır.
+  static Future<void> cancelPersistentQuickLogNotification() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    await init();
+    try {
+      await _plugin.cancel(_quickLogNotificationId);
+    } catch (e) {
+      debugPrint('Error cancelling quick log notification: $e');
     }
   }
 }

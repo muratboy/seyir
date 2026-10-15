@@ -571,7 +571,10 @@ class _ManagePageState extends State<ManagePage> {
     final reminderText = reminders == 0
         ? (s.isTr ? 'hatırlatıcılar kapalı' : 'reminders off')
         : (s.isTr ? '$reminders hatırlatıcı açık' : '$reminders reminder${reminders == 1 ? '' : 's'} on');
-    return '$alarm · $reminderText';
+    final quickLog = store.persistentQuickLogEnabled
+        ? (s.isTr ? ' · Hızlı kayıt açık' : ' · Quick log on')
+        : '';
+    return '$alarm · $reminderText$quickLog';
   }
 
   /// "Adım sayar açık · Uyku takibi kapalı"; adım izni eksikse bunu söyler.

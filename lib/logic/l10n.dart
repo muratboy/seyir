@@ -228,6 +228,19 @@ class AppStrings {
   String get timerAutoSaveSubtitle => isTr
       ? 'Geri sayım ve Pomodoro bitince otomatik kaydeder, bildirim açık kalır'
       : 'Automatically saves countdown and Pomodoro on finish while keeping notification';
+
+  // Kilit Ekranı Hızlı Kayıt Bildirimi
+  String get persistentQuickLogTitle =>
+      isTr ? 'Kilit Ekranı Hızlı Kayıt Bildirimi' : 'Lock Screen Quick Log Notification';
+  String get persistentQuickLogSubtitle => isTr
+      ? 'Kilit ekranında ve bildirim panelinde sürekli durur; uygulamayı açmadan yazarak veya tek dokunuşla kaydetmenizi sağlar'
+      : 'Stays on lock screen and notification shade; log by typing or one-tap without opening the app';
+  String get quickLogNotificationTitle => isTr ? 'Takip — Hızlı Kayıt' : 'Takip — Quick Log';
+  String get quickLogNotificationBodyEmpty =>
+      isTr ? 'Yazarak veya düğmeye dokunarak kaydet' : 'Log by typing or tapping a button';
+  String get quickLogActionType => isTr ? '✍️ Yaz' : '✍️ Type';
+  String get quickLogInputLabel =>
+      isTr ? 'Ne yaptın? (örn: 2 bardak su, koşu)' : 'What did you do? (e.g. 2 glasses water)';
 }
 
 final strings = ValueNotifier<AppStrings>(const AppStrings(AppLanguage.tr));
