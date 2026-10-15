@@ -6,13 +6,15 @@ import 'package:home_widget/home_widget.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
-import '../logic/l10n.dart';
 import 'data/store.dart';
+import 'logic/l10n.dart';
 import 'ui/goals_page.dart';
 import 'ui/manage_page.dart';
+import 'ui/startup_recovery_page.dart';
 import 'ui/stats_page.dart';
 import 'ui/today_page.dart';
 import 'services/notification_service.dart';
+import 'services/store_sync.dart';
 import 'widget_sync.dart';
 
 Future<void> main() async {
@@ -21,15 +23,25 @@ Future<void> main() async {
   await initializeDateFormatting('en_US');
   Intl.defaultLocale = 'tr_TR';
   await NotificationService.init();
-  await store.load();
+  // Okunamayan bir veritabanı uygulamanın hiç açılmamasına yol açmasın: hata kurtarma ekranında gösterilir.
+  Object? startupError;
+  try {
+    await store.load();
+  } catch (e, st) {
+    debugPrint('Açılışta veriler yüklenemedi: $e\n$st');
+    startupError = e;
+  }
+  StoreSync.listen(store);
   store.addListener(WidgetSync.schedule);
   WidgetSync.push();
   unawaited(HomeWidget.registerInteractivityCallback(widgetBackgroundCallback));
-  runApp(const TakipApp());
+  runApp(TakipApp(startupError: startupError));
 }
 
 class TakipApp extends StatelessWidget {
-  const TakipApp({super.key});
+  /// Açılışta veriler yüklenemediyse hata; ana ekran yerine kurtarma ekranı açılır.
+  final Object? startupError;
+  const TakipApp({super.key, this.startupError});
 
   ThemeData _theme(Brightness b) {
     final scheme = ColorScheme.fromSeed(seedColor: const Color(0xFF3D6FE0), brightness: b);
@@ -51,6 +63,7 @@ class TakipApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final error = startupError;
     return AnimatedBuilder(
       animation: Listenable.merge([store.appThemeNotifier, store.appLanguageNotifier]),
       builder: (context, _) {
@@ -70,9 +83,23 @@ class TakipApp extends StatelessWidget {
             GlobalWidgetsLocalizations.delegate,
             GlobalCupertinoLocalizations.delegate,
           ],
-          home: const HomeShell(),
+          home: error == null ? const HomeShell() : _StartupGate(error: error),
         );
       },
+    );
+  }
+}
+
+/// Veriler yüklenene kadar kurtarma ekranını, yüklendikten sonra ana ekranı gösterir.
+class _StartupGate extends StatelessWidget {
+  final Object error;
+  const _StartupGate({required this.error});
+
+  @override
+  Widget build(BuildContext context) {
+    return AnimatedBuilder(
+      animation: store,
+      builder: (context, _) => store.loaded ? const HomeShell() : StartupRecoveryPage(error: error),
     );
   }
 }

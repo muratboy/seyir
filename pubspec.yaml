@@ -1,5 +1,5 @@
 name: takip
-description: "A new Flutter project."
+description: "Verileri cihazda tutan kişisel aktivite, alışkanlık ve hedef takip uygulaması."
 publish_to: 'none'
 version: 0.1.0+1
 

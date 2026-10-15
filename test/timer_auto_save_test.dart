@@ -22,16 +22,10 @@ void main() {
       final tr = const AppStrings(AppLanguage.tr);
       expect(tr.timerAutoSaveTitle, equals('Bitişte Otomatik Kaydet'));
       expect(tr.timerAutoSaveSubtitle, contains('Geri sayım ve Pomodoro'));
-      expect(tr.timerCompletedTitle, contains('Süre Doldu'));
-      expect(tr.pomodoroCompletedTitle, contains('Pomodoro Tamamlandı'));
-      expect(tr.timerCompletedBody, contains('otomatik kaydedildi'));
 
       final en = const AppStrings(AppLanguage.en);
       expect(en.timerAutoSaveTitle, equals('Auto-Save on Finish'));
       expect(en.timerAutoSaveSubtitle, contains('countdown and Pomodoro'));
-      expect(en.timerCompletedTitle, contains('Time is Up'));
-      expect(en.pomodoroCompletedTitle, contains('Pomodoro Completed'));
-      expect(en.timerCompletedBody, contains('automatically logged'));
     });
 
     test('Countdown timer isTargetReached triggers at targetMs', () {

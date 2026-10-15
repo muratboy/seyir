@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import '../../data/store.dart';
 import '../../logic/format.dart';
 import '../../logic/l10n.dart';
+import '../common.dart';
+import '../app_font.dart';
 
 class TodayHealthPanel extends StatelessWidget {
   final DateTime currentDay;
@@ -24,30 +26,64 @@ class TodayHealthPanel extends StatelessWidget {
     }
 
     final isToday = sameDay(currentDay, DateTime.now());
+    final collapsed = store.isSectionCollapsed('health');
 
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          // 1. ADIM SAYAR KARTI
-          if (store.stepTrackerEnabled) ...[
-            _buildStepCard(context, s, scheme, isToday),
-            const SizedBox(height: 8),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionTitle(
+          s.healthTitle,
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Bölüm kapalıyken günün özeti başlıkta kalır.
+              if (collapsed)
+                ValueListenableBuilder<int>(
+                  valueListenable: store.stepsNotifier,
+                  builder: (context, _, _) => Text(
+                    [
+                      if (store.stepTrackerEnabled) '👟 ${fmtNum(store.stepsOn(currentDay).toDouble())}',
+                      if (store.sleepTrackerEnabled)
+                        '🛌 ${fmtNum1(store.getTodaySleepHours(currentDay))} ${s.isTr ? "sa" : "h"}',
+                    ].join('  ·  '),
+                    style: TextStyle(fontSize: AppFont.small, fontWeight: FontWeight.w600, color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              const SectionToggle('health'),
+            ],
+          ),
+        ),
+        if (!collapsed)
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                // 1. ADIM SAYAR KARTI
+                if (store.stepTrackerEnabled) ...[
+                  // Adım sayısı kendi bildiricisinden dinlenir; sensör okumaları sayfanın tamamını
+                  // yeniden çizdirmez.
+                  ValueListenableBuilder<int>(
+                    valueListenable: store.stepsNotifier,
+                    builder: (context, _, _) => _buildStepCard(context, s, scheme, isToday),
+                  ),
+                  const SizedBox(height: 8),
+                ],
 
-          // 2. UYKU TAKİBİ KARTI
-          if (store.sleepTrackerEnabled) ...[
-            _buildSleepCard(context, s, scheme, isToday),
-            const SizedBox(height: 6),
-          ],
-        ],
-      ),
+                // 2. UYKU TAKİBİ KARTI
+                if (store.sleepTrackerEnabled) ...[
+                  _buildSleepCard(context, s, scheme, isToday),
+                  const SizedBox(height: 6),
+                ],
+              ],
+            ),
+          ),
+      ],
     );
   }
 
   Widget _buildStepCard(BuildContext context, AppStrings s, ColorScheme scheme, bool isToday) {
-    final steps = store.todaySteps;
+    final steps = store.stepsOn(currentDay);
     final goal = store.stepDailyGoal;
     final pct = (goal > 0 ? (steps / goal) : 0.0).clamp(0.0, 1.0);
     final kcal = (steps * 0.04).round();
@@ -74,7 +110,7 @@ class TodayHealthPanel extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('👟', style: TextStyle(fontSize: 20)),
+                  child: const Text('👟', style: TextStyle(fontSize: AppFont.headline)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -85,13 +121,13 @@ class TodayHealthPanel extends StatelessWidget {
                         children: [
                           Text(
                             s.isTr ? 'Adım Sayar' : 'Step Counter',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
                           ),
                           const Spacer(),
                           Text(
                             '${fmtNum(steps.toDouble())} / ${fmtNum(goal.toDouble())}',
                             style: TextStyle(
-                              fontSize: 12.5,
+                              fontSize: AppFont.small,
                               fontWeight: FontWeight.bold,
                               color: Colors.teal.shade700,
                             ),
@@ -115,12 +151,12 @@ class TodayHealthPanel extends StatelessWidget {
                         children: [
                           Text(
                             '🔥 $kcal kcal · 📍 $km km',
-                            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                            style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
                           ),
                           const Spacer(),
                           Text(
-                            '%${(pct * 100).toInt()}',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.teal.shade700),
+                            fmtPercent((pct * 100).toInt()),
+                            style: TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.bold, color: Colors.teal.shade700),
                           ),
                         ],
                       ),
@@ -129,56 +165,83 @@ class TodayHealthPanel extends StatelessWidget {
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Wrap(
-              alignment: WrapAlignment.end,
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 6,
-              runSpacing: 4,
-              children: [
-                ActionChip(
-                  visualDensity: VisualDensity.compact,
-                  avatar: const Icon(Icons.add, size: 14),
-                  label: const Text('+500', style: TextStyle(fontSize: 11)),
-                  onPressed: () async {
-                    await store.addManualSteps(500);
-                    onRefresh();
-                  },
-                ),
-                ActionChip(
-                  visualDensity: VisualDensity.compact,
-                  avatar: const Icon(Icons.add, size: 14),
-                  label: const Text('+1000', style: TextStyle(fontSize: 11)),
-                  onPressed: () async {
-                    await store.addManualSteps(1000);
-                    onRefresh();
-                  },
-                ),
-                FilledButton.tonalIcon(
-                  style: FilledButton.styleFrom(
-                    visualDensity: VisualDensity.compact,
-                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+            if (store.stepPermissionMissing || store.stepSensorError != null) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(Icons.warning_amber_rounded, size: 16, color: scheme.error),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      store.stepPermissionMissing ? s.stepPermissionMissing : s.stepSensorUnavailable,
+                      style: TextStyle(fontSize: AppFont.caption, color: scheme.error),
+                    ),
                   ),
-                  icon: const Icon(Icons.sync, size: 14),
-                  label: Text(s.syncSteps, style: const TextStyle(fontSize: 11.5)),
-                  onPressed: () async {
-                    final res = await store.syncTodayStepsToEntry();
-                    if (context.mounted) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text(res != null
-                              ? (s.isTr
-                                  ? '${fmtNum(steps.toDouble())} adım kaydedildi ✓'
-                                  : '${fmtNum(steps.toDouble())} steps logged ✓')
-                              : (s.isTr ? 'Adım sayısı henüz 0.' : 'Steps currently 0.')),
-                        ),
-                      );
+                  // Sensörü olmayan cihazda izin istemenin yararı yok.
+                  if (store.stepPermissionMissing)
+                    TextButton(
+                      style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+                      onPressed: () async {
+                        final granted = await store.retryStepTracking();
+                        if (!granted && context.mounted) showSnack(context, s.stepPermissionDenied);
+                      },
+                      child: Text(s.grantPermission),
+                    ),
+                ],
+              ),
+            ],
+            if (isToday) ...[
+              const SizedBox(height: 6),
+              Wrap(
+                alignment: WrapAlignment.end,
+                crossAxisAlignment: WrapCrossAlignment.center,
+                spacing: 6,
+                runSpacing: 4,
+                children: [
+                  ActionChip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: const Icon(Icons.add, size: 14),
+                    label: const Text('+500', style: TextStyle(fontSize: AppFont.micro)),
+                    onPressed: () async {
+                      await store.addManualSteps(500);
                       onRefresh();
-                    }
-                  },
-                ),
-              ],
-            ),
+                    },
+                  ),
+                  ActionChip(
+                    visualDensity: VisualDensity.compact,
+                    avatar: const Icon(Icons.add, size: 14),
+                    label: const Text('+1000', style: TextStyle(fontSize: AppFont.micro)),
+                    onPressed: () async {
+                      await store.addManualSteps(1000);
+                      onRefresh();
+                    },
+                  ),
+                  FilledButton.tonalIcon(
+                    style: FilledButton.styleFrom(
+                      visualDensity: VisualDensity.compact,
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0),
+                    ),
+                    icon: const Icon(Icons.sync, size: 14),
+                    label: Text(s.syncSteps, style: const TextStyle(fontSize: AppFont.caption)),
+                    onPressed: () async {
+                      final res = await store.syncTodayStepsToEntry();
+                      if (context.mounted) {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(
+                            content: Text(res != null
+                                ? (s.isTr
+                                    ? '${fmtNum(steps.toDouble())} adım kaydedildi ✓'
+                                    : '${fmtNum(steps.toDouble())} steps logged ✓')
+                                : (s.isTr ? 'Adım sayısı henüz 0.' : 'Steps currently 0.')),
+                          ),
+                        );
+                        onRefresh();
+                      }
+                    },
+                  ),
+                ],
+              ),
+            ],
           ],
         ),
       ),
@@ -195,7 +258,7 @@ class TodayHealthPanel extends StatelessWidget {
     if (isSessionActive) {
       final start = DateTime.fromMillisecondsSinceEpoch(activeStartTs);
       final elapsedMins = DateTime.now().difference(start).inMinutes;
-      final elapsedStr = '${elapsedMins ~/ 60} sa ${elapsedMins % 60} dk';
+      final elapsedStr = '${elapsedMins ~/ 60} $hourWord ${elapsedMins % 60} $minuteWord';
 
       return Card(
         elevation: 0,
@@ -208,7 +271,7 @@ class TodayHealthPanel extends StatelessWidget {
           padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
           child: Row(
             children: [
-              const Text('😴', style: TextStyle(fontSize: 26)),
+              const Text('😴', style: TextStyle(fontSize: AppFont.display)),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
@@ -216,11 +279,11 @@ class TodayHealthPanel extends StatelessWidget {
                   children: [
                     Text(
                       s.isTr ? 'Uyku Oturumu Aktif' : 'Sleep Session Active',
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.indigo),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small, color: Colors.indigo),
                     ),
                     Text(
                       '${s.isTr ? "Yatma" : "Bedtime"}: ${fmtTime(start)} · $elapsedStr',
-                      style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+                      style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
                     ),
                   ],
                 ),
@@ -231,14 +294,14 @@ class TodayHealthPanel extends StatelessWidget {
                   visualDensity: VisualDensity.compact,
                 ),
                 icon: const Icon(Icons.wb_sunny_outlined, size: 15),
-                label: Text(s.wakeUp, style: const TextStyle(fontSize: 12)),
+                label: Text(s.wakeUp, style: const TextStyle(fontSize: AppFont.caption)),
                 onPressed: () async {
                   final entry = await store.stopSleepSession();
                   if (context.mounted && entry != null) {
                     ScaffoldMessenger.of(context).showSnackBar(
                       SnackBar(
                         content: Text(s.isTr
-                            ? 'Günaydın! ${entry.qty} sa uyku kaydedildi 🛌'
+                            ? 'Günaydın! ${fmtNum(entry.qty)} sa uyku kaydedildi 🛌'
                             : 'Good morning! ${entry.qty} hrs sleep logged 🛌'),
                       ),
                     );
@@ -273,7 +336,7 @@ class TodayHealthPanel extends StatelessWidget {
                     borderRadius: BorderRadius.circular(10),
                   ),
                   alignment: Alignment.center,
-                  child: const Text('🛌', style: TextStyle(fontSize: 20)),
+                  child: const Text('🛌', style: TextStyle(fontSize: AppFont.headline)),
                 ),
                 const SizedBox(width: 10),
                 Expanded(
@@ -284,13 +347,13 @@ class TodayHealthPanel extends StatelessWidget {
                         children: [
                           Text(
                             s.isTr ? 'Uyku Takibi' : 'Sleep Tracker',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
                           ),
                           const Spacer(),
                           Text(
-                            '${fmtNum1(loggedHours)} / ${fmtNum1(goalHours)} sa',
+                            '${fmtNum1(loggedHours)} / ${fmtNum1(goalHours)} $hourWord',
                             style: TextStyle(
-                              fontSize: 12.5,
+                              fontSize: AppFont.small,
                               fontWeight: FontWeight.bold,
                               color: Colors.indigo.shade600,
                             ),
@@ -316,12 +379,12 @@ class TodayHealthPanel extends StatelessWidget {
                             loggedHours > 0
                                 ? (s.isTr ? 'Bugün kaydedilen uyku' : 'Logged sleep today')
                                 : (s.isTr ? 'Henüz uyku girilmedi' : 'No sleep logged yet'),
-                            style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                            style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
                           ),
                           const Spacer(),
                           Text(
-                            '%${(pct * 100).toInt()}',
-                            style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.indigo.shade600),
+                            fmtPercent((pct * 100).toInt()),
+                            style: TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.bold, color: Colors.indigo.shade600),
                           ),
                         ],
                       ),
@@ -340,7 +403,7 @@ class TodayHealthPanel extends StatelessWidget {
                 OutlinedButton.icon(
                   style: OutlinedButton.styleFrom(visualDensity: VisualDensity.compact),
                   icon: const Icon(Icons.nights_stay_outlined, size: 14, color: Colors.indigo),
-                  label: Text(s.startSleepSession, style: const TextStyle(fontSize: 11.5)),
+                  label: Text(s.startSleepSession, style: const TextStyle(fontSize: AppFont.caption)),
                   onPressed: () async {
                     await store.startSleepSession();
                     if (context.mounted) {
@@ -358,7 +421,7 @@ class TodayHealthPanel extends StatelessWidget {
                 FilledButton.tonalIcon(
                   style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
                   icon: const Icon(Icons.add, size: 14),
-                  label: Text(s.logSleep, style: const TextStyle(fontSize: 11.5)),
+                  label: Text(s.logSleep, style: const TextStyle(fontSize: AppFont.caption)),
                   onPressed: () => _showManualSleepDialog(context, s),
                 ),
               ],
@@ -417,8 +480,8 @@ class TodayHealthPanel extends StatelessWidget {
                 ),
                 const Divider(),
                 Text(
-                  '${s.isTr ? "Toplam Süre" : "Total Duration"}: ${durHours.toStringAsFixed(1)} sa ($durMins dk)',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                  '${s.isTr ? "Toplam Süre" : "Total Duration"}: ${fmtNum1(durHours)} $hourWord ($durMins $minuteWord)',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
                 ),
               ],
             ),

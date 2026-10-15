@@ -4,15 +4,20 @@ import '../data/models.dart';
 import '../data/store.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
+import '../logic/period_stats.dart';
 import '../services/export_service.dart';
+import 'app_font.dart';
 import 'common.dart';
 import 'components/stats_category_chart.dart';
+import 'components/stats_common.dart';
 import 'components/stats_overview_cards.dart';
 import 'components/stats_trend_chart.dart';
 import 'contribution_heatmap.dart';
 
-enum StatViewRange { day, week, month, year }
-
+/// İstatistik sekmesi: seçilen dönemin özeti, dağılımı ve aktiviteleri.
+///
+/// Sayfa yalnızca gösterir; hesaplar [PeriodStats] içindedir. Bir aktivite seçilince aynı bölümler o
+/// aktivitenin kendi miktarıyla (süre, hacim, mesafe...) konuşur.
 class StatsPage extends StatefulWidget {
   const StatsPage({super.key});
 
@@ -21,87 +26,31 @@ class StatsPage extends StatefulWidget {
 }
 
 class _StatsPageState extends State<StatsPage> {
-  StatViewRange _range = StatViewRange.week;
-  DateTime _anchorDate = DateTime.now();
-  int? _selectedActivityId; // null = all
-  StatMetric _selectedMetric = StatMetric.count;
+  StatRange _range = StatRange.week;
+  DateTime _anchor = DateTime.now();
+  int? _activityId; // null = tüm aktiviteler
 
-  (DateTime, DateTime) _calculateDateRange() {
-    switch (_range) {
-      case StatViewRange.day:
-        final s = dayStart(_anchorDate);
-        return (s, DateTime(s.year, s.month, s.day + 1));
-      case StatViewRange.week:
-        final s = weekStart(_anchorDate);
-        return (s, DateTime(s.year, s.month, s.day + 7));
-      case StatViewRange.month:
-        final s = monthStart(_anchorDate);
-        return (s, DateTime(s.year, s.month + 1, 1));
-      case StatViewRange.year:
-        final s = yearStart(_anchorDate);
-        return (s, DateTime(s.year + 1, 1, 1));
-    }
+  // Grafiğin ölçütü (null = kayıt sayısı). Kullanıcı seçene kadar veriye göre belirlenir: tek aktivitede o
+  // aktivitenin asıl miktarı, hepsi birlikteyken kayıt sayısı.
+  String? _metric;
+  bool _metricChosen = false;
+
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
   }
 
-  void _stepDate(int delta) {
+  /// Aktiviteyi seçer (null = hepsi) ve sayfanın başına döner: özet ve grafik oradadır.
+  void _selectActivity(int? id) {
     setState(() {
-      switch (_range) {
-        case StatViewRange.day:
-          _anchorDate = _anchorDate.add(Duration(days: delta));
-        case StatViewRange.week:
-          _anchorDate = _anchorDate.add(Duration(days: delta * 7));
-        case StatViewRange.month:
-          _anchorDate = DateTime(_anchorDate.year, _anchorDate.month + delta, 1);
-        case StatViewRange.year:
-          _anchorDate = DateTime(_anchorDate.year + delta, 1, 1);
-      }
+      _activityId = id;
+      _metricChosen = false;
     });
-  }
-
-  bool _isCurrentPeriod() {
-    final now = DateTime.now();
-    switch (_range) {
-      case StatViewRange.day:
-        return now.year == _anchorDate.year &&
-            now.month == _anchorDate.month &&
-            now.day == _anchorDate.day;
-      case StatViewRange.week:
-        final currentWeekStart = weekStart(now);
-        final anchorWeekStart = weekStart(_anchorDate);
-        return currentWeekStart.year == anchorWeekStart.year &&
-            currentWeekStart.month == anchorWeekStart.month &&
-            currentWeekStart.day == anchorWeekStart.day;
-      case StatViewRange.month:
-        return now.year == _anchorDate.year && now.month == _anchorDate.month;
-      case StatViewRange.year:
-        return now.year == _anchorDate.year;
-    }
-  }
-
-  String _rangeTitle() {
-    final s = strings.value;
-    switch (_range) {
-      case StatViewRange.day:
-        return fmtDayTitle(_anchorDate);
-      case StatViewRange.week:
-        final (start, end) = _calculateDateRange();
-        final prevEnd = end.subtract(const Duration(days: 1));
-        return '${fmtDateShort(start)} - ${fmtDateShort(prevEnd)}';
-      case StatViewRange.month:
-        const trMonths = [
-          'Ocak', 'Şubat', 'Mart', 'Nisan', 'Mayıs', 'Haziran',
-          'Temmuz', 'Ağustos', 'Eylül', 'Ekim', 'Kasım', 'Aralık'
-        ];
-        const enMonths = [
-          'January', 'February', 'March', 'April', 'May', 'June',
-          'July', 'August', 'September', 'October', 'November', 'December'
-        ];
-        final mName = s.isTr
-            ? trMonths[_anchorDate.month - 1]
-            : enMonths[_anchorDate.month - 1];
-        return '$mName ${_anchorDate.year}';
-      case StatViewRange.year:
-        return '${_anchorDate.year}';
+    if (_scroll.hasClients) {
+      _scroll.animateTo(0, duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
     }
   }
 
@@ -111,287 +60,107 @@ class _StatsPageState extends State<StatsPage> {
       animation: store,
       builder: (context, _) {
         final s = strings.value;
-        final scheme = Theme.of(context).colorScheme;
-        final (from, to) = _calculateDateRange();
-        final rawEntries = store.entriesIn(from, to).toList();
-        final filteredEntries = rawEntries.where((e) {
-          if (_selectedActivityId == null) return true;
-          return e.activityId == _selectedActivityId;
-        }).toList();
+        final now = DateTime.now();
+        final period = StatPeriod.containing(_range, _anchor);
+        // Seçili aktivite bu arada silinmiş olabilir.
+        final activityId = store.activities.containsKey(_activityId) ? _activityId : null;
+        bool wanted(Entry e) => activityId == null || e.activityId == activityId;
 
-        final allActivities = store.activities.values.toList();
-        final byActivity = store.totalsByActivity(from, to);
+        final stats = PeriodStats.compute(
+          period: period,
+          entriesIn: (from, to) => store.entriesIn(from, to).where(wanted),
+          unitOf: store.unit,
+          now: now,
+          trackingSince: store.entries.where(wanted).firstOrNull?.time,
+        );
+        final byActivity = store.totalsByActivity(period.from, period.to);
+        final periodCount = byActivity.values.fold<int>(0, (sum, t) => sum + t.count);
 
-        // Map of activityId -> entry count in current period
-        final activityCounts = <int, int>{};
-        for (final e in rawEntries) {
-          activityCounts[e.activityId] = (activityCounts[e.activityId] ?? 0) + 1;
-        }
-
-        // Sort activities: active ones first
-        allActivities.sort((a, b) {
-          final ca = activityCounts[a.id] ?? 0;
-          final cb = activityCounts[b.id] ?? 0;
-          if (ca != cb) return cb.compareTo(ca);
-          return a.name.compareTo(b.name);
-        });
+        final metrics = availableMetrics(stats.total, singleActivity: activityId != null);
+        final metric = _metricChosen && metrics.contains(_metric)
+            ? _metric
+            : (activityId != null ? stats.total.mainDim : null);
 
         return Scaffold(
           appBar: AppBar(
-            title: Text(
-              s.statsTitle,
-              style: const TextStyle(fontWeight: FontWeight.bold),
-            ),
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.table_chart_outlined),
-                tooltip: s.isTr ? 'CSV Dışa Aktar' : 'Export CSV',
-                onPressed: () => ExportService.exportCsv(context, store),
-              ),
-              IconButton(
-                icon: const Icon(Icons.picture_as_pdf_outlined),
-                tooltip: s.isTr ? 'PDF Raporu Oluştur' : 'Export PDF',
-                onPressed: () => ExportService.exportPdf(context, store),
-              ),
-            ],
+            title: Text(s.statsTitle, style: const TextStyle(fontWeight: FontWeight.bold)),
+            actions: [_exportMenu()],
           ),
           body: SingleChildScrollView(
-            padding: const EdgeInsets.only(bottom: 48),
+            controller: _scroll,
+            padding: const EdgeInsets.only(bottom: 32),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // 1. Range Selector (Day, Week, Month, Year)
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: SegmentedButton<StatViewRange>(
+                  child: SegmentedButton<StatRange>(
                     showSelectedIcon: false,
                     style: ButtonStyle(
                       visualDensity: VisualDensity.compact,
                       tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: WidgetStateProperty.all(
-                        const EdgeInsets.symmetric(horizontal: 4, vertical: 0),
-                      ),
+                      padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 4)),
+                      // Temanın yazı tipiyle; yalın bir TextStyle düğmenin yazı ailesini düşürüyordu.
                       textStyle: WidgetStateProperty.all(
-                        const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        Theme.of(context).textTheme.labelLarge?.copyWith(fontSize: AppFont.small, fontWeight: FontWeight.w600),
                       ),
                     ),
                     segments: [
-                      ButtonSegment(value: StatViewRange.day, label: Text(s.viewDay)),
-                      ButtonSegment(value: StatViewRange.week, label: Text(s.viewWeek)),
-                      ButtonSegment(value: StatViewRange.month, label: Text(s.viewMonth)),
-                      ButtonSegment(value: StatViewRange.year, label: Text(s.viewYear)),
+                      // Dar ekranda büyük yazıyla "Haftalık" bölünmek yerine küçülür.
+                      for (final (range, label) in [
+                        (StatRange.day, s.viewDay),
+                        (StatRange.week, s.viewWeek),
+                        (StatRange.month, s.viewMonth),
+                        (StatRange.year, s.viewYear),
+                      ])
+                        ButtonSegment(
+                          value: range,
+                          label: FittedBox(fit: BoxFit.scaleDown, child: Text(label, maxLines: 1)),
+                        ),
                     ],
                     selected: {_range},
                     onSelectionChanged: (set) => setState(() => _range = set.first),
                   ),
                 ),
-
-                // 2. Date Navigation Bar (< Date Range > [Bugün])
-                Container(
-                  margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(
-                      color: scheme.outlineVariant.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      IconButton(
-                        icon: const Icon(Icons.chevron_left_rounded),
-                        visualDensity: VisualDensity.compact,
-                        tooltip: s.isTr ? 'Önceki' : 'Previous',
-                        onPressed: () => _stepDate(-1),
-                      ),
-                      InkWell(
-                        borderRadius: BorderRadius.circular(10),
-                        onTap: () => setState(() => _anchorDate = DateTime.now()),
-                        child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(
-                                Icons.calendar_today_rounded,
-                                size: 15,
-                                color: scheme.primary,
-                              ),
-                              const SizedBox(width: 8),
-                              Text(
-                                _rangeTitle(),
-                                style: const TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                ),
-                              ),
-                              if (!_isCurrentPeriod()) ...[
-                                const SizedBox(width: 8),
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 8,
-                                    vertical: 2,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: scheme.primaryContainer,
-                                    borderRadius: BorderRadius.circular(10),
-                                  ),
-                                  child: Text(
-                                    s.isTr ? 'Bugün' : 'Today',
-                                    style: TextStyle(
-                                      fontSize: 10,
-                                      fontWeight: FontWeight.bold,
-                                      color: scheme.onPrimaryContainer,
-                                    ),
-                                  ),
-                                ),
-                              ],
-                            ],
-                          ),
-                        ),
-                      ),
-                      IconButton(
-                        icon: const Icon(Icons.chevron_right_rounded),
-                        visualDensity: VisualDensity.compact,
-                        tooltip: s.isTr ? 'Sonraki' : 'Next',
-                        onPressed: () => _stepDate(1),
-                      ),
-                    ],
-                  ),
-                ),
-
-                // 3. Activity Filter Chips
-                SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                  child: Row(
-                    children: [
-                      FilterChip(
-                        showCheckmark: _selectedActivityId == null,
-                        avatar: _selectedActivityId == null
-                            ? null
-                            : const Icon(Icons.apps_rounded, size: 16),
-                        label: Text(
-                          _selectedActivityId == null
-                              ? '${s.filterAll} (${rawEntries.length})'
-                              : s.filterAll,
-                        ),
-                        selected: _selectedActivityId == null,
-                        onSelected: (_) => setState(() => _selectedActivityId = null),
-                      ),
-                      for (final act in allActivities) ...[
-                        const SizedBox(width: 8),
-                        FilterChip(
-                          avatar: act.emoji != null && act.emoji!.isNotEmpty
-                              ? Text(act.emoji!, style: const TextStyle(fontSize: 14))
-                              : ActivityAvatar(act.id, size: 20),
-                          label: Text(
-                            (activityCounts[act.id] ?? 0) > 0
-                                ? '${act.name} (${activityCounts[act.id]})'
-                                : act.name,
-                          ),
-                          selected: _selectedActivityId == act.id,
-                          onSelected: (_) {
-                            setState(() {
-                              if (_selectedActivityId == act.id) {
-                                _selectedActivityId = null;
-                              } else {
-                                _selectedActivityId = act.id;
-                              }
-                            });
-                          },
-                        ),
-                      ],
-                    ],
-                  ),
-                ),
-
+                _periodBar(period, now),
+                _activityChips(byActivity, periodCount, activityId),
                 const SizedBox(height: 6),
-
-                // Active filter banner (if an activity is filtered)
-                if (_selectedActivityId != null) ...[
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-                    child: Material(
-                      color: scheme.primaryContainer.withValues(alpha: 0.35),
-                      borderRadius: BorderRadius.circular(14),
-                      child: Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                        child: Row(
-                          children: [
-                            ActivityAvatar(_selectedActivityId!, size: 30),
-                            const SizedBox(width: 10),
-                            Expanded(
-                              child: Text(
-                                s.isTr
-                                    ? '"${store.activity(_selectedActivityId!).name}" filtresi aktif'
-                                    : 'Filtered by "${store.activity(_selectedActivityId!).name}"',
-                                style: TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 13,
-                                  color: scheme.onSurface,
-                                ),
-                              ),
-                            ),
-                            TextButton.icon(
-                              style: TextButton.styleFrom(
-                                visualDensity: VisualDensity.compact,
-                                padding: const EdgeInsets.symmetric(horizontal: 8),
-                              ),
-                              icon: const Icon(Icons.close_rounded, size: 16),
-                              label: Text(
-                                s.isTr ? 'Filtreyi Kaldır' : 'Clear',
-                                style: const TextStyle(fontSize: 12),
-                              ),
-                              onPressed: () => setState(() => _selectedActivityId = null),
-                            ),
-                          ],
-                        ),
-                      ),
-                    ),
+                if (stats.total.count == 0)
+                  _emptyPeriod(activityId)
+                else ...[
+                  StatsOverviewCard(
+                    stats: stats,
+                    singleActivity: activityId != null,
+                    metric: metric,
+                    activityCount: byActivity.length,
+                  ),
+                  StatsTrendChart(
+                    stats: stats,
+                    metric: metric,
+                    metrics: metrics,
+                    now: now,
+                    onMetricChanged: (m) => setState(() {
+                      _metric = m;
+                      _metricChosen = true;
+                    }),
                   ),
                 ],
-
-                // 4. Main Stats KPI Overview Card
-                StatsOverviewCard(
-                  entries: filteredEntries,
-                  from: from,
-                  to: to,
-                  rangeMode: _range.name,
-                ),
-
-                const SizedBox(height: 8),
-
-                // 5. Trend Bar Chart (fl_chart)
-                StatsTrendChart(
-                  entries: filteredEntries,
-                  from: from,
-                  to: to,
-                  rangeMode: _range.name,
-                  selectedMetric: _selectedMetric,
-                  onMetricChanged: (m) => setState(() => _selectedMetric = m),
-                ),
-
-                // 6. Category Pie Chart (fl_chart)
-                if (_selectedActivityId == null && filteredEntries.isNotEmpty)
-                  StatsCategoryChart(entries: filteredEntries),
-
-                const SizedBox(height: 8),
-
-                // 7. Measure breakdown or activity ranking
-                if (_selectedActivityId != null) ...[
-                  _buildSingleActivityHeatmapAndStreakCard(_selectedActivityId!),
+                if (activityId != null) ...[
+                  _calendarCard(store.activity(activityId)),
+                  _measureBreakdown(store.entriesIn(period.from, period.to).where(wanted)),
+                  const SizedBox(height: 4),
+                  Center(
+                    child: TextButton.icon(
+                      icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                      label: Text(s.isTr ? 'Tüm aktivitelere dön' : 'Back to all activities'),
+                      onPressed: () => _selectActivity(null),
+                    ),
+                  ),
+                ] else if (stats.total.count > 0) ...[
+                  _activityList(byActivity, periodCount),
                   const SizedBox(height: 8),
-                  _buildSingleActivityBreakdown(filteredEntries, _selectedActivityId!),
-                ] else
-                  _buildAllActivitiesRanking(byActivity, rawEntries.length),
-
-                const SizedBox(height: 12),
-
-                // 8. Reporting and export card
-                _buildExportCard(),
+                  StatsCategoryChart(entries: store.entriesIn(period.from, period.to).toList()),
+                ],
               ],
             ),
           ),
@@ -400,260 +169,330 @@ class _StatsPageState extends State<StatsPage> {
     );
   }
 
-  // ---------------------------------------------------------------- Activity Leaderboard / Ranking
-  Widget _buildAllActivitiesRanking(
-    Map<int, PeriodTotal> byActivity,
-    int totalLogsInPeriod,
-  ) {
+  // ---------------------------------------------------------------- dışa aktarma
+
+  /// Dışa aktarma seçilen döneme değil tüm kayıtlara bakar; menü bunu söyler.
+  Widget _exportMenu() {
+    final s = strings.value;
+    return PopupMenuButton<String>(
+      icon: const Icon(Icons.ios_share_rounded),
+      tooltip: s.isTr ? 'Dışa aktar' : 'Export',
+      onSelected: (kind) =>
+          kind == 'pdf' ? ExportService.exportPdf(context, store) : ExportService.exportCsv(context, store),
+      itemBuilder: (context) => [
+        PopupMenuItem(
+          enabled: false,
+          height: 32,
+          child: Text(
+            s.isTr ? 'Tüm kayıtlar dışa aktarılır' : 'All entries are exported',
+            style: const TextStyle(fontSize: AppFont.caption),
+          ),
+        ),
+        PopupMenuItem(
+          value: 'pdf',
+          child: Row(
+            children: [
+              const Icon(Icons.picture_as_pdf_outlined, size: 20),
+              const SizedBox(width: 12),
+              Flexible(child: Text(s.isTr ? 'PDF raporu' : 'PDF report')),
+            ],
+          ),
+        ),
+        PopupMenuItem(
+          value: 'csv',
+          child: Row(
+            children: [
+              const Icon(Icons.table_chart_outlined, size: 20),
+              const SizedBox(width: 12),
+              Flexible(child: Text(s.isTr ? 'Excel tablosu (CSV)' : 'Spreadsheet (CSV)')),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ---------------------------------------------------------------- dönem ve süzgeç
+
+  /// "‹ 12 – 18 Eki ›": önceki ve sonraki döneme geçer; başlığa dokununca bugüne döner.
+  Widget _periodBar(StatPeriod period, DateTime now) {
     final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
-    final sortedActivities = byActivity.entries.toList()
-      ..sort((a, b) => b.value.count.compareTo(a.value.count));
+    final isCurrent = period.contains(now);
+    // Gelecekte kayıt olmaz: içinde bulunulan dönemden ileri gidilmez.
+    final canGoForward = !now.isBefore(period.to);
 
-    final maxCount = sortedActivities.isEmpty ? 1 : sortedActivities.first.value.count;
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.25)),
+      ),
+      child: Row(
         children: [
-          SectionTitle(
-            s.isTr ? 'Aktivite Sıralaması' : 'Activity Ranking',
-            trailing: sortedActivities.isNotEmpty
-                ? Text(
-                    '${sortedActivities.length} ${s.isTr ? "aktivite" : "activities"}',
-                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-                  )
-                : null,
+          IconButton(
+            icon: const Icon(Icons.chevron_left_rounded),
+            visualDensity: VisualDensity.compact,
+            tooltip: s.isTr ? 'Önceki' : 'Previous',
+            onPressed: () => setState(() => _anchor = period.previous.from),
           ),
-          if (sortedActivities.isEmpty)
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-                side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-              ),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(10),
+              onTap: isCurrent ? null : () => setState(() => _anchor = DateTime.now()),
               child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Center(
-                  child: Column(
-                    children: [
-                      Icon(
-                        Icons.analytics_outlined,
-                        size: 40,
-                        color: scheme.outlineVariant,
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Icon(Icons.calendar_today_rounded, size: 15, color: scheme.primary),
+                    const SizedBox(width: 8),
+                    Flexible(
+                      child: Text(
+                        periodTitle(period),
+                        style: const TextStyle(fontSize: AppFont.body, fontWeight: FontWeight.bold),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 10),
-                      Text(
-                        s.isTr
-                            ? 'Bu dönemde kayıt bulunamadı.'
-                            : 'No entries found in this period.',
-                        style: TextStyle(
-                          color: scheme.onSurfaceVariant,
-                          fontWeight: FontWeight.w500,
+                    ),
+                    if (!isCurrent) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: scheme.primaryContainer,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          s.isTr ? 'Bugün' : 'Today',
+                          style: TextStyle(
+                            fontSize: AppFont.micro,
+                            fontWeight: FontWeight.bold,
+                            color: scheme.onPrimaryContainer,
+                          ),
                         ),
                       ),
                     ],
-                  ),
+                  ],
                 ),
               ),
-            )
-          else
-            for (var i = 0; i < sortedActivities.length; i++) ...[
-              Builder(builder: (c) {
-                final item = sortedActivities[i];
-                final act = store.activity(item.key);
-                final total = item.value;
-                final totalStr = store.totalText(total);
-                final ratio = total.count / maxCount;
-                final pctOfTotal = totalLogsInPeriod > 0
-                    ? ((total.count / totalLogsInPeriod) * 100).round()
-                    : 0;
-
-                // Rank styling
-                Widget rankBadge;
-                if (i == 0) {
-                  rankBadge = Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.amber.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.amber.shade600.withValues(alpha: 0.5)),
-                    ),
-                    child: Text(
-                      '🥇 #1',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.amber.shade800,
-                      ),
-                    ),
-                  );
-                } else if (i == 1) {
-                  rankBadge = Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.blueGrey.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.blueGrey.shade400.withValues(alpha: 0.5)),
-                    ),
-                    child: Text(
-                      '🥈 #2',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.blueGrey.shade700,
-                      ),
-                    ),
-                  );
-                } else if (i == 2) {
-                  rankBadge = Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: Colors.brown.withValues(alpha: 0.18),
-                      borderRadius: BorderRadius.circular(8),
-                      border: Border.all(color: Colors.brown.shade400.withValues(alpha: 0.5)),
-                    ),
-                    child: Text(
-                      '🥉 #3',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.brown.shade700,
-                      ),
-                    ),
-                  );
-                } else {
-                  rankBadge = Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 3),
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                      borderRadius: BorderRadius.circular(8),
-                    ),
-                    child: Text(
-                      '#${i + 1}',
-                      style: TextStyle(
-                        fontSize: 11,
-                        fontWeight: FontWeight.bold,
-                        color: scheme.onSurfaceVariant,
-                      ),
-                    ),
-                  );
-                }
-
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    side: BorderSide(
-                      color: scheme.outlineVariant.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: InkWell(
-                    borderRadius: BorderRadius.circular(18),
-                    onTap: () => setState(() => _selectedActivityId = act.id),
-                    child: Padding(
-                      padding: const EdgeInsets.all(12),
-                      child: Column(
-                        children: [
-                          Row(
-                            children: [
-                              rankBadge,
-                              const SizedBox(width: 8),
-                              ActivityAvatar(act.id, size: 36),
-                              const SizedBox(width: 10),
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Flexible(
-                                          child: Text(
-                                            act.name,
-                                            style: const TextStyle(
-                                              fontWeight: FontWeight.bold,
-                                              fontSize: 14.5,
-                                            ),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                        if (act.isHabit) ...[
-                                          const SizedBox(width: 4),
-                                          const Text('🔥', style: TextStyle(fontSize: 12)),
-                                        ],
-                                      ],
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      totalStr,
-                                      style: TextStyle(
-                                        fontSize: 12,
-                                        color: scheme.onSurfaceVariant,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              Column(
-                                crossAxisAlignment: CrossAxisAlignment.end,
-                                children: [
-                                  Text(
-                                    '${total.count} ${s.isTr ? "giriş" : "logs"}',
-                                    style: TextStyle(
-                                      fontSize: 13,
-                                      fontWeight: FontWeight.bold,
-                                      color: scheme.primary,
-                                    ),
-                                  ),
-                                  Text(
-                                    '%$pctOfTotal',
-                                    style: TextStyle(
-                                      fontSize: 11,
-                                      color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                              const SizedBox(width: 4),
-                              Icon(
-                                Icons.chevron_right_rounded,
-                                size: 18,
-                                color: scheme.onSurfaceVariant.withValues(alpha: 0.6),
-                              ),
-                            ],
-                          ),
-                          const SizedBox(height: 8),
-                          // Relative volume progress bar
-                          ClipRRect(
-                            borderRadius: BorderRadius.circular(3),
-                            child: LinearProgressIndicator(
-                              value: ratio,
-                              minHeight: 5,
-                              backgroundColor:
-                                  scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                              valueColor: AlwaysStoppedAnimation<Color>(act.displayColor),
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  ),
-                );
-              }),
-            ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.chevron_right_rounded),
+            visualDensity: VisualDensity.compact,
+            tooltip: s.isTr ? 'Sonraki' : 'Next',
+            onPressed: canGoForward ? () => setState(() => _anchor = period.shifted(1).from) : null,
+          ),
         ],
       ),
     );
   }
 
-  // ---------------------------------------------------------------- Single Activity Heatmap & Streak Card
-  Widget _buildSingleActivityHeatmapAndStreakCard(int activityId) {
+  /// Aktivite süzgeci. Seçili aktivite hep başta durur; dönemde en çok kaydı olanlar onu izler.
+  Widget _activityChips(Map<int, PeriodTotal> byActivity, int periodCount, int? activityId) {
     final s = strings.value;
-    final act = store.activity(activityId);
+    int countOf(Activity a) => byActivity[a.id]?.count ?? 0;
+    final activities = store.activities.values.toList()
+      ..sort((a, b) {
+        if ((a.id == activityId) != (b.id == activityId)) return a.id == activityId ? -1 : 1;
+        final byCount = countOf(b).compareTo(countOf(a));
+        return byCount != 0 ? byCount : a.norm.compareTo(b.norm);
+      });
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: Row(
+        children: [
+          FilterChip(
+            showCheckmark: false,
+            label: Text('${s.isTr ? "Tümü" : "All"} ($periodCount)'),
+            selected: activityId == null,
+            onSelected: (_) => _selectActivity(null),
+          ),
+          for (final act in activities) ...[
+            const SizedBox(width: 8),
+            FilterChip(
+              showCheckmark: false,
+              avatar: act.emoji != null && act.emoji!.isNotEmpty
+                  ? Text(act.emoji!, style: const TextStyle(fontSize: AppFont.body))
+                  : ActivityAvatar(act.id, size: 20),
+              label: Text(countOf(act) > 0 ? '${act.name} (${countOf(act)})' : act.name),
+              selected: act.id == activityId,
+              onSelected: (_) => _selectActivity(act.id == activityId ? null : act.id),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _emptyPeriod(int? activityId) {
+    final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
-    final streakInfo = store.habitStreakInfo(activityId);
+    return Card(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      elevation: 0,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(18),
+        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(28),
+        child: Column(
+          children: [
+            Icon(Icons.analytics_outlined, size: 40, color: scheme.outlineVariant),
+            const SizedBox(height: 10),
+            Text(
+              activityId == null
+                  ? (s.isTr ? 'Bu dönemde kayıt yok.' : 'No entries in this period.')
+                  : (s.isTr
+                      ? '${store.activity(activityId).name}: bu dönemde kayıt yok.'
+                      : '${store.activity(activityId).name}: no entries in this period.'),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scheme.onSurfaceVariant, fontWeight: FontWeight.w500),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------- tüm aktiviteler
+
+  /// Dönemin aktiviteleri, en çok kaydı olandan başlayarak. Her satır aktivitenin kendi miktarını (varsa)
+  /// öne alır; dokununca o aktivitenin istatistiklerine geçilir.
+  Widget _activityList(Map<int, PeriodTotal> byActivity, int periodCount) {
+    final s = strings.value;
+    final scheme = Theme.of(context).colorScheme;
+    final rows = byActivity.entries.toList()
+      ..sort((a, b) {
+        final byCount = b.value.count.compareTo(a.value.count);
+        return byCount != 0 ? byCount : store.activity(a.key).norm.compareTo(store.activity(b.key).norm);
+      });
+    final maxCount = rows.first.value.count;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionTitle(
+          s.isTr ? 'Aktiviteler' : 'Activities',
+          trailing: Padding(
+            padding: const EdgeInsets.only(right: 8),
+            child: Text(
+              '${rows.length} ${s.isTr ? "aktivite" : (rows.length == 1 ? "activity" : "activities")}',
+              style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
+            ),
+          ),
+        ),
+        Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          elevation: 0,
+          clipBehavior: Clip.antiAlias,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.25)),
+                _activityRow(store.activity(rows[i].key), rows[i].value, maxCount, periodCount),
+              ],
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _activityRow(Activity act, PeriodTotal total, int maxCount, int periodCount) {
+    final scheme = Theme.of(context).colorScheme;
+    final dim = total.mainDim;
+    final share = fmtPercent((total.count / periodCount * 100).round());
+
+    return InkWell(
+      onTap: () => _selectActivity(act.id),
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(14, 10, 8, 10),
+        child: Row(
+          children: [
+            ActivityAvatar(act.id, size: 34),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    act.isHabit ? '${act.name} 🔥' : act.name,
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppFont.body),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  const SizedBox(height: 6),
+                  // Dönemin en çok kaydedilen aktivitesine oranla.
+                  ClipRRect(
+                    borderRadius: BorderRadius.circular(3),
+                    child: LinearProgressIndicator(
+                      value: total.count / maxCount,
+                      minHeight: 4,
+                      backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      valueColor: AlwaysStoppedAnimation<Color>(act.displayColor),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 12),
+            Column(
+              crossAxisAlignment: CrossAxisAlignment.end,
+              children: [
+                Text(
+                  dim == null ? entriesText(total.count) : store.fmtBase(total.value(dim), dim),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.body),
+                ),
+                Text(
+                  dim == null ? share : '${entriesText(total.count)} · $share',
+                  style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                ),
+              ],
+            ),
+            Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant.withValues(alpha: 0.6)),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ---------------------------------------------------------------- tek aktivite
+
+  /// Aktivitenin son haftaları ve serileri. Takvim seçilen dönemden bağımsızdır; başlığı bunu söyler.
+  Widget _calendarCard(Activity act) => LayoutBuilder(
+        builder: (context, box) {
+          // Karta sığdığı kadar hafta gösterilir. Sabit 20 hafta dar ekranda yana kayıyor, ilk ayın adı da
+          // kenarda yarım kalıyordu. (Kutu 16,5 px; kartın ve ızgaranın boşlukları ile gün adları 102 px.)
+          final weeks = ((box.maxWidth - 102) / 16.5).floor().clamp(8, 26);
+          return _calendarCardOf(act, weeks);
+        },
+      );
+
+  Widget _calendarCardOf(Activity act, int weeks) {
+    final s = strings.value;
+    final scheme = Theme.of(context).colorScheme;
+    final info = store.habitStreakInfo(act.id);
+    final days = s.isTr ? 'gün' : 'days';
+
+    Widget pill(String text) => Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+            borderRadius: BorderRadius.circular(10),
+          ),
+          child: Text(text, style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.w600)),
+        );
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
@@ -663,308 +502,167 @@ class _StatsPageState extends State<StatsPage> {
         side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
       ),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.fromLTRB(16, 8, 8, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
             Row(
               children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: act.displayColor.withValues(alpha: 0.14),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(Icons.grid_on_rounded, size: 18, color: act.displayColor),
-                ),
-                const SizedBox(width: 10),
+                Icon(Icons.calendar_month_rounded, size: 20, color: scheme.primary),
+                const SizedBox(width: 8),
                 Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              s.isTr ? '${act.name} Katkı Haritası' : '${act.name} Contributions',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          if (act.isHabit) ...[
-                            const SizedBox(width: 6),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                              decoration: BoxDecoration(
-                                color: Colors.orange.withValues(alpha: 0.15),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                '🔥 ${s.tabHabits}',
-                                style: const TextStyle(
-                                  fontSize: 10,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.orange,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ],
-                      ),
-                      const SizedBox(height: 2),
-                      Text(
-                        '🔥 ${s.currentStreak}: ${streakInfo.currentStreak} ${s.isTr ? "Gün" : "Days"} · 🏆 ${s.longestStreak}: ${streakInfo.longestStreak} ${s.isTr ? "Gün" : "Days"}',
-                        style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
-                      ),
-                    ],
-                  ),
-                ),
-                IconButton(
-                  tooltip: act.isHabit
-                      ? (s.isTr ? 'Alışkanlık takibi devrede' : 'Habit tracking active')
-                      : (s.isTr ? 'Alışkanlık olarak aç' : 'Enable habit tracking'),
-                  icon: Icon(
-                    act.isHabit ? Icons.local_fire_department_rounded : Icons.local_fire_department_outlined,
-                    color: act.isHabit ? Colors.orange : scheme.onSurfaceVariant,
-                  ),
-                  onPressed: () async {
-                    await store.setActivityHabit(act.id, !act.isHabit);
-                  },
-                ),
-              ],
-            ),
-            const SizedBox(height: 14),
-            ContributionHeatmap(
-              dailyCounts: streakInfo.dailyCounts,
-              dailyLevels: streakInfo.dailyLevels,
-              dailyTooltips: streakInfo.dailyTooltips,
-              baseColor: act.displayColor,
-              weekCount: 20,
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------- Single Activity Breakdown
-  Widget _buildSingleActivityBreakdown(List<Entry> entries, int activityId) {
-    final s = strings.value;
-    final act = store.activity(activityId);
-    final scheme = Theme.of(context).colorScheme;
-
-    final measureCounts = <int?, (int count, double totalValue)>{};
-    for (final e in entries) {
-      final prev = measureCounts[e.measureId] ?? (0, 0.0);
-      measureCounts[e.measureId] = (prev.$1 + 1, prev.$2 + (e.value ?? 0.0));
-    }
-
-    final maxCount = measureCounts.values.fold<int>(
-      1,
-      (prev, curr) => curr.$1 > prev ? curr.$1 : prev,
-    );
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SectionTitle(
-            s.isTr ? '${act.name} Ölçü Dağılımı' : '${act.name} Breakdown',
-            trailing: TextButton.icon(
-              icon: const Icon(Icons.arrow_back_rounded, size: 16),
-              label: Text(s.isTr ? 'Tümüne Dön' : 'Back to All'),
-              onPressed: () => setState(() => _selectedActivityId = null),
-            ),
-          ),
-          if (measureCounts.isEmpty)
-            Card(
-              elevation: 0,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(18),
-                side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-              ),
-              child: Padding(
-                padding: const EdgeInsets.all(28),
-                child: Center(
-                  child: Text(
-                    s.isTr
-                        ? 'Bu dönemde kayıt bulunamadı.'
-                        : 'No entries found in this period.',
-                    style: TextStyle(color: scheme.onSurfaceVariant),
-                  ),
-                ),
-              ),
-            )
-          else
-            for (final entry in measureCounts.entries) ...[
-              Builder(builder: (c) {
-                final m = store.measureById(entry.key);
-                final measureName =
-                    m?.name ?? (s.isTr ? 'Ölçüsüz / Standart' : 'Standard count');
-                final count = entry.value.$1;
-                final val = entry.value.$2;
-                final ratio = count / maxCount;
-
-                return Card(
-                  margin: const EdgeInsets.only(bottom: 8),
-                  elevation: 0,
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(18),
-                    side: BorderSide(
-                      color: scheme.outlineVariant.withValues(alpha: 0.25),
-                    ),
-                  ),
-                  child: Padding(
-                    padding: const EdgeInsets.all(12),
-                    child: Column(
+                  child: Text.rich(
+                    TextSpan(
+                      text: s.isTr ? 'Takvim' : 'Calendar',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
                       children: [
-                        Row(
-                          children: [
-                            Container(
-                              padding: const EdgeInsets.all(8),
-                              decoration: BoxDecoration(
-                                color: scheme.primaryContainer.withValues(alpha: 0.4),
-                                shape: BoxShape.circle,
-                              ),
-                              child: Icon(
-                                m != null ? Icons.straighten_rounded : Icons.tag_rounded,
-                                size: 18,
-                                color: scheme.primary,
-                              ),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    measureName,
-                                    style: const TextStyle(
-                                      fontWeight: FontWeight.bold,
-                                      fontSize: 14.5,
-                                    ),
-                                  ),
-                                  Text(
-                                    '$count ${s.isTr ? "kez kullanıldı" : "times"}',
-                                    style: TextStyle(
-                                      fontSize: 12,
-                                      color: scheme.onSurfaceVariant,
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                            if (m != null && val > 0)
-                              Text(
-                                store.fmtBase(
-                                  val * store.unit(m.unitId).factor,
-                                  store.unit(m.unitId).dim,
-                                ),
-                                style: TextStyle(
-                                  fontSize: 15,
-                                  fontWeight: FontWeight.bold,
-                                  color: scheme.primary,
-                                ),
-                              )
-                            else
-                              Text(
-                                '$count ${s.isTr ? "kayıt" : "logs"}',
-                                style: TextStyle(
-                                  fontSize: 14,
-                                  fontWeight: FontWeight.bold,
-                                  color: scheme.primary,
-                                ),
-                              ),
-                          ],
-                        ),
-                        const SizedBox(height: 8),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(3),
-                          child: LinearProgressIndicator(
-                            value: ratio,
-                            minHeight: 4,
-                            backgroundColor:
-                                scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                            valueColor: AlwaysStoppedAnimation<Color>(scheme.primary),
+                        TextSpan(
+                          text: s.isTr ? '  son $weeks hafta' : '  last $weeks weeks',
+                          style: TextStyle(
+                            fontWeight: FontWeight.normal,
+                            fontSize: AppFont.caption,
+                            color: scheme.onSurfaceVariant,
                           ),
                         ),
                       ],
                     ),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
                   ),
-                );
-              }),
-            ],
-        ],
-      ),
-    );
-  }
-
-  // ---------------------------------------------------------------- Export Card
-  Widget _buildExportCard() {
-    final s = strings.value;
-    final scheme = Theme.of(context).colorScheme;
-
-    return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 0,
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(22),
-        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-      ),
-      color: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
-      child: Padding(
-        padding: const EdgeInsets.all(18),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Row(
-              children: [
-                Container(
-                  padding: const EdgeInsets.all(6),
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: Icon(Icons.ios_share_rounded, size: 18, color: scheme.primary),
                 ),
-                const SizedBox(width: 10),
-                Text(
-                  s.isTr ? 'Raporlama & Veri Paylaşımı' : 'Reporting & Export',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                IconButton(
+                  tooltip: act.isHabit
+                      ? (s.isTr ? 'Alışkanlık olarak izleniyor' : 'Tracked as a habit')
+                      : (s.isTr ? 'Alışkanlık olarak izle' : 'Track as a habit'),
+                  icon: Icon(
+                    act.isHabit ? Icons.local_fire_department_rounded : Icons.local_fire_department_outlined,
+                    color: act.isHabit ? Colors.orange : scheme.onSurfaceVariant,
+                  ),
+                  onPressed: () => store.setActivityHabit(act.id, !act.isHabit),
                 ),
               ],
             ),
-            const SizedBox(height: 6),
-            Text(
-              s.isTr
-                  ? 'Seçili döneme ait kayıtlarınızı PDF raporu veya Excel uyumlu CSV tablosu olarak cihazınıza aktarın.'
-                  : 'Export all records for the selected period as a PDF report or Excel-compatible CSV table.',
-              style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
-            ),
-            const SizedBox(height: 14),
-            Row(
-              children: [
-                Expanded(
-                  child: FilledButton.icon(
-                    icon: const Icon(Icons.picture_as_pdf_rounded, size: 18),
-                    label: Text(s.isTr ? 'PDF Raporu' : 'PDF Report'),
-                    onPressed: () => ExportService.exportPdf(context, store),
+            Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Wrap(
+                    spacing: 8,
+                    runSpacing: 6,
+                    children: [
+                      pill('🔥 ${s.currentStreak}: ${info.currentStreak} $days'),
+                      pill('🏆 ${s.longestStreak}: ${info.longestStreak} $days'),
+                    ],
                   ),
-                ),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: FilledButton.tonalIcon(
-                    icon: const Icon(Icons.table_chart_rounded, size: 18),
-                    label: Text(s.isTr ? 'Excel (CSV)' : 'Excel (CSV)'),
-                    onPressed: () => ExportService.exportCsv(context, store),
+                  const SizedBox(height: 12),
+                  ContributionHeatmap(
+                    dailyCounts: info.dailyCounts,
+                    dailyLevels: info.dailyLevels,
+                    dailyTooltips: info.dailyTooltips,
+                    baseColor: act.displayColor,
+                    weekCount: weeks,
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
           ],
         ),
       ),
+    );
+  }
+
+  /// Aktivitenin dönemde hangi ölçülerle kaydedildiği. Tek bir ölçü kullanıldıysa özetteki toplamı
+  /// yinelemekten başka bir şey söylemez, o zaman gösterilmez.
+  Widget _measureBreakdown(Iterable<Entry> entries) {
+    final s = strings.value;
+    final scheme = Theme.of(context).colorScheme;
+
+    // Ölçüsü olmayan kayıtlar (sayaçtan gelenler, adım sayısı) birimlerine göre ayrılır.
+    final groups = <(int?, String?), (int, double)>{};
+    for (final e in entries) {
+      final key = (e.measureId, e.unitId);
+      final (count, base) = groups[key] ?? (0, 0.0);
+      final amount = e.value == null || e.unitId == null ? 0.0 : e.value! * store.unit(e.unitId!).factor;
+      groups[key] = (count + 1, base + amount);
+    }
+    if (groups.length < 2) return const SizedBox.shrink();
+
+    final rows = groups.entries.toList()..sort((a, b) => b.value.$1.compareTo(a.value.$1));
+    final maxCount = rows.first.value.$1;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        SectionTitle(s.isTr ? 'Ölçülere Göre' : 'By Measure'),
+        Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          child: Column(
+            children: [
+              for (var i = 0; i < rows.length; i++) ...[
+                if (i > 0) Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.25)),
+                Builder(builder: (context) {
+                  final (measureId, unitId) = rows[i].key;
+                  final (count, base) = rows[i].value;
+                  final unit = unitId == null ? null : store.unit(unitId);
+                  final name = store.measureById(measureId)?.name ??
+                      unit?.name ??
+                      (s.isTr ? 'Ölçüsüz' : 'No measure');
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
+                    child: Row(
+                      children: [
+                        Expanded(
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(
+                                name,
+                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppFont.body),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                              const SizedBox(height: 6),
+                              ClipRRect(
+                                borderRadius: BorderRadius.circular(3),
+                                child: LinearProgressIndicator(
+                                  value: count / maxCount,
+                                  minHeight: 4,
+                                  backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                        const SizedBox(width: 12),
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.end,
+                          children: [
+                            if (unit != null && base > 0)
+                              Text(
+                                store.fmtBase(base, unit.dim),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.body),
+                              ),
+                            Text(
+                              entriesText(count),
+                              style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                            ),
+                          ],
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
+            ],
+          ),
+        ),
+      ],
     );
   }
 }

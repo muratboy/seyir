@@ -5,17 +5,78 @@ import '../data/store.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/text_match.dart';
+import 'app_font.dart';
 
 // ---------------------------------------------------------------- avatar
+
+/// Aktivitenin adı ve yanında kategori etiketi. Ad önceliklidir: etiket bütünüyle sığmıyorsa yalnızca simgesi
+/// gösterilir (kesik bir "📚 Eğitim & Ça…" bozuk görünüyordu; sabit genişlikli etiket ise adı birkaç harfe
+/// indiriyordu), ad da gerekirse kısaltılır.
+class NameWithCategory extends StatelessWidget {
+  final Activity activity;
+  final TextStyle nameStyle;
+
+  const NameWithCategory({super.key, required this.activity, required this.nameStyle});
+
+  @override
+  Widget build(BuildContext context) {
+    final a = activity;
+    final name = Text(a.name, style: nameStyle, maxLines: 1, overflow: TextOverflow.ellipsis);
+    if (a.category == null) return name;
+    final isTr = strings.value.isTr;
+    final category = a.categoryDef;
+    final tagStyle = TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w600, color: a.displayColor);
+    final full = '${category.emoji} ${category.name(isTr)}';
+    return LayoutBuilder(
+      builder: (context, box) {
+        final fits = measureTextWidth(context, a.name, nameStyle) + 8 + measureTextWidth(context, full, tagStyle) + 14 <= box.maxWidth;
+        return Row(
+          children: [
+            Flexible(child: name),
+            const SizedBox(width: 8),
+            Tooltip(
+              message: category.name(isTr),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
+                decoration: BoxDecoration(
+                  color: a.displayColor.withValues(alpha: 0.14),
+                  borderRadius: BorderRadius.circular(6),
+                ),
+                child: Text(fits ? full : category.emoji, maxLines: 1, style: tagStyle),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
+
+/// [text] metninin tek satırda kaplayacağı genişlik; yazı büyütmesi dahil. Bir şeyin yan yana sığıp
+/// sığmayacağına karar vermek için.
+double measureTextWidth(BuildContext context, String text, TextStyle style) {
+  final painter = TextPainter(
+    text: TextSpan(text: text, style: DefaultTextStyle.of(context).style.merge(style)),
+    textDirection: Directionality.of(context),
+    textScaler: MediaQuery.textScalerOf(context),
+    maxLines: 1,
+  )..layout();
+  final width = painter.width;
+  painter.dispose();
+  return width;
+}
 
 class ActivityAvatar extends StatelessWidget {
   final int activityId;
   final double size;
-  const ActivityAvatar(this.activityId, {super.key, this.size = 40});
+
+  /// Henüz kaydedilmemiş bir aktivite gösterilecekse (kimliği yoktur) aktivitenin kendisi.
+  final Activity? activity;
+  const ActivityAvatar(this.activityId, {super.key, this.size = 40, this.activity});
 
   @override
   Widget build(BuildContext context) {
-    final a = store.activity(activityId);
+    final a = activity ?? store.activity(activityId);
     final rawEmoji = (a.emoji != null && a.emoji!.trim().isNotEmpty)
         ? a.emoji!.trim()
         : (a.category != null ? a.categoryDef.emoji : null);
@@ -72,21 +133,34 @@ void showSnack(
   VoidCallback? undo,
   List<Goal> achieved = const [],
   List<Goal> exceeded = const [],
+}) =>
+    showSnackOn(ScaffoldMessenger.of(context), msg, undo: undo, achieved: achieved, exceeded: exceeded);
+
+/// [showSnack] ile aynı; bildirimi gösterecek nesne, onu isteyen bileşen ağaçtan kalkmadan önce alınmışsa
+/// kullanılır (ör. bitirilen sayacın kartı).
+void showSnackOn(
+  ScaffoldMessengerState m,
+  String msg, {
+  VoidCallback? undo,
+  List<Goal> achieved = const [],
+  List<Goal> exceeded = const [],
 }) {
-  final m = ScaffoldMessenger.of(context);
   m.hideCurrentSnackBar();
+  final s = strings.value;
   var text = msg;
   if (achieved.isNotEmpty) {
-    text += '\n🎉 Tebrikler! "${achieved.map((g) => g.name).join('", "')}" hedefine ulaştın!';
+    final names = achieved.map((g) => g.name).join('", "');
+    text += s.isTr ? '\n🎉 Tebrikler! "$names" hedefine ulaştın!' : '\n🎉 Well done! You reached "$names"!';
   }
   if (exceeded.isNotEmpty) {
-    text += '\n⚠️ Dikkat! "${exceeded.map((g) => g.name).join('", "')}" limiti aşıldı!';
+    final names = exceeded.map((g) => g.name).join('", "');
+    text += s.isTr ? '\n⚠️ Dikkat! "$names" limiti aşıldı!' : '\n⚠️ Careful! The "$names" limit is exceeded!';
   }
   m.showSnackBar(SnackBar(
     content: Text(text),
     persist: false,
     duration: Duration(seconds: (achieved.isNotEmpty || exceeded.isNotEmpty) ? 6 : 4),
-    action: undo == null ? null : SnackBarAction(label: 'Geri al', onPressed: undo),
+    action: undo == null ? null : SnackBarAction(label: s.undo, onPressed: undo),
   ));
 }
 
@@ -94,27 +168,51 @@ Future<bool> confirm(
   BuildContext context,
   String title,
   String message, {
-  String ok = 'Sil',
+  String? ok,
   bool destructive = true,
 }) async {
+  final s = strings.value;
   final r = await showDialog<bool>(
     context: context,
     builder: (c) => AlertDialog(
       title: Text(title),
       content: Text(message),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(c, false), child: const Text('Vazgeç')),
+        TextButton(onPressed: () => Navigator.pop(c, false), child: Text(s.cancel)),
         FilledButton(
           style: destructive
               ? FilledButton.styleFrom(backgroundColor: Theme.of(c).colorScheme.error)
               : null,
           onPressed: () => Navigator.pop(c, true),
-          child: Text(ok),
+          child: Text(ok ?? s.delete),
         ),
       ],
     ),
   );
   return r ?? false;
+}
+
+/// Günlük ekranındaki bir bölümü açıp kapatan düğme; açık/kapalı durumu ayarlarda saklanır.
+class SectionToggle extends StatelessWidget {
+  final String sectionId;
+  const SectionToggle(this.sectionId, {super.key});
+
+  // Düğme sabit (const) olarak kullanılır ve üstündeki bölüm yeniden çizilince yeniden çizilmez; okun
+  // yönü değişsin diye store'u kendisi dinler.
+  @override
+  Widget build(BuildContext context) => AnimatedBuilder(
+        animation: store,
+        builder: (context, _) {
+          final s = strings.value;
+          final collapsed = store.isSectionCollapsed(sectionId);
+          return IconButton(
+            visualDensity: VisualDensity.compact,
+            icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less),
+            tooltip: collapsed ? (s.isTr ? 'Göster' : 'Show') : (s.isTr ? 'Gizle' : 'Hide'),
+            onPressed: () => store.toggleSection(sectionId),
+          );
+        },
+      );
 }
 
 class SectionTitle extends StatelessWidget {
@@ -179,7 +277,7 @@ class _QtyFieldState extends State<QtyField> {
         controller: _c,
         textAlign: TextAlign.center,
         keyboardType: const TextInputType.numberWithOptions(decimal: true),
-        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
+        style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.w600),
         decoration: const InputDecoration(
           isDense: true,
           contentPadding: EdgeInsets.symmetric(vertical: 10, horizontal: 4),
@@ -251,7 +349,7 @@ class _GridPainterWidgetState extends State<GridPainterWidget> {
                 '🔲 $count ${s.paintedCount}',
                 style: TextStyle(
                   fontWeight: FontWeight.bold,
-                  fontSize: 13,
+                  fontSize: AppFont.small,
                   color: scheme.primary,
                 ),
               ),
@@ -263,7 +361,7 @@ class _GridPainterWidgetState extends State<GridPainterWidget> {
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                   ),
                   onPressed: () => widget.onChanged(0),
-                  child: Text(s.isTr ? 'Temizle' : 'Clear', style: const TextStyle(fontSize: 12)),
+                  child: Text(s.isTr ? 'Temizle' : 'Clear', style: const TextStyle(fontSize: AppFont.caption)),
                 ),
               TextButton(
                 style: TextButton.styleFrom(
@@ -271,7 +369,7 @@ class _GridPainterWidgetState extends State<GridPainterWidget> {
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                 ),
                 onPressed: () => widget.onChanged((count + total).toDouble()),
-                child: Text('+$total', style: const TextStyle(fontSize: 12)),
+                child: Text('+$total', style: const TextStyle(fontSize: AppFont.caption)),
               ),
             ],
           ),
@@ -313,7 +411,7 @@ class _GridPainterWidgetState extends State<GridPainterWidget> {
                             child: Text(
                               '$idx',
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: AppFont.micro,
                                 fontWeight: FontWeight.bold,
                                 color: isPainted
                                     ? scheme.onPrimary
@@ -404,7 +502,7 @@ class _MeasureQtyPickerState extends State<MeasureQtyPicker> {
         TextSpan(
           text: '  ${fmtNum(m.amount)} ${u.symbol}',
           style: TextStyle(
-            fontSize: 12,
+            fontSize: AppFont.caption,
             color: Theme.of(context).colorScheme.onSurfaceVariant,
           ),
         ),
@@ -439,14 +537,14 @@ class _MeasureQtyPickerState extends State<MeasureQtyPicker> {
               for (final x in selectedOther) _chip(x),
               ActionChip(
                 avatar: const Icon(Icons.expand_more, size: 18),
-                label: const Text('Diğer'),
+                label: Text(strings.value.isTr ? 'Diğer' : 'Other'),
                 onPressed: () => setState(() => _showAll = true),
               ),
             ],
             if (showOthers) for (final x in others) _chip(x),
             ActionChip(
               avatar: const Icon(Icons.add, size: 18),
-              label: const Text('Yeni ölçü'),
+              label: Text(strings.value.isTr ? 'Yeni ölçü' : 'New measure'),
               onPressed: () async {
                 final st = widget.activityId == null ? null : store.stats[widget.activityId];
                 final nm = await showMeasureDialog(context, suggestedDim: st?.mainDim);
@@ -481,19 +579,19 @@ class _MeasureQtyPickerState extends State<MeasureQtyPicker> {
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         icon: Icon(Icons.pin_outlined, size: 20, color: effectiveMode == 'stepper' ? scheme.primary : scheme.outline),
-                        tooltip: 'Klavye / Stepper',
+                        tooltip: strings.value.isTr ? 'Klavye / Stepper' : 'Keyboard / Stepper',
                         onPressed: () => setState(() => _modeOverride = 'stepper'),
                       ),
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         icon: Icon(Icons.touch_app_outlined, size: 20, color: effectiveMode == 'choices' ? scheme.primary : scheme.outline),
-                        tooltip: 'Çoktan Seçmeli',
+                        tooltip: strings.value.isTr ? 'Çoktan Seçmeli' : 'Quick choices',
                         onPressed: () => setState(() => _modeOverride = 'choices'),
                       ),
                       IconButton(
                         visualDensity: VisualDensity.compact,
                         icon: Icon(Icons.grid_view_outlined, size: 20, color: effectiveMode == 'grid' ? scheme.primary : scheme.outline),
-                        tooltip: 'Izgara Boyama',
+                        tooltip: strings.value.isTr ? 'Izgara Boyama' : 'Paint grid',
                         onPressed: () => setState(() => _modeOverride = 'grid'),
                       ),
                     ],
@@ -679,7 +777,7 @@ Future<Measure?> showMeasureDialog(
               Text(
                 s.qtyModeTitle,
                 style: TextStyle(
-                  fontSize: 13,
+                  fontSize: AppFont.small,
                   fontWeight: FontWeight.bold,
                   color: Theme.of(c).colorScheme.primary,
                 ),
@@ -720,7 +818,7 @@ Future<Measure?> showMeasureDialog(
 
               if (qtyMode == 'grid') ...[
                 const SizedBox(height: 10),
-                Text(s.gridSize, style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold)),
+                Text(s.gridSize, style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold)),
                 const SizedBox(height: 6),
                 Wrap(
                   spacing: 8,
@@ -757,7 +855,7 @@ Future<Measure?> showMeasureDialog(
           FilledButton(
             onPressed: () async {
               if (n.isEmpty) return setS(() => error = s.nameRequired);
-              if (a == null || a <= 0) return setS(() => error = 'Geçerli bir miktar yaz.');
+              if (a == null || a <= 0) return setS(() => error = s.isTr ? 'Geçerli bir miktar yaz.' : 'Enter a valid amount.');
               Measure m;
               final choicesVal = choicesCtrl.text.trim().isEmpty ? '1,2,3,4,5' : choicesCtrl.text.trim();
               if (existing != null) {
@@ -795,32 +893,40 @@ Future<Measure?> showMeasureDialog(
 Future<Unit?> showUnitDialog(BuildContext context) {
   final name = TextEditingController();
   final symbol = TextEditingController();
+  final l = strings.value;
   return showDialog<Unit>(
     context: context,
     builder: (c) => AlertDialog(
-      title: const Text('Yeni birim'),
+      title: Text(l.isTr ? 'Yeni birim' : 'New unit'),
       content: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          const Text(
-            'Listede olmayan bir şeyi saymak için (örn. sayfa, soru, tekrar).',
+          Text(
+            l.isTr
+                ? 'Listede olmayan bir şeyi saymak için (örn. sayfa, soru, tekrar).'
+                : 'To count something that is not in the list (e.g. pages, questions, reps).',
           ),
           const SizedBox(height: 12),
           TextField(
             controller: name,
             autofocus: true,
-            decoration: const InputDecoration(labelText: 'Birim adı', hintText: 'örn. Sayfa'),
+            decoration: InputDecoration(
+              labelText: l.isTr ? 'Birim adı' : 'Unit name',
+              hintText: l.isTr ? 'örn. Sayfa' : 'e.g. Page',
+            ),
           ),
           const SizedBox(height: 8),
           TextField(
             controller: symbol,
-            decoration:
-                const InputDecoration(labelText: 'Kısaltma (isteğe bağlı)', hintText: 'örn. sf'),
+            decoration: InputDecoration(
+              labelText: l.isTr ? 'Kısaltma (isteğe bağlı)' : 'Abbreviation (optional)',
+              hintText: l.isTr ? 'örn. sf' : 'e.g. pg',
+            ),
           ),
         ],
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(c), child: const Text('Vazgeç')),
+        TextButton(onPressed: () => Navigator.pop(c), child: Text(l.cancel)),
         FilledButton(
           onPressed: () async {
             final n = name.text.trim();
@@ -829,7 +935,7 @@ Future<Unit?> showUnitDialog(BuildContext context) {
             final u = await store.addUnit(trCapitalize(n), s);
             if (c.mounted) Navigator.pop(c, u);
           },
-          child: const Text('Ekle'),
+          child: Text(l.isTr ? 'Ekle' : 'Add'),
         ),
       ],
     ),
@@ -841,7 +947,7 @@ Future<Unit?> showUnitDialog(BuildContext context) {
 /// Arama yapılabilen kayıt türü seçici. İstenirse yazılan metinle yeni tür oluşturur.
 Future<Activity?> showActivityPicker(
   BuildContext context, {
-  String title = 'Seç',
+  String? title,
   Set<int> exclude = const {},
   bool allowCreate = true,
 }) {
@@ -849,7 +955,11 @@ Future<Activity?> showActivityPicker(
     context: context,
     isScrollControlled: true,
     showDragHandle: true,
-    builder: (c) => _ActivityPickerSheet(title: title, exclude: exclude, allowCreate: allowCreate),
+    builder: (c) => _ActivityPickerSheet(
+      title: title ?? (strings.value.isTr ? 'Seç' : 'Choose'),
+      exclude: exclude,
+      allowCreate: allowCreate,
+    ),
   );
 }
 
@@ -906,9 +1016,9 @@ class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
                 controller: _c,
                 autofocus: true,
                 textCapitalization: TextCapitalization.sentences,
-                decoration: const InputDecoration(
-                  prefixIcon: Icon(Icons.search),
-                  hintText: 'Ara ya da yeni yaz',
+                decoration: InputDecoration(
+                  prefixIcon: const Icon(Icons.search),
+                  hintText: strings.value.isTr ? 'Ara ya da yeni yaz' : 'Search or type a new one',
                 ),
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (_) async {
@@ -928,7 +1038,7 @@ class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
                   if (canCreate)
                     ListTile(
                       leading: const CircleAvatar(child: Icon(Icons.add)),
-                      title: Text('"${trCapitalize(q)}" oluştur'),
+                      title: Text(strings.value.isTr ? '"${trCapitalize(q)}" oluştur' : 'Create "${trCapitalize(q)}"'),
                       onTap: () async {
                         final a = await store.addActivity(q);
                         if (context.mounted) Navigator.pop(context, a);
@@ -938,13 +1048,16 @@ class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
                     ListTile(
                       leading: ActivityAvatar(a.id),
                       title: Text(a.name),
-                      subtitle: Text('${store.stats[a.id]?.count ?? 0} kayıt'),
+                      subtitle: Text('${store.stats[a.id]?.count ?? 0} ${strings.value.entriesCountSuffix}'),
                       onTap: () => Navigator.pop(context, a),
                     ),
                   if (items.isEmpty && !canCreate)
-                    const Padding(
-                      padding: EdgeInsets.all(24),
-                      child: Text('Henüz kayıt yok.', textAlign: TextAlign.center),
+                    Padding(
+                      padding: const EdgeInsets.all(24),
+                      child: Text(
+                        strings.value.isTr ? 'Henüz kayıt yok.' : 'Nothing here yet.',
+                        textAlign: TextAlign.center,
+                      ),
                     ),
                 ],
               ),
@@ -999,7 +1112,7 @@ class ProgressRing extends StatelessWidget {
             : (done
                 ? Icon(Icons.check_rounded, color: color, size: size * 0.5)
                 : Text(
-                    '%${(ratio * 100).floor()}',
+                    fmtPercent((ratio * 100).floor()),
                     style: TextStyle(fontSize: size * 0.24, fontWeight: FontWeight.w700),
                   )));
 
@@ -1100,7 +1213,7 @@ Future<String?> showEmojiPicker(BuildContext context, {String? currentEmoji}) {
                       child: Text(
                         s.isTr ? cat.$1 : cat.$2,
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: AppFont.small,
                           fontWeight: FontWeight.w600,
                           color: Theme.of(c).colorScheme.primary,
                         ),
@@ -1127,7 +1240,7 @@ Future<String?> showEmojiPicker(BuildContext context, {String? currentEmoji}) {
                                     : null,
                               ),
                               alignment: Alignment.center,
-                              child: Text(emoji, style: const TextStyle(fontSize: 24)),
+                              child: Text(emoji, style: const TextStyle(fontSize: AppFont.display)),
                             ),
                           ),
                       ],
@@ -1192,7 +1305,7 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                         curEmoji.isEmpty
                             ? (activity.name.isNotEmpty ? trUpper(activity.name.substring(0, 1)) : '?')
                             : curEmoji,
-                        style: const TextStyle(fontSize: 26, fontWeight: FontWeight.bold),
+                        style: const TextStyle(fontSize: AppFont.display, fontWeight: FontWeight.bold),
                       ),
                     ),
                   ),
@@ -1201,14 +1314,14 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(s.chooseEmoji, style: const TextStyle(fontSize: 12)),
+                        Text(s.chooseEmoji, style: const TextStyle(fontSize: AppFont.caption)),
                         TextButton(
                           style: TextButton.styleFrom(padding: EdgeInsets.zero),
                           onPressed: () async {
                             final chosen = await showEmojiPicker(c, currentEmoji: curEmoji);
                             if (chosen != null) setS(() => curEmoji = chosen);
                           },
-                          child: Text(curEmoji.isEmpty ? s.chooseEmoji : '$curEmoji Değiştir'),
+                          child: Text(curEmoji.isEmpty ? s.chooseEmoji : '$curEmoji ${s.isTr ? "Değiştir" : "Change"}'),
                         ),
                       ],
                     ),
@@ -1225,7 +1338,7 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
               const SizedBox(height: 16),
               Text(
                 s.isTr ? 'Kategori & Renk' : 'Category & Color',
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
               ),
               const SizedBox(height: 6),
               Wrap(
@@ -1234,8 +1347,8 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                 children: defaultCategories.map((cat) {
                   final sel = (curCategory ?? 'other') == cat.id;
                   return ChoiceChip(
-                    avatar: Text(cat.emoji, style: const TextStyle(fontSize: 13)),
-                    label: Text(cat.name(s.isTr), style: const TextStyle(fontSize: 12)),
+                    avatar: Text(cat.emoji, style: const TextStyle(fontSize: AppFont.small)),
+                    label: Text(cat.name(s.isTr), style: const TextStyle(fontSize: AppFont.caption)),
                     selected: sel,
                     onSelected: (_) => setS(() => curCategory = cat.id),
                   );
@@ -1259,18 +1372,18 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 2),
                   title: Row(
                     children: [
-                      const Text('🔥 ', style: TextStyle(fontSize: 16)),
+                      const Text('🔥 ', style: TextStyle(fontSize: AppFont.subtitle)),
                       Expanded(
                         child: Text(
                           s.enableHabit,
-                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
                         ),
                       ),
                     ],
                   ),
                   subtitle: Text(
                     s.enableHabitDesc,
-                    style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                    style: TextStyle(fontSize: AppFont.micro, color: Theme.of(c).colorScheme.onSurfaceVariant),
                   ),
                   value: curIsHabit,
                   onChanged: (val) => setS(() => curIsHabit = val),
@@ -1299,7 +1412,7 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                   padding: const EdgeInsets.symmetric(vertical: 4),
                   child: Text(
                     s.noGoalsYet,
-                    style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 13),
+                    style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: AppFont.small),
                   ),
                 )
               else
@@ -1336,10 +1449,10 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                                   child: Column(
                                     crossAxisAlignment: CrossAxisAlignment.start,
                                     children: [
-                                      Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                                      Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppFont.body)),
                                       Text(
-                                        '${g.isLimit ? "Limit" : "Hedef"}: ${fmtNum(g.target)} $unitSym · ${periodNames[g.period] ?? g.period.name}',
-                                        style: TextStyle(fontSize: 11, color: Theme.of(c).colorScheme.onSurfaceVariant),
+                                        '${g.isLimit ? "Limit" : (s.isTr ? "Hedef" : "Goal")}: ${fmtNum(g.target)} $unitSym · ${periodName(g.period, isTr: s.isTr)}',
+                                        style: TextStyle(fontSize: AppFont.micro, color: Theme.of(c).colorScheme.onSurfaceVariant),
                                       ),
                                     ],
                                   ),
@@ -1362,8 +1475,8 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                               Row(
                                 children: [
                                   Text(
-                                    '${s.contributionPct}: %${pct.round()}',
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold),
+                                    '${s.contributionPct}: ${fmtPercent(pct.round())}',
+                                    style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold),
                                   ),
                                   Expanded(
                                     child: Slider(
@@ -1371,7 +1484,7 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                                       min: 5,
                                       max: 100,
                                       divisions: 19,
-                                      label: '%${pct.round()}',
+                                      label: fmtPercent(pct.round()),
                                       onChanged: (v) => setS(() => goalPcts[g.id] = v),
                                     ),
                                   ),

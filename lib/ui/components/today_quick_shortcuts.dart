@@ -5,6 +5,7 @@ import '../../data/store.dart';
 import '../../logic/format.dart';
 import '../../logic/l10n.dart';
 import '../common.dart';
+import '../app_font.dart';
 
 /// Hızlı kısayollar ve günlük yapılacaklar şeridi (Shortcuts & To-Dos)
 class TodayQuickShortcuts extends StatelessWidget {
@@ -36,7 +37,7 @@ class TodayQuickShortcuts extends StatelessWidget {
             padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
             child: Text(
               s.quickListEmpty,
-              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13),
+              style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppFont.small),
             ),
           )
         else
@@ -102,7 +103,7 @@ class TodayQuickShortcuts extends StatelessWidget {
                             (act.emoji != null && act.emoji!.trim().isNotEmpty)
                                 ? act.emoji!.trim()
                                 : (act.category != null ? act.categoryDef.emoji : '⚡'),
-                            style: const TextStyle(fontSize: 18),
+                            style: const TextStyle(fontSize: AppFont.title),
                           ),
                         const SizedBox(width: 8),
                         Text(
@@ -117,7 +118,7 @@ class TodayQuickShortcuts extends StatelessWidget {
                           Text(
                             '(${fmtNum(item.qty)})',
                             style: TextStyle(
-                              fontSize: 12,
+                              fontSize: AppFont.caption,
                               color: scheme.onSurfaceVariant,
                             ),
                           ),
@@ -285,12 +286,12 @@ class TodayQuickShortcuts extends StatelessWidget {
                     children: [
                       Text(
                         act.name,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
                       ),
                       Text(
                         s.isTr ? 'İkonu değiştirmek için dokunun' : 'Tap icon to change emoji',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppFont.caption,
                           color: Theme.of(c).colorScheme.onSurfaceVariant,
                         ),
                       ),

@@ -8,6 +8,7 @@ import '../../data/store.dart';
 import '../../logic/format.dart';
 import '../../logic/l10n.dart';
 import '../common.dart';
+import '../app_font.dart';
 
 class TimerConfig {
   final String mode; // 'stopwatch', 'pomodoro', 'countdown'
@@ -109,7 +110,7 @@ class _TimerModeSheetState extends State<_TimerModeSheet> {
             const SizedBox(height: 16),
             Row(
               children: [
-                ActivityAvatar(act.id, size: 36),
+                ActivityAvatar(act.id, size: 36, activity: act.id == 0 ? act : null),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
@@ -117,11 +118,11 @@ class _TimerModeSheetState extends State<_TimerModeSheet> {
                     children: [
                       Text(
                         act.name,
-                        style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                        style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
                       ),
                       Text(
                         s.isTr ? 'Sayaç türünü seçin' : 'Select timer mode',
-                        style: TextStyle(fontSize: 13, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                        style: TextStyle(fontSize: AppFont.small, color: Theme.of(context).colorScheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -141,7 +142,7 @@ class _TimerModeSheetState extends State<_TimerModeSheet> {
                   child: Icon(Icons.timer_outlined, color: Colors.white, size: 20),
                 ),
                 title: Text(s.isTr ? '⏱️ Kronometre' : '⏱️ Stopwatch', style: const TextStyle(fontWeight: FontWeight.bold)),
-                subtitle: Text(s.isTr ? 'İleriye doğru sayar (00:00 → ...)' : 'Counts forward from 00:00'),
+                subtitle: Text(s.isTr ? 'İleriye doğru sayar (00:00\u00A0→\u00A0...)' : 'Counts forward from 00:00'),
                 trailing: const Icon(Icons.chevron_right),
                 onTap: () => Navigator.pop(context, const TimerConfig(mode: 'stopwatch', targetMs: 0)),
               ),
@@ -156,7 +157,7 @@ class _TimerModeSheetState extends State<_TimerModeSheet> {
               child: ListTile(
                 leading: const CircleAvatar(
                   backgroundColor: Colors.redAccent,
-                  child: Text('🍅', style: TextStyle(fontSize: 18)),
+                  child: Text('🍅', style: TextStyle(fontSize: AppFont.title)),
                 ),
                 title: Text(s.isTr ? '🍅 Pomodoro (25 Dk)' : '🍅 Pomodoro (25 Min)', style: const TextStyle(fontWeight: FontWeight.bold)),
                 subtitle: Text(s.isTr ? '25 dakika odaklanma periyodu' : '25-minute focus session'),
@@ -189,11 +190,11 @@ class _TimerModeSheetState extends State<_TimerModeSheet> {
                             children: [
                               Text(
                                 s.isTr ? '⏳ Özel Geri Sayım' : '⏳ Custom Countdown',
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
                               ),
                               Text(
                                 s.isTr ? 'Süre bitince otomatik uyarır' : 'Alerts when time is up',
-                                style: TextStyle(fontSize: 12, color: Theme.of(context).colorScheme.onSurfaceVariant),
+                                style: TextStyle(fontSize: AppFont.caption, color: Theme.of(context).colorScheme.onSurfaceVariant),
                               ),
                             ],
                           ),
@@ -226,7 +227,7 @@ class _TimerModeSheetState extends State<_TimerModeSheet> {
                             ],
                             decoration: InputDecoration(
                               labelText: s.isTr ? 'Süre (dk)' : 'Minutes',
-                              hintText: 'Örn: 20',
+                              hintText: s.isTr ? 'Örn: 20' : 'e.g. 20',
                               suffixText: s.isTr ? 'dk' : 'min',
                               prefixIcon: const Icon(Icons.keyboard_outlined, size: 20),
                               isDense: true,
@@ -277,12 +278,13 @@ class _ActiveTimersSectionState extends State<ActiveTimersSection> {
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      elevation: 2,
+      // Yarı saydam renk, gölgenin üstünde açık temada kirli gri görünüyordu; yüzey opaktır.
+      elevation: 0,
       shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(20),
         side: BorderSide(color: scheme.primary.withValues(alpha: 0.4), width: 1.5),
       ),
-      color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+      color: scheme.surfaceContainerLow,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -309,9 +311,13 @@ class _ActiveTimersSectionState extends State<ActiveTimersSection> {
                       children: [
                         Row(
                           children: [
-                            Text(
-                              s.isTr ? 'Aktif Zamanlayıcılar' : 'Active Timers',
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                            Flexible(
+                              child: Text(
+                                s.isTr ? 'Aktif Zamanlayıcılar' : 'Active Timers',
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
+                              ),
                             ),
                             const SizedBox(width: 8),
                             Container(
@@ -324,7 +330,7 @@ class _ActiveTimersSectionState extends State<ActiveTimersSection> {
                                 '$count',
                                 style: TextStyle(
                                   color: scheme.onPrimary,
-                                  fontSize: 12,
+                                  fontSize: AppFont.caption,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -348,7 +354,7 @@ class _ActiveTimersSectionState extends State<ActiveTimersSection> {
                                   child: Text(
                                     '${act.emoji ?? ''} ${act.name} (${t.displayDuration})',
                                     style: TextStyle(
-                                      fontSize: 12,
+                                      fontSize: AppFont.caption,
                                       fontWeight: FontWeight.w600,
                                       color: scheme.onSurfaceVariant,
                                     ),
@@ -418,7 +424,7 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
         if (!mounted) return;
         if (widget.timer.isTargetReached) {
           if (store.timerAutoSaveCompleted) {
-            store.checkCompletedTimers();
+            // Otomatik kaydı store'un kendi zamanlayıcısı yapar; kartın ayrıca tetiklemesi gerekmez.
             return;
           }
           if (!_alertPlayed) {
@@ -442,6 +448,35 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
     super.dispose();
   }
 
+  /// Sayacı bitirip kaydeder (gece yarısını aşıyorsa önce nasıl bölüneceğini sorar).
+  Future<void> _finish(Activity act) async {
+    final s = strings.value;
+    // Sayaç bitince bu kart ağaçtan kalkar; sonucu gösterecek nesne o yüzden baştan alınır.
+    final messenger = ScaffoldMessenger.of(context);
+    var splitChoice = MidnightSplitChoice.startDay;
+    if (widget.timer.spansMidnight) {
+      final choice = await _showMidnightSplitDialog(context, widget.timer, act);
+      if (choice == null) return;
+      splitChoice = choice;
+    }
+
+    final res = await store.finishTimer(widget.timer.id, splitChoice);
+    if (res == null) return;
+    final finishedAct = store.activity(res.entry.activityId);
+    final detail = store.entryDetail(res.entry);
+    final displayName = finishedAct.emoji != null ? '${finishedAct.emoji} ${finishedAct.name}' : finishedAct.name;
+    final splitMsg = splitChoice == MidnightSplitChoice.split
+        ? (s.isTr ? ' (Gece yarısında bölündü)' : ' (Split at midnight)')
+        : '';
+    showSnackOn(
+      messenger,
+      '$displayName: $detail ${s.isTr ? "kaydedildi" : "logged"}$splitMsg',
+      achieved: res.achieved,
+      exceeded: res.exceeded,
+      undo: () => store.deleteEntry(res.entry),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final s = strings.value;
@@ -450,13 +485,13 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
     final isRunning = widget.timer.isRunning;
     final durationStr = widget.timer.displayDuration;
     final startTimeStr = fmtTime(widget.timer.startTime);
-    final isCollapsed = widget.timer.isCollapsed;
+    final isCollapsed = store.isTimerCollapsed(widget.timer);
 
     final modeBadgeText = widget.timer.mode == 'pomodoro'
         ? '🍅 Pomodoro'
         : (widget.timer.mode == 'countdown'
-            ? '⏳ Geri Sayım'
-            : '⏱️ Kronometre');
+            ? (s.isTr ? '⏳ Geri Sayım' : '⏳ Countdown')
+            : (s.isTr ? '⏱️ Kronometre' : '⏱️ Stopwatch'));
 
     if (isCollapsed) {
       // -------------------------------- KAPALI / KOMPAKT GÖRÜNÜM --------------------------------
@@ -467,65 +502,111 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
           decoration: BoxDecoration(
             border: Border(top: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3))),
           ),
-          child: Row(
-            children: [
-              ActivityAvatar(act.id, size: 34),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
+          // Süre ve üç düğmenin yanında adın sığacağı yer kalmıyorsa (küçük ekran, büyük yazı) süre ve
+          // düğmeler ikinci satıra iner; yoksa ad "Ders ç…" kadar kalıyordu.
+          child: LayoutBuilder(
+            builder: (context, box) {
+              final timeStyle = TextStyle(
+                fontFamily: 'monospace',
+                fontSize: AppFont.subtitle,
+                fontWeight: FontWeight.w700,
+                color: widget.timer.isTargetReached
+                    ? Colors.green
+                    : (isRunning ? scheme.primary : scheme.onSurfaceVariant),
+              );
+              final nameAndMode = Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    act.name,
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.body),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                  // Çalışıyor / duraklatıldı noktası tür etiketinin yanında durur; etiket tek satırdır.
+                  Row(
+                    children: [
+                      Container(
+                        width: 7,
+                        height: 7,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          color: isRunning ? Colors.green : Colors.amber.shade700,
+                        ),
+                      ),
+                      const SizedBox(width: 5),
+                      Flexible(
+                        child: Text(
+                          modeBadgeText,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              );
+              final time = Text(durationStr, style: timeStyle);
+              final controls = <Widget>[
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  icon: Icon(
+                    isRunning ? Icons.pause_circle_outline : Icons.play_circle_outline,
+                    color: scheme.primary,
+                    size: 24,
+                  ),
+                  onPressed: () {
+                    if (isRunning) {
+                      store.pauseTimer(widget.timer.id);
+                    } else {
+                      store.resumeTimer(widget.timer.id);
+                    }
+                  },
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  tooltip: s.finishAndSave,
+                  icon: Icon(Icons.stop_circle_outlined, color: scheme.primary, size: 24),
+                  onPressed: () => _finish(act),
+                ),
+                Icon(Icons.expand_more, size: 20, color: scheme.onSurfaceVariant),
+              ];
+              // Simge, aralıklar, iki düğme ve ok dışında süre kadar yer gider.
+              final roomForName = box.maxWidth - 34 - 10 - 6 - measureTextWidth(context, durationStr, timeStyle) - 6 - 80 - 20;
+              if (roomForName >= 110) {
+                return Row(
                   children: [
-                    Text(
-                      act.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                    Text(
-                      modeBadgeText,
-                      style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
-                    ),
+                    ActivityAvatar(act.id, size: 34),
+                    const SizedBox(width: 10),
+                    Expanded(child: nameAndMode),
+                    const SizedBox(width: 6),
+                    time,
+                    const SizedBox(width: 6),
+                    ...controls,
                   ],
-                ),
-              ),
-              Container(
-                width: 8,
-                height: 8,
-                decoration: BoxDecoration(
-                  shape: BoxShape.circle,
-                  color: isRunning ? Colors.green : Colors.amber.shade700,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                durationStr,
-                style: TextStyle(
-                  fontFamily: 'monospace',
-                  fontSize: 16,
-                  fontWeight: FontWeight.w700,
-                  color: widget.timer.isTargetReached
-                      ? Colors.green
-                      : (isRunning ? scheme.primary : scheme.onSurfaceVariant),
-                ),
-              ),
-              const SizedBox(width: 6),
-              IconButton(
-                visualDensity: VisualDensity.compact,
-                icon: Icon(
-                  isRunning ? Icons.pause_circle_outline : Icons.play_circle_outline,
-                  color: scheme.primary,
-                  size: 24,
-                ),
-                onPressed: () {
-                  if (isRunning) {
-                    store.pauseTimer(widget.timer.id);
-                  } else {
-                    store.resumeTimer(widget.timer.id);
-                  }
-                },
-              ),
-              Icon(Icons.expand_more, size: 20, color: scheme.onSurfaceVariant),
-            ],
+                );
+              }
+              return Column(
+                children: [
+                  Row(
+                    children: [
+                      ActivityAvatar(act.id, size: 34),
+                      const SizedBox(width: 10),
+                      Expanded(child: nameAndMode),
+                    ],
+                  ),
+                  Row(
+                    children: [
+                      const SizedBox(width: 44),
+                      time,
+                      const Spacer(),
+                      ...controls,
+                    ],
+                  ),
+                ],
+              );
+            },
           ),
         ),
       );
@@ -551,7 +632,7 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
                   children: [
                     Text(
                       act.name,
-                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -571,7 +652,7 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
                           child: Text(
                             modeBadgeText,
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: AppFont.micro,
                               fontWeight: FontWeight.bold,
                               color: widget.timer.mode == 'pomodoro'
                                   ? Colors.red
@@ -580,9 +661,14 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
                           ),
                         ),
                         const SizedBox(width: 6),
-                        Text(
-                          '$startTimeStr\'de başladı',
-                          style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                        // Dar ekranda rozetle birlikte sığmayabilir: taşmak yerine kısalır.
+                        Flexible(
+                          child: Text(
+                            '${s.isTr ? "Başlangıç" : "Started"} $startTimeStr',
+                            style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
                         ),
                       ],
                     ),
@@ -636,7 +722,7 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
                       durationStr,
                       style: TextStyle(
                         fontFamily: 'monospace',
-                        fontSize: 32,
+                        fontSize: AppFont.hero,
                         fontWeight: FontWeight.w800,
                         letterSpacing: 2,
                         color: widget.timer.isTargetReached
@@ -670,7 +756,7 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
                                 ? '${formatTimerDuration(widget.timer.remainingMs)} kaldı'
                                 : '${formatTimerDuration(widget.timer.elapsedMs)} / ${formatTimerDuration(widget.timer.targetMs)}'),
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: AppFont.micro,
                           fontWeight: FontWeight.w600,
                           color: widget.timer.isTargetReached ? Colors.green : scheme.onSurfaceVariant,
                         ),
@@ -678,7 +764,7 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
                       Text(
                         '${(widget.timer.progress * 100).toInt()}%',
                         style: TextStyle(
-                          fontSize: 11,
+                          fontSize: AppFont.micro,
                           fontWeight: FontWeight.bold,
                           color: scheme.onSurfaceVariant,
                         ),
@@ -705,7 +791,7 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
                   Expanded(
                     child: Text(
                       widget.timer.note!,
-                      style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                      style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -784,33 +870,7 @@ class _ActiveTimerCardState extends State<ActiveTimerCard> {
                   ),
                   icon: const Icon(Icons.stop_circle_outlined, size: 18),
                   label: Text(s.finishAndSave, style: const TextStyle(fontWeight: FontWeight.w600)),
-                  onPressed: () async {
-                    MidnightSplitChoice splitChoice = MidnightSplitChoice.startDay;
-                    if (widget.timer.spansMidnight) {
-                      final choice = await _showMidnightSplitDialog(context, widget.timer, act);
-                      if (choice == null) return;
-                      splitChoice = choice;
-                    }
-
-                    final res = await store.finishTimer(widget.timer.id, splitChoice);
-                    if (res != null && context.mounted) {
-                      final finishedAct = store.activity(res.entry.activityId);
-                      final detail = store.entryDetail(res.entry);
-                      final displayName = finishedAct.emoji != null
-                          ? '${finishedAct.emoji} ${finishedAct.name}'
-                          : finishedAct.name;
-                      final splitMsg = splitChoice == MidnightSplitChoice.split
-                          ? (s.isTr ? ' (Gece yarısında bölündü)' : ' (Split at midnight)')
-                          : '';
-                      showSnack(
-                        context,
-                        '$displayName: $detail ${s.isTr ? "kaydedildi" : "logged"}$splitMsg',
-                        achieved: res.achieved,
-                        exceeded: res.exceeded,
-                        undo: () => store.deleteEntry(res.entry),
-                      );
-                    }
-                  },
+                  onPressed: () => _finish(act),
                 ),
               ),
             ],
@@ -903,11 +963,11 @@ Future<MidnightSplitChoice?> _showMidnightSplitDialog(
                     children: [
                       Text(
                         s.isTr ? 'Gece Yarısı Geçişi Saptandı' : 'Midnight Crossover Detected',
-                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
                       ),
                       Text(
                         '${act.name} · Toplam $totalStr',
-                        style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                        style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -919,7 +979,7 @@ Future<MidnightSplitChoice?> _showMidnightSplitDialog(
               s.isTr
                   ? 'Bu aktivite dün gece başladı ve gece yarısından sonra devam etti. Süreyi nasıl kaydetmek istersiniz?'
                   : 'This activity began yesterday and ended today after midnight. How would you like to record it?',
-              style: const TextStyle(fontSize: 13),
+              style: const TextStyle(fontSize: AppFont.small),
             ),
             const SizedBox(height: 16),
 
@@ -938,13 +998,13 @@ Future<MidnightSplitChoice?> _showMidnightSplitDialog(
                 ),
                 title: Text(
                   s.isTr ? 'Gerektiği Gibi Böl (Önerilen)' : 'Split across days (Recommended)',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.body),
                 ),
                 subtitle: Text(
                   s.isTr
                       ? 'Dün: $beforeStr · Bugün: $afterStr'
                       : 'Yesterday: $beforeStr · Today: $afterStr',
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: AppFont.caption),
                 ),
                 onTap: () => Navigator.pop(ctx, MidnightSplitChoice.split),
               ),
@@ -963,11 +1023,11 @@ Future<MidnightSplitChoice?> _showMidnightSplitDialog(
                 ),
                 title: Text(
                   s.isTr ? 'Tamamını Başlangıç Gününe Yaz' : 'Attribute all to Start Day',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppFont.small),
                 ),
                 subtitle: Text(
                   s.isTr ? 'Düne $totalStr eklenir' : '$totalStr added to yesterday',
-                  style: const TextStyle(fontSize: 11),
+                  style: const TextStyle(fontSize: AppFont.micro),
                 ),
                 onTap: () => Navigator.pop(ctx, MidnightSplitChoice.startDay),
               ),
@@ -986,11 +1046,11 @@ Future<MidnightSplitChoice?> _showMidnightSplitDialog(
                 ),
                 title: Text(
                   s.isTr ? 'Tamamını Bitiş Gününe Yaz' : 'Attribute all to Finish Day',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppFont.small),
                 ),
                 subtitle: Text(
                   s.isTr ? 'Bugüne $totalStr eklenir' : '$totalStr added to today',
-                  style: const TextStyle(fontSize: 11),
+                  style: const TextStyle(fontSize: AppFont.micro),
                 ),
                 onTap: () => Navigator.pop(ctx, MidnightSplitChoice.endDay),
               ),

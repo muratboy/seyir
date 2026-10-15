@@ -8,7 +8,6 @@ class VoiceService {
   static bool _hasSpeech = false;
 
   static bool get isListening => _speech.isListening;
-  static bool get hasSpeech => _hasSpeech;
 
   static Future<bool> init() async {
     if (_initialized) return _hasSpeech;

@@ -11,6 +11,7 @@ import '../logic/l10n.dart';
 import '../logic/text_match.dart';
 import '../services/backup_service.dart';
 import '../services/health_tracker_service.dart';
+import '../services/nl_parser.dart';
 import '../services/notification_service.dart';
 import 'db.dart';
 import 'models.dart';
@@ -69,6 +70,23 @@ class PeriodTotal {
       dimCount[u.dim] = (dimCount[u.dim] ?? 0) + 1;
     }
   }
+
+  /// [dim] null ise kayıt sayısı, değilse o boyuttaki miktar (temel birimde: L, dk, m, g...).
+  double value(String? dim) => dim == null ? count.toDouble() : (byDim[dim] ?? 0);
+}
+
+/// Bir yol haritası adımının, bağlı aktivitesinin kayıtlarından gelen ilerlemesi.
+class StepProgress {
+  final double done;
+  final double target;
+
+  /// Hedefin birimi, adımda yazıldığı gibi ("dk", "bölüm"); hedefi yazılmamış adımda boştur.
+  final String unit;
+
+  const StepProgress(this.done, this.target, this.unit);
+
+  bool get reached => done >= target - 1e-9;
+  double get ratio => target <= 0 ? 1.0 : (done / target).clamp(0.0, 1.0);
 }
 
 class AddResult {
@@ -97,6 +115,10 @@ class HabitStreakInfo {
   final Map<DateTime, int> dailyLevels; // 0..4 visual contribution level
   final Map<DateTime, String> dailyTooltips; // Formatted daily tooltip text
 
+  /// Seri sayılarının birimi: günlük hedeflerde ve alışkanlıklarda gün, haftalık hedeflerde hafta,
+  /// aylık hedeflerde ay sayılır.
+  final GoalPeriod streakPeriod;
+
   const HabitStreakInfo({
     required this.currentStreak,
     required this.longestStreak,
@@ -107,6 +129,7 @@ class HabitStreakInfo {
     required this.dailyCounts,
     this.dailyLevels = const {},
     this.dailyTooltips = const {},
+    this.streakPeriod = GoalPeriod.day,
   });
 }
 
@@ -130,7 +153,6 @@ class AppStore extends ChangeNotifier {
   List<ActiveTimer> activeTimers = [];
   ActiveTimer? get activeTimer => activeTimers.firstOrNull;
   List<Roadmap> roadmaps = [];
-  Roadmap? get activeRoadmap => roadmaps.where((r) => r.isActive).firstOrNull;
   List<Roadmap> get activeRoadmaps => roadmaps.where((r) => r.isActive).toList();
   bool loaded = false;
 
@@ -143,8 +165,50 @@ class AppStore extends ChangeNotifier {
 
   bool stepTrackerEnabled = false;
   int stepDailyGoal = 10000;
-  int todaySteps = 0;
+
+  /// Bugünün adım sayısı. Sensör her adımda bildirim yollar; bu yüzden store'un tüm dinleyicilerini
+  /// uyandırmak yerine yalnızca adım gösteren bileşenlerin dinlediği ayrı bir bildirici kullanılır.
+  final stepsNotifier = ValueNotifier<int>(0);
+  int get todaySteps => stepsNotifier.value;
+  set todaySteps(int v) => stepsNotifier.value = v;
   String? stepSensorError;
+
+  /// Adım sayar açık ama fiziksel aktivite izni yok: sensör hata vermeden susar, sayı hiç artmaz.
+  bool stepPermissionMissing = false;
+
+  // Sensör, telefon açıldığından beri atılan toplam adımı verir: günün ilk okuması taban alınır.
+  // Elle eklenen adımlar ayrı tutulur, yoksa bir sonraki sensör okuması onları silerdi.
+  String? _stepDay;
+  int? _stepBaseline;
+  int _stepManual = 0;
+  int _stepPersisted = -1;
+  DateTime? _stepPersistedAt;
+  // Bu kopya adımları kendisi sayıyorsa (sensör okuması ya da elle ekleme aldıysa) true.
+  bool _stepLive = false;
+
+  /// Günlük ekranında kullanıcının kapattığı bölümler ('health', 'roadmap').
+  Set<String> collapsedSections = {};
+
+  bool isSectionCollapsed(String id) => collapsedSections.contains(id);
+
+  Future<void> toggleSection(String id) async {
+    if (!collapsedSections.remove(id)) collapsedSections.add(id);
+    notifyListeners();
+    await _putSetting('today_collapsed', collapsedSections.join(','));
+  }
+
+  // Geçmiş günlerin adım sayıları (gün anahtarı -> adım).
+  Map<String, int> _stepHistory = {};
+
+  /// [day] gününün adım sayısı.
+  int stepsOn(DateTime day) {
+    final key = _stepDayKey(day);
+    return key == _stepDay ? todaySteps : (_stepHistory[key] ?? 0);
+  }
+
+  // Adım ve uyku kayıtlarının yazıldığı aktiviteler (ayarlarda kimlikleriyle tutulur).
+  int? _stepsActivityId;
+  int? _sleepActivityId;
 
   bool sleepTrackerEnabled = false;
   double sleepDailyGoalHours = 8.0;
@@ -152,9 +216,38 @@ class AppStore extends ChangeNotifier {
 
   Future<Database> get db async => _db ??= await AppDb.open();
 
+  /// Testler içindir: veritabanı bağlantısını bırakır; sonraki erişim geçerli veritabanı yolunu açar.
+  @visibleForTesting
+  Future<void> resetForTest() async {
+    _timerTicker?.cancel();
+    _timerTicker = null;
+    await _db?.close();
+    _db = null;
+    loaded = false;
+    _stepLive = false;
+  }
+
   // ---------------------------------------------------------------- yükleme
 
+  /// Açılışta ve uygulama öne geldiğinde çağrılır: verileri okur, ardından bu sürece ait işleri kurar
+  /// (sayaç bildirimi ve alarmları, hatırlatıcılar, adım sensörü, günlük otomatik yedek).
   Future<void> load() async {
+    await _read();
+    // Veriler okundu: bildirim, sensör ya da yedek tarafındaki bir hata uygulamayı açılmaz kılmasın.
+    try {
+      await _startServices();
+    } catch (e, st) {
+      debugPrint('Arka plan işleri kurulamadı: $e\n$st');
+    }
+  }
+
+  /// Verileri veritabanından yeniden okur; load()'un kurduğu işlere dokunmaz. Bildirim aksiyonu ve widget
+  /// isolate'ları her işten önce, arayüz de başka bir isolate veriyi değiştirdiğinde (StoreSync) bunu
+  /// çağırır. O isolate'larda load() kullanılmaz: her aksiyonda hatırlatıcıları baştan planlar, yedek
+  /// alır ve adım sensörünü ikinci bir yerden dinlemeye başlardı.
+  Future<void> refresh() => _read();
+
+  Future<void> _read() async {
     final d = await db;
     final settingsRows = await d.query('settings');
     final settingsMap = {for (final r in settingsRows) r['key'] as String: r['value'] as String};
@@ -194,9 +287,26 @@ class AppStore extends ChangeNotifier {
 
     stepTrackerEnabled = settingsMap['step_tracker_enabled'] == 'true';
     stepDailyGoal = int.tryParse(settingsMap['step_daily_goal'] ?? '10000') ?? 10000;
+    _stepsActivityId = int.tryParse(settingsMap['steps_activity_id'] ?? '');
+    _sleepActivityId = int.tryParse(settingsMap['sleep_activity_id'] ?? '');
+    _stepHistory = {
+      for (final e in settingsMap.entries)
+        if (e.key.startsWith('step_today_')) e.key.substring('step_today_'.length): int.tryParse(e.value) ?? 0,
+    };
     final now = DateTime.now();
-    final todayKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    todaySteps = int.tryParse(settingsMap['step_today_$todayKey'] ?? '0') ?? 0;
+    if (_stepLive) {
+      // Adımları bu kopya sayıyor: bellekteki değer veritabanındakinden yenidir (her adım yazılmaz).
+      // Yeniden okuma onu geri almaz; gün değiştiyse devri _rollStepDay yapar.
+      await _rollStepDay(now);
+    } else {
+      final todayKey = _stepDayKey(now);
+      _stepDay = todayKey;
+      _stepBaseline = int.tryParse(settingsMap['step_baseline_$todayKey'] ?? '');
+      _stepManual = int.tryParse(settingsMap['step_manual_$todayKey'] ?? '') ?? 0;
+      todaySteps = int.tryParse(settingsMap['step_today_$todayKey'] ?? '0') ?? 0;
+      _stepPersisted = todaySteps;
+    }
+    collapsedSections = (settingsMap['today_collapsed'] ?? '').split(',').where((x) => x.isNotEmpty).toSet();
 
     sleepTrackerEnabled = settingsMap['sleep_tracker_enabled'] == 'true';
     sleepDailyGoalHours = double.tryParse(settingsMap['sleep_daily_goal_hours'] ?? '8.0') ?? 8.0;
@@ -207,7 +317,7 @@ class AppStore extends ChangeNotifier {
     activities = {
       for (final m in await d.query('activities')) m['id'] as int: Activity.fromMap(m),
     };
-    entries = (await d.query('entries', orderBy: 'ts, id')).map(Entry.fromMap).toList();
+    entries = await _readEntries(d);
     final links = await d.query('goal_links');
     goals = (await d.query('goals', orderBy: 'sort, id')).map((m) {
       final g = Goal.fromMap(m);
@@ -220,11 +330,34 @@ class AppStore extends ChangeNotifier {
 
     final timerRows = await d.query('active_timers', orderBy: 'id ASC');
     activeTimers = timerRows.map(ActiveTimer.fromMap).toList();
-    await checkCompletedTimers();
-    await NotificationService.updateTimerNotification(activeTimers, activities);
+    _timerCollapsed.removeWhere((id, _) => !activeTimers.any((t) => t.id == id));
 
-    for (final t in activeTimers) {
-      if (t.isCountdown && t.isRunning && t.remainingMs > 0) {
+    final stepRows = await d.query('roadmap_steps', orderBy: 'step_order ASC, id ASC');
+    final roadmapRows = await d.query('roadmaps', orderBy: 'created_at DESC, id DESC');
+    roadmaps = roadmapRows.map((m) {
+      final r = Roadmap.fromMap(m);
+      r.steps = stepRows.where((s) => s['roadmap_id'] == r.id).map(RoadmapStep.fromMap).toList();
+      return r;
+    }).toList();
+
+    loaded = true;
+    // Kayıtlar başka bir yerde değişmiş olabilir (başka bir isolate, geri yüklenen yedek): adımlar sessizce
+    // kayıtlara uydurulur.
+    await _syncLinkedSteps(announce: false);
+    // Uygulama kapalıyken ya da arka plandayken süresi dolmuş geri sayımlar kaydedilir.
+    await checkCompletedTimers();
+    _ensureTimerTicker();
+    _changed();
+  }
+
+  /// Verilerin kendisiyle ilgisi olmayan, sürece ait işler; yalnızca load() ile kurulur.
+  Future<void> _startServices() async {
+    await NotificationService.updateTimerNotification(activeTimers, activities);
+    // Beklerken liste değişebilir (süresi dolan sayaç kaydedilip çıkar, bir başkası duraklatılır):
+    // kimlikler gezilir, her sayacın güncel hâline bakılır.
+    for (final id in activeTimers.map((t) => t.id).toList()) {
+      final t = getTimer(id);
+      if (t != null && t.isCountdown && t.isRunning && t.remainingMs > 0) {
         final actName = activities[t.activityId]?.name ?? 'Aktivite';
         await NotificationService.scheduleTimerAlarm(
           timerId: t.id,
@@ -236,23 +369,25 @@ class AppStore extends ChangeNotifier {
         );
       }
     }
-    _ensureTimerTicker();
     unawaited(NotificationService.scheduleReminders(this));
-
-    final stepRows = await d.query('roadmap_steps', orderBy: 'step_order ASC, id ASC');
-    final roadmapRows = await d.query('roadmaps', orderBy: 'created_at DESC, id DESC');
-    roadmaps = roadmapRows.map((m) {
-      final r = Roadmap.fromMap(m);
-      r.steps = stepRows.where((s) => s['roadmap_id'] == r.id).map(RoadmapStep.fromMap).toList();
-      return r;
-    }).toList();
-
-    loaded = true;
-    _changed();
     if (stepTrackerEnabled) {
       HealthTrackerService.instance.startStepTracking(this);
     }
     unawaited(BackupService.checkAndPerformDailyAutoBackup(this));
+    await _checkStepPermission();
+  }
+
+  /// Adım sayar açıkken izin eksik mi diye bakar. İzin sonradan (telefonun ayarlarından) verildiyse
+  /// sensör yeniden dinlenir: izinsiz kurulan dinleyiciye okuma gelmez.
+  Future<void> _checkStepPermission() async {
+    final missing = stepTrackerEnabled && !await HealthTrackerService.instance.hasStepPermission();
+    if (missing == stepPermissionMissing) return;
+    stepPermissionMissing = missing;
+    if (!missing && stepTrackerEnabled) {
+      HealthTrackerService.instance.stopStepTracking();
+      HealthTrackerService.instance.startStepTracking(this);
+    }
+    notifyListeners();
   }
 
   Future<void> setThemeMode(ThemeMode mode) async {
@@ -272,6 +407,9 @@ class AppStore extends ChangeNotifier {
     final val = lang == AppLanguage.en ? 'en' : 'tr';
     await d.insert('settings', {'key': 'lang', 'value': val}, conflictAlgorithm: ConflictAlgorithm.replace);
     notifyListeners();
+    // Planlanmış hatırlatıcılar ve süren sayaç bildirimi yeni dilde yeniden yazılır.
+    unawaited(NotificationService.scheduleReminders(this));
+    await NotificationService.updateTimerNotification(activeTimers, activities);
   }
 
   Future<void> setTimelineView(String mode) async {
@@ -324,17 +462,35 @@ class AppStore extends ChangeNotifier {
 
   // ---------------------------------------------------------------- Sağlık & Sensör Takibi
 
-  Future<void> setStepTrackerEnabled(bool enabled) async {
+  /// Adım sayarı açar ya da kapatır. Açılırken sensör izni istenir; verilmezse sayar kapalı kalır ve
+  /// false döner.
+  Future<bool> setStepTrackerEnabled(bool enabled) async {
+    if (enabled && !await HealthTrackerService.instance.requestStepPermission()) {
+      return false;
+    }
+    // İzin penceresi kapanınca uygulama öne gelir ve ayarlar yeniden okunur; o okuma eski değeri
+    // geri yazmasın diye önce veritabanı, sonra bellek güncellenir.
+    await _putSetting('step_tracker_enabled', enabled);
     stepTrackerEnabled = enabled;
-    final d = await db;
-    await d.insert('settings', {'key': 'step_tracker_enabled', 'value': enabled.toString()},
-        conflictAlgorithm: ConflictAlgorithm.replace);
+    stepPermissionMissing = false;
     if (enabled) {
       HealthTrackerService.instance.startStepTracking(this);
     } else {
       HealthTrackerService.instance.stopStepTracking();
     }
     notifyListeners();
+    return true;
+  }
+
+  /// Eksik izni ister ve dinleyiciyi baştan kurar. İzin yine verilmezse false döner.
+  Future<bool> retryStepTracking() async {
+    if (!await HealthTrackerService.instance.requestStepPermission()) return false;
+    HealthTrackerService.instance.stopStepTracking();
+    stepPermissionMissing = false;
+    stepSensorError = null;
+    notifyListeners();
+    HealthTrackerService.instance.startStepTracking(this);
+    return true;
   }
 
   Future<void> setStepDailyGoal(int goal) async {
@@ -345,65 +501,134 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
-  Future<void> handlePedometerStepEvent(int totalSteps) async {
-    final now = DateTime.now();
-    final todayKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    final d = await db;
+  static String _stepDayKey(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
-    final baselineRows = await d.query('settings', where: 'key = ?', whereArgs: ['step_baseline_$todayKey']);
-    int baseline;
-    if (baselineRows.isEmpty) {
-      baseline = totalSteps;
-      await d.insert('settings', {'key': 'step_baseline_$todayKey', 'value': baseline.toString()},
-          conflictAlgorithm: ConflictAlgorithm.replace);
-      todaySteps = 0;
-    } else {
-      baseline = int.tryParse(baselineRows.first['value'] as String? ?? '0') ?? totalSteps;
-      if (totalSteps >= baseline) {
-        todaySteps = totalSteps - baseline;
-      } else {
-        baseline = 0;
-        await d.insert('settings', {'key': 'step_baseline_$todayKey', 'value': '0'},
-            conflictAlgorithm: ConflictAlgorithm.replace);
-        todaySteps = totalSteps;
-      }
+  Future<void> _putSetting(String key, Object value) async {
+    await (await db).insert('settings', {'key': key, 'value': '$value'}, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  /// Adım durumunu [now] gününe taşır. Gün uygulama açıkken değiştiyse son sensör okuması yeni günün
+  /// tabanı olur; böylece gece yarısından sonraki adımlar kaybolmaz.
+  Future<void> _rollStepDay(DateTime now) async {
+    final day = _stepDayKey(now);
+    if (_stepDay == day) return;
+    final previousDay = _stepDay;
+    final previousTotal = todaySteps;
+    final unsaved = previousTotal != _stepPersisted;
+    _stepBaseline = _stepBaseline == null ? null : _stepBaseline! + (todaySteps - _stepManual);
+    _stepDay = day;
+    _stepManual = 0;
+    _stepPersisted = -1;
+    todaySteps = 0;
+    if (previousDay != null) _stepHistory[previousDay] = previousTotal;
+    final carried = _stepBaseline;
+    // Biten günün son değeri seyrek yazım yüzünden veritabanında eksik kalmış olabilir.
+    if (previousDay != null && unsaved) {
+      await _putSetting('step_today_$previousDay', previousTotal);
+    }
+    if (carried != null) await _putSetting('step_baseline_$day', carried);
+  }
+
+  /// Sensörün yeni okumasını işler ([totalSteps]: telefon açıldığından beri atılan adım).
+  Future<void> handlePedometerStepEvent(int totalSteps, {DateTime? at}) async {
+    final now = at ?? DateTime.now();
+    _stepLive = true;
+    final dayBefore = _stepDay;
+    final baselineBefore = _stepBaseline;
+    await _rollStepDay(now);
+
+    final counted = todaySteps - _stepManual;
+    if (_stepBaseline == null) {
+      // Günün ilk okuması
+      _stepBaseline = totalSteps - counted;
+    } else if (totalSteps < _stepBaseline! + counted) {
+      // Sayaç geriye gitti: telefon yeniden başlatılmış ve sensör sıfırdan sayıyor. O ana kadar
+      // sayılanlar korunur.
+      _stepBaseline = -counted;
+    }
+    if (_stepBaseline != baselineBefore || _stepDay != dayBefore) {
+      await _putSetting('step_baseline_$_stepDay', _stepBaseline!);
     }
 
-    await d.insert('settings', {'key': 'step_today_$todayKey', 'value': todaySteps.toString()},
-        conflictAlgorithm: ConflictAlgorithm.replace);
-    stepSensorError = null;
-    notifyListeners();
+    final total = (totalSteps - _stepBaseline! + _stepManual).clamp(0, 500000);
+    todaySteps = total;
+
+    // Her adımda veritabanına yazmak gerekmez: değer sensörden yeniden hesaplanabilir.
+    final dueByTime = _stepPersistedAt == null || now.difference(_stepPersistedAt!).inSeconds.abs() >= 15;
+    if (total != _stepPersisted && ((total - _stepPersisted).abs() >= 25 || dueByTime)) {
+      _stepPersisted = total;
+      _stepPersistedAt = now;
+      await _putSetting('step_today_$_stepDay', total);
+    }
+
+    if (stepSensorError != null) {
+      stepSensorError = null;
+      notifyListeners();
+    }
   }
 
   void handlePedometerError(String error) {
+    if (stepSensorError == error) return;
     stepSensorError = error;
     notifyListeners();
   }
 
-  Future<void> addManualSteps(int delta) async {
-    final now = DateTime.now();
-    final todayKey = '${now.year}-${now.month.toString().padLeft(2, '0')}-${now.day.toString().padLeft(2, '0')}';
-    todaySteps = (todaySteps + delta).clamp(0, 500000);
-    final d = await db;
-    await d.insert('settings', {'key': 'step_today_$todayKey', 'value': todaySteps.toString()},
-        conflictAlgorithm: ConflictAlgorithm.replace);
-    notifyListeners();
+  Future<void> addManualSteps(int delta, {DateTime? at}) async {
+    final now = at ?? DateTime.now();
+    _stepLive = true;
+    await _rollStepDay(now);
+    final counted = todaySteps - _stepManual;
+    _stepManual = (_stepManual + delta).clamp(-counted, 500000 - counted);
+    todaySteps = counted + _stepManual;
+    _stepPersisted = todaySteps;
+    _stepPersistedAt = now;
+    await _putSetting('step_manual_$_stepDay', _stepManual);
+    await _putSetting('step_today_$_stepDay', todaySteps);
+  }
+
+  /// Adım ya da uyku kayıtlarının yazıldığı aktivite; hiç oluşturulmadıysa null.
+  /// Kimliği ayarlarda tutulur: ada göre aramak, aktivite yeniden adlandırılınca ya da dil değişince
+  /// ikinci bir aktivite açıyordu. Kimliği tutmayan eski sürümlerin aktivitesi adıyla bulunur.
+  Activity? _trackerActivity(int? savedId, List<String> legacyNames) =>
+      activities[savedId] ?? activities.values.where((a) => legacyNames.contains(a.norm)).firstOrNull;
+
+  Activity? get stepsActivity => _trackerActivity(_stepsActivityId, const ['adim', 'steps']);
+  Activity? get sleepActivity => _trackerActivity(_sleepActivityId, const ['uyku', 'sleep']);
+
+  Future<Activity> _ensureStepsActivity() async {
+    final act = stepsActivity ??
+        await addActivity(language == AppLanguage.en ? 'Steps' : 'Adım', emoji: '👟', category: 'sport');
+    if (act.id != _stepsActivityId) {
+      _stepsActivityId = act.id;
+      await _putSetting('steps_activity_id', act.id);
+    }
+    return act;
+  }
+
+  Future<Activity> _ensureSleepActivity() async {
+    final act = sleepActivity ??
+        await addActivity(language == AppLanguage.en ? 'Sleep' : 'Uyku', emoji: '🛌', category: 'routine');
+    if (act.id != _sleepActivityId) {
+      _sleepActivityId = act.id;
+      await _putSetting('sleep_activity_id', act.id);
+    }
+    return act;
   }
 
   Future<Entry?> syncTodayStepsToEntry({int? steps}) async {
     final count = steps ?? todaySteps;
     if (count <= 0) return null;
 
-    Activity? act = activities.values.where((a) => a.name.toLowerCase() == 'adım').firstOrNull;
-    act ??= await addActivity('Adım', emoji: '👟', category: 'sport');
+    final act = await _ensureStepsActivity();
 
     final now = DateTime.now();
     final start = dayStart(now);
     final end = dayEnd(now);
 
     final existing = entries.where((e) =>
-        e.activityId == act!.id &&
-        e.time.isAfter(start) &&
+        e.activityId == act.id &&
+        !e.time.isBefore(start) &&
         e.time.isBefore(end)).firstOrNull;
 
     if (existing != null) {
@@ -461,8 +686,7 @@ class AppStore extends ChangeNotifier {
     final mins = diffMins > 0 ? diffMins : 1;
     final hours = (mins / 60.0);
 
-    Activity? act = activities.values.where((a) => a.name.toLowerCase() == 'uyku').firstOrNull;
-    act ??= await addActivity('Uyku', emoji: '🛌', category: 'routine');
+    final act = await _ensureSleepActivity();
 
     final m = measures.where((x) => x.unitId == 'sa').firstOrNull;
 
@@ -487,8 +711,7 @@ class AppStore extends ChangeNotifier {
     final mins = diffMins > 0 ? diffMins : 1;
     final hours = (mins / 60.0);
 
-    Activity? act = activities.values.where((a) => a.name.toLowerCase() == 'uyku').firstOrNull;
-    act ??= await addActivity('Uyku', emoji: '🛌', category: 'routine');
+    final act = await _ensureSleepActivity();
 
     final m = measures.where((x) => x.unitId == 'sa').firstOrNull;
 
@@ -503,24 +726,29 @@ class AppStore extends ChangeNotifier {
     return res.entry;
   }
 
+  /// [day] gününe yazılan uyku süresi (saat). Uyku, uyanılan güne aittir: 23:30'da yatılıp 07:00'de
+  /// kalkılan gece ertesi günün uykusudur. Bitiş saati olmayan kayıtlar girildikleri güne yazılır.
   double getTodaySleepHours(DateTime day) {
-    final start = dayStart(day);
-    final end = dayEnd(day);
-    final act = activities.values.where((a) => a.name.toLowerCase() == 'uyku').firstOrNull;
+    final act = sleepActivity;
     if (act == null) return 0.0;
+    final start = dayStart(day);
+    final end = addDays(start, 1);
 
     double totalHours = 0.0;
-    for (final e in entries) {
-      if (e.activityId == act.id && e.time.isAfter(start) && e.time.isBefore(end)) {
-        if (e.duration != null && e.duration!.inMinutes > 0) {
-          totalHours += e.duration!.inMinutes / 60.0;
-        } else if (e.unitId == 'sa') {
-          totalHours += (e.value ?? e.qty);
-        } else if (e.unitId == 'dk') {
-          totalHours += (e.value ?? e.qty) / 60.0;
-        } else {
-          totalHours += e.qty;
-        }
+    // Bir önceki gün başlayan uykular da bu güne düşebilir.
+    for (final e in entriesIn(subDays(start, 1), end)) {
+      if (e.activityId != act.id) continue;
+      final wake = e.endTs != null ? e.endTime! : e.time;
+      if (wake.isBefore(start) || !wake.isBefore(end)) continue;
+
+      if (e.duration != null && e.duration!.inMinutes > 0) {
+        totalHours += e.duration!.inMinutes / 60.0;
+      } else if (e.unitId == 'sa') {
+        totalHours += (e.value ?? e.qty);
+      } else if (e.unitId == 'dk') {
+        totalHours += (e.value ?? e.qty) / 60.0;
+      } else {
+        totalHours += e.qty;
       }
     }
     return totalHours;
@@ -566,9 +794,12 @@ class AppStore extends ChangeNotifier {
 
   // ---------------------------------------------------------------- birimler
 
-  List<Unit> get allUnits => [...builtinUnits, ...customUnits];
+  // Hazır birimlerin adı ve kısaltması arayüz diline göre gelir; kimlikleri dilden bağımsızdır.
+  List<Unit> get _builtinUnits => language == AppLanguage.en ? builtinUnitsEn : builtinUnits;
 
-  Unit unit(String id) => builtinUnits.firstWhere(
+  List<Unit> get allUnits => [..._builtinUnits, ...customUnits];
+
+  Unit unit(String id) => _builtinUnits.firstWhere(
         (u) => u.id == id,
         orElse: () => customUnits.firstWhere(
           (u) => u.id == id,
@@ -576,7 +807,7 @@ class AppStore extends ChangeNotifier {
         ),
       );
 
-  String dimName(String dim) => dimNames[dim] ?? unit(dim).name;
+  String dimName(String dim) => (language == AppLanguage.en ? dimNamesEn : dimNames)[dim] ?? unit(dim).name;
 
   String fmtBase(double base, String dim) => fmtAmount(base, dim, customUnit: unit(dim));
 
@@ -587,17 +818,6 @@ class AppStore extends ChangeNotifier {
     customUnits.add(u);
     _changed();
     return u;
-  }
-
-  bool unitInUse(String id) =>
-      measures.any((m) => m.unitId == id) ||
-      goals.any((g) => g.unitId == id) ||
-      entries.any((e) => e.unitId == id);
-
-  Future<void> deleteUnit(String id) async {
-    await (await db).delete('units', where: 'id=?', whereArgs: [id]);
-    customUnits.removeWhere((u) => u.id == id);
-    _changed();
   }
 
   // ---------------------------------------------------------------- ölçüler
@@ -670,7 +890,7 @@ class AppStore extends ChangeNotifier {
   // ---------------------------------------------------------------- kayıt türleri
 
   Activity activity(int id) =>
-      activities[id] ?? Activity(id: id, name: '(silinmiş)', createdAt: 0);
+      activities[id] ?? Activity(id: id, name: strings.value.isTr ? '(silinmiş)' : '(deleted)', createdAt: 0);
 
   String activityLabel(int id) {
     final a = activity(id);
@@ -735,9 +955,6 @@ class AppStore extends ChangeNotifier {
     return a;
   }
 
-  Future<Activity> findOrCreateActivity(String name) async =>
-      exactMatch(name) ?? await addActivity(name);
-
   Future<void> updateActivity(Activity a) async {
     if (_db != null) {
       await (await db).update('activities', a.toMap(), where: 'id=?', whereArgs: [a.id]);
@@ -773,9 +990,15 @@ class AppStore extends ChangeNotifier {
       await tx.delete('entries', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('goal_links', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('quick_items', where: 'activity_id=?', whereArgs: [id]);
+      await tx.update('roadmap_steps', {'linked_activity_id': null}, where: 'linked_activity_id=?', whereArgs: [id]);
       await tx.delete('activities', where: 'id=?', whereArgs: [id]);
     });
     entries.removeWhere((e) => e.activityId == id);
+    for (final r in roadmaps) {
+      for (final step in r.steps) {
+        if (step.linkedActivityId == id) step.linkedActivityId = null;
+      }
+    }
     for (final g in goals) {
       g.links.removeWhere((l) => l.activityId == id);
     }
@@ -788,14 +1011,14 @@ class AppStore extends ChangeNotifier {
   Future<void> mergeActivity(int fromId, int intoId) async {
     if (fromId == intoId) return;
     final d = await db;
-    final matchingTimers = activeTimers.where((t) => t.activityId == fromId).toList();
-    for (final t in matchingTimers) {
-      final updated = t.copyWith(activityId: intoId);
-      final idx = activeTimers.indexWhere((x) => x.id == updated.id);
-      if (idx != -1) activeTimers[idx] = updated;
-      await d.update('active_timers', updated.toMap(), where: 'id=?', whereArgs: [updated.id]);
-    }
     await d.transaction((tx) async {
+      // Yalnızca aktivite sütunu yazılır: sayaç satırının tamamını bellekteki kopyadan yazmak, başka bir
+      // isolate'ta yapılmış duraklatmayı ezerdi.
+      await tx.update('active_timers', {'activity_id': intoId}, where: 'activity_id=?', whereArgs: [fromId]);
+      await tx.update('roadmap_steps', {'linked_activity_id': intoId},
+          where: 'linked_activity_id=?', whereArgs: [fromId]);
+      await tx.update('settings', {'value': '$intoId'},
+          where: "key IN ('steps_activity_id', 'sleep_activity_id') AND value=?", whereArgs: ['$fromId']);
       await tx.update('entries', {'activity_id': intoId}, where: 'activity_id=?', whereArgs: [fromId]);
       await tx.update('quick_items', {'activity_id': intoId},
           where: 'activity_id=?', whereArgs: [fromId]);
@@ -829,6 +1052,9 @@ class AppStore extends ChangeNotifier {
     }
     return lo;
   }
+
+  Future<List<Entry>> _readEntries(DatabaseExecutor d) async =>
+      (await d.query('entries', orderBy: 'ts, id')).map(Entry.fromMap).toList();
 
   void _insertSorted(Entry e) {
     var i = _lowerBound(e.ts + 1);
@@ -902,11 +1128,6 @@ class AppStore extends ChangeNotifier {
     _daySummaryCache.remove(dayKey(day));
   }
 
-  void clearSummaryCache() {
-    _daySummaryCache.clear();
-    _habitStreakCache.clear();
-  }
-
   /// Kayıt detayı: "2 Demlik · 1,4 L", "45 dk"
   String entryDetail(Entry e) {
     if (e.value == null || e.unitId == null) {
@@ -917,6 +1138,38 @@ class AppStore extends ChangeNotifier {
     final m = measureById(e.measureId);
     if (m == null || (m.amount == 1 && m.unitId == e.unitId)) return amount;
     return '${fmtNum(e.qty)} ${m.name} · $amount';
+  }
+
+  /// Henüz kaydedilmemiş bir kaydın miktar yazımı (giriş kutusunun önizlemesi). Kayıt eklendiğinde
+  /// [entryDetail] aynı metni gösterir.
+  String amountDetail(int? measureId, double qty) {
+    final m = measureById(measureId);
+    return entryDetail(Entry(
+      id: 0,
+      activityId: 0,
+      ts: 0,
+      measureId: m?.id,
+      qty: qty,
+      value: m != null ? m.amount * qty : null,
+      unitId: m?.unitId,
+    ));
+  }
+
+  /// Yeni tamamlanan hedefleri ve yeni aşılan limitleri bildirim olarak gösterir.
+  void _notifyGoalChanges(List<Goal> achieved, List<Goal> exceeded) {
+    final isTr = strings.value.isTr;
+    for (final g in exceeded) {
+      NotificationService.showLimitAlert(
+        isTr ? '⚠️ Limit Aşıldı!' : '⚠️ Limit Exceeded!',
+        isTr ? '${g.name} limitinizi aştınız.' : 'You went over your ${g.name} limit.',
+      );
+    }
+    for (final g in achieved) {
+      NotificationService.showLimitAlert(
+        isTr ? '🎯 Hedefe Ulaşıldı!' : '🎯 Goal Reached!',
+        isTr ? 'Tebrikler! ${g.name} hedefini tamamladınız.' : 'Well done! You completed ${g.name}.',
+      );
+    }
   }
 
   Set<int> _doneTargetGoalIds(int activityId, DateTime at) => {
@@ -967,24 +1220,23 @@ class AppStore extends ChangeNotifier {
     e.id = await (await db).insert('entries', e.toMap()..remove('id'));
     _insertSorted(e);
     _changed();
+    await _syncLinkedSteps();
     final afterDone = _doneTargetGoalIds(activityId, time);
     final afterExceeded = _exceededLimitGoalIds(activityId, time);
     final achieved = goals.where((g) => afterDone.contains(g.id) && !beforeDone.contains(g.id)).toList();
     final exceeded = goals.where((g) => afterExceeded.contains(g.id) && !beforeExceeded.contains(g.id)).toList();
-    for (final g in exceeded) {
-      NotificationService.showLimitAlert(
-        '⚠️ Limit Aşıldı!',
-        '${g.name} limitinizi aştınız.',
-      );
-    }
-    for (final g in achieved) {
-      NotificationService.showLimitAlert(
-        '🎯 Hedefe Ulaşıldı!',
-        'Tebrikler! ${g.name} hedefini tamamladınız.',
-      );
-    }
+    _notifyGoalChanges(achieved, exceeded);
     return AddResult(e, achieved, exceeded: exceeded);
   }
+
+  /// Kayıt düzenleme penceresindeki ölçü seçicinin bildirdiği (ölçü, miktar) seçimini [updateEntry]'ye
+  /// verilecek hâle getirir. Seçici, çip bırakılınca miktarı 1'e çeker; ölçüsü olmayan ya da ölçüsü silinmiş
+  /// bir kaydın miktarı ise pencerede düzenlenemez. Böyle bir kayıtta çipin bırakılması kaydın kendi ölçü
+  /// ve miktarına dönmek demektir; yoksa o 1, kaydın değerini ezerdi (8.500 adım -> 1 adet).
+  (int?, double) entryEditSelection(Entry e, int? pickedMeasureId, double pickedQty) =>
+      pickedMeasureId == null && measureById(e.measureId) == null
+          ? (e.measureId, e.qty)
+          : (pickedMeasureId, pickedQty);
 
   Future<void> updateEntry(
     Entry e, {
@@ -1004,14 +1256,22 @@ class AppStore extends ChangeNotifier {
       e.unitId = m.unitId;
       e.measureId = m.id;
       e.qty = qty;
-    } else if (measureId != null && measureId == e.measureId && e.value != null) {
-      // ölçü silinmiş: anlık görüntüyü orantılı ölçekle
-      if (e.qty != 0) e.value = e.value! / e.qty * qty;
-      e.qty = qty;
-    } else {
+    } else if (value != null || unitId != null) {
+      // değer ve birim açıkça verildi (ör. adım senkronu)
       e.measureId = null;
       e.value = value;
       e.unitId = unitId;
+      e.qty = qty;
+    } else if (measureId == e.measureId && e.value != null) {
+      // Ölçü seçimi değişmedi ama ölçünün kendisi yok (silinmiş ya da hiç olmamış: sayaç ve adım
+      // kayıtları): anlık görüntüyü koru, değeri miktarla orantılı ölçekle
+      if (e.qty != 0) e.value = e.value! / e.qty * qty;
+      e.qty = qty;
+    } else {
+      // ölçü bilerek kaldırıldı
+      e.measureId = null;
+      e.value = null;
+      e.unitId = null;
       e.qty = qty;
     }
     e.activityId = activityId;
@@ -1032,12 +1292,14 @@ class AppStore extends ChangeNotifier {
     }
     await (await db).update('entries', e.toMap(), where: 'id=?', whereArgs: [e.id]);
     _changed();
+    await _syncLinkedSteps();
   }
 
   Future<void> deleteEntry(Entry e) async {
     await (await db).delete('entries', where: 'id=?', whereArgs: [e.id]);
     entries.removeWhere((x) => x.id == e.id);
     _changed();
+    await _syncLinkedSteps();
   }
 
   Future<void> restoreEntry(Entry e) async {
@@ -1046,6 +1308,7 @@ class AppStore extends ChangeNotifier {
     entries.removeWhere((x) => x.id == e.id);
     _insertSorted(e);
     _changed();
+    await _syncLinkedSteps();
   }
 
   // ---------------------------------------------------------------- kronometre
@@ -1056,14 +1319,18 @@ class AppStore extends ChangeNotifier {
   ActiveTimer? getTimerForActivity(int activityId) =>
       activeTimers.where((t) => t.activityId == activityId).firstOrNull;
 
+  // Sayaç kartlarının açık/kapalı durumu yalnızca arayüz durumudur ve sayaç listesinden ayrı tutulur;
+  // böylece load() listeyi yenilediğinde kaybolmaz. Kullanıcı bir kartı elle değiştirmedikçe, birden
+  // fazla sayaç varken kartlar tek satırlık kompakt görünümde durur.
+  final Map<int, bool> _timerCollapsed = {};
+
+  bool isTimerCollapsed(ActiveTimer timer) => _timerCollapsed[timer.id] ?? activeTimers.length > 1;
+
   void toggleTimerCollapse(int id) {
-    final idx = activeTimers.indexWhere((t) => t.id == id);
-    if (idx != -1) {
-      activeTimers[idx] = activeTimers[idx].copyWith(
-        isCollapsed: !activeTimers[idx].isCollapsed,
-      );
-      notifyListeners();
-    }
+    final timer = getTimer(id);
+    if (timer == null) return;
+    _timerCollapsed[id] = !isTimerCollapsed(timer);
+    notifyListeners();
   }
 
   Future<ActiveTimer> startTimer(
@@ -1122,58 +1389,99 @@ class AppStore extends ChangeNotifier {
     return timer;
   }
 
+  /// Sayaç satırını veritabanından taze okur. Sayaçlar bildirim aksiyonu ve widget isolate'larında da
+  /// değişebildiği için bellekteki kopya bayat olabilir; karar veritabanındaki satıra göre verilir.
+  Future<ActiveTimer?> _readTimerRow(DatabaseExecutor ex, int id) async {
+    final rows = await ex.query('active_timers', where: 'id=?', whereArgs: [id], limit: 1);
+    if (rows.isEmpty) return null;
+    // isCollapsed yalnızca bellekte tutulan arayüz durumudur
+    return ActiveTimer.fromMap(rows.first).copyWith(isCollapsed: getTimer(id)?.isCollapsed);
+  }
+
+  /// Bellekteki kopyayı veritabanındaki güncel hâlle eşitler ([fresh] null ise sayaç artık yok).
+  /// Bu kopyanın hâlâ bildiği bir sayaç veritabanında yoksa onu başka bir isolate bitirmiştir; yazdığı
+  /// kayıtlar burada eksik olacağından kayıtlar da yeniden okunur.
+  Future<void> _syncTimer(int id, ActiveTimer? fresh) async {
+    final idx = activeTimers.indexWhere((t) => t.id == id);
+    if (fresh != null) {
+      if (idx != -1) {
+        activeTimers[idx] = fresh;
+      } else {
+        activeTimers.add(fresh);
+      }
+      return;
+    }
+    if (idx == -1) return;
+    activeTimers.removeAt(idx);
+    entries = await _readEntries(await db);
+    _changed();
+  }
+
+  /// Sayacı tek transaction içinde taze okuyup [change] ile günceller ve belleği sonuçla eşitler.
+  /// [change] null dönerse satır olduğu gibi kalır. Güncel sayacı döner (satır yoksa null).
+  Future<ActiveTimer?> _updateTimerRow(int id, ActiveTimer? Function(ActiveTimer current) change) async {
+    final d = await db;
+    ActiveTimer? result;
+    await d.transaction((tx) async {
+      final current = await _readTimerRow(tx, id);
+      if (current == null) return;
+      final updated = change(current);
+      if (updated != null) {
+        await tx.update('active_timers', updated.toMap(), where: 'id=?', whereArgs: [id]);
+      }
+      result = updated ?? current;
+    });
+    await _syncTimer(id, result);
+    return result;
+  }
+
   Future<void> pauseTimer([int? id]) async {
-    final timer = id != null ? getTimer(id) : activeTimers.where((t) => t.isRunning).firstOrNull;
-    if (timer == null || !timer.isRunning) return;
+    final timerId = id ?? activeTimers.where((t) => t.isRunning).firstOrNull?.id;
+    if (timerId == null) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final last = timer.lastResumeTs;
-    final diff = last != null ? (now - last).clamp(0, 1000000000) : 0;
-    final segs = List<TimerSegment>.from(timer.segments);
-    if (last != null && now > last) {
-      segs.add(TimerSegment(startTs: last, endTs: now));
-    }
-    final updated = timer.copyWith(
-      accumulatedMs: timer.accumulatedMs + diff,
-      isRunning: false,
-      clearLastResumeTs: true,
-      segments: segs,
-    );
+    var paused = false;
+    await _updateTimerRow(timerId, (timer) {
+      if (!timer.isRunning) return null;
+      final last = timer.lastResumeTs;
+      final diff = last != null ? (now - last).clamp(0, 1000000000) : 0;
+      final segs = List<TimerSegment>.from(timer.segments);
+      if (last != null && now > last) {
+        segs.add(TimerSegment(startTs: last, endTs: now));
+      }
+      paused = true;
+      return timer.copyWith(
+        accumulatedMs: timer.accumulatedMs + diff,
+        isRunning: false,
+        clearLastResumeTs: true,
+        segments: segs,
+      );
+    });
 
-    final d = await db;
-    await d.update('active_timers', updated.toMap(), where: 'id=?', whereArgs: [updated.id]);
-    final idx = activeTimers.indexWhere((t) => t.id == updated.id);
-    if (idx != -1) activeTimers[idx] = updated;
-
-    await NotificationService.cancelTimerAlarm(timer.id);
+    if (paused) await NotificationService.cancelTimerAlarm(timerId);
     await NotificationService.updateTimerNotification(activeTimers, activities);
     _ensureTimerTicker();
     notifyListeners();
   }
 
   Future<void> resumeTimer([int? id]) async {
-    final timer = id != null ? getTimer(id) : activeTimers.where((t) => !t.isRunning).firstOrNull;
-    if (timer == null || timer.isRunning) return;
+    final timerId = id ?? activeTimers.where((t) => !t.isRunning).firstOrNull?.id;
+    if (timerId == null) return;
 
     final now = DateTime.now().millisecondsSinceEpoch;
-    final updated = timer.copyWith(
-      lastResumeTs: now,
-      isRunning: true,
+    final timer = await _updateTimerRow(
+      timerId,
+      (timer) => timer.isRunning ? null : timer.copyWith(lastResumeTs: now, isRunning: true),
     );
 
-    final d = await db;
-    await d.update('active_timers', updated.toMap(), where: 'id=?', whereArgs: [updated.id]);
-    final idx = activeTimers.indexWhere((t) => t.id == updated.id);
-    if (idx != -1) activeTimers[idx] = updated;
-
     await NotificationService.updateTimerNotification(activeTimers, activities);
-    if (updated.isCountdown && updated.remainingMs > 0) {
-      final actName = activities[updated.activityId]?.name ?? 'Aktivite';
+    if (timer != null && timer.isRunning && timer.isCountdown && timer.remainingMs > 0) {
+      final actName = activities[timer.activityId]?.name ?? 'Aktivite';
       await NotificationService.scheduleTimerAlarm(
-        timerId: updated.id,
+        timerId: timer.id,
         activityName: actName,
-        remainingMs: updated.remainingMs,
-        isPomodoro: updated.isPomodoro,
+        remainingMs: timer.remainingMs,
+        isPomodoro: timer.isPomodoro,
         soundEnabled: timerSoundEnabled,
         autoSaveEnabled: timerAutoSaveCompleted,
       );
@@ -1182,25 +1490,23 @@ class AppStore extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sayacın notunu değiştirir; boş metin notu siler. Yalnızca not alanı, veritabanındaki güncel satırın
+  /// üzerine yazılır: satırın tamamını bellekteki kopyadan yazmak, başka bir isolate'ta yapılmış
+  /// duraklatmayı geri alıyordu.
   Future<void> updateTimerNote(dynamic idOrNote, [String? note]) async {
-    ActiveTimer? timer;
-    String? noteText;
+    final int? timerId;
+    final String? noteText;
     if (idOrNote is int) {
-      timer = getTimer(idOrNote);
+      timerId = idOrNote;
       noteText = note;
     } else {
-      timer = activeTimer;
+      timerId = activeTimer?.id;
       noteText = idOrNote as String?;
     }
-    if (timer == null) return;
+    if (timerId == null) return;
 
-    final updated = timer.copyWith(
-      note: (noteText?.trim().isEmpty ?? true) ? null : noteText!.trim(),
-    );
-    final d = await db;
-    await d.update('active_timers', updated.toMap(), where: 'id=?', whereArgs: [updated.id]);
-    final idx = activeTimers.indexWhere((t) => t.id == updated.id);
-    if (idx != -1) activeTimers[idx] = updated;
+    final text = noteText?.trim() ?? '';
+    await _updateTimerRow(timerId, (timer) => text.isEmpty ? timer.copyWith(clearNote: true) : timer.copyWith(note: text));
     notifyListeners();
   }
 
@@ -1239,17 +1545,15 @@ class AppStore extends ChangeNotifier {
     int? id,
     MidnightSplitChoice splitChoice = MidnightSplitChoice.startDay,
     bool cancelAlarmNotification = false,
-  ]) async {
-    final timer = id != null ? getTimer(id) : activeTimer;
-    if (timer == null) return null;
+  ]) =>
+      _finishTimer(id, splitChoice, cancelAlarmNotification);
 
+  /// Biten sayaçtan yazılacak kayıtları üretir (gece yarısında bölünürse iki kayıt).
+  List<Entry> _timerEntries(ActiveTimer timer, MidnightSplitChoice splitChoice) {
     final actId = timer.activityId;
     final note = timer.note;
     final startTime = timer.startTime;
     final endTime = DateTime.now();
-
-    final beforeDone = _doneTargetGoalIds(actId, startTime);
-    final beforeExceeded = _exceededLimitGoalIds(actId, startTime);
 
     final entriesToSave = <Entry>[];
 
@@ -1315,37 +1619,77 @@ class AppStore extends ChangeNotifier {
       ));
     }
 
-    if (entriesToSave.isEmpty) return null;
+    return entriesToSave;
+  }
+
+  /// [onlyIfCompleted] otomatik kayıt içindir: sayaç veritabanında hâlâ çalışan ve hedefine ulaşmış bir
+  /// geri sayım değilse (ör. bildirimden duraklatılmışsa) kayıt yazmadan döner.
+  Future<AddResult?> _finishTimer(
+    int? id,
+    MidnightSplitChoice splitChoice,
+    bool cancelAlarmNotification, {
+    bool onlyIfCompleted = false,
+  }) async {
+    final timerId = id ?? activeTimer?.id;
+    if (timerId == null) return null;
 
     final d = await db;
+    ActiveTimer? current;
+    var finished = false;
+    var beforeDone = <int>{};
+    var beforeExceeded = <int>{};
     final createdEntries = <Entry>[];
 
-    // Atomik SQLite işlemi: tüm kayıtlar yazılır ve sayaç tek transaction'da silinir
+    // Atomik SQLite işlemi: sayaç satırı taze okunur, kayıtlar yazılır ve sayaç aynı transaction'da silinir.
+    // Satır yoksa sayacı başka bir çağrı ya da başka bir isolate zaten bitirmiştir; ikinci kayıt yazılmaz.
     await d.transaction((tx) async {
+      final timer = await _readTimerRow(tx, timerId);
+      current = timer;
+      if (timer == null) return;
+      if (onlyIfCompleted && !(timer.isCountdown && timer.isRunning && timer.isTargetReached)) return;
+
+      final entriesToSave = _timerEntries(timer, splitChoice);
+      if (entriesToSave.isEmpty) return;
+
+      beforeDone = _doneTargetGoalIds(timer.activityId, timer.startTime);
+      beforeExceeded = _exceededLimitGoalIds(timer.activityId, timer.startTime);
       for (final raw in entriesToSave) {
-        final rowId = await tx.insert('entries', raw.toMap()..remove('id'));
-        raw.id = rowId;
+        raw.id = await tx.insert('entries', raw.toMap()..remove('id'));
         createdEntries.add(raw);
       }
-      await tx.delete('active_timers', where: 'id=?', whereArgs: [timer.id]);
+      await tx.delete('active_timers', where: 'id=?', whereArgs: [timerId]);
+      finished = true;
     });
 
-    // Veritabanı başarılı oldu -> bellek durumunu ve bildirimleri güvenle güncelle.
-    // Hedef henüz tamamlanmadan manuel bitirildiyse veya açıkça istenmişse alarmı iptal et.
-    // Ancak süre bitip otomatik kaydedildiyse bildirim ekranda kalmaya devam etsin!
-    final shouldCancelAlarm = cancelAlarmNotification || !timer.isTargetReached;
-    if (shouldCancelAlarm) {
-      await NotificationService.cancelTimerAlarm(timer.id);
+    final timer = current;
+    if (timer == null || !finished) {
+      // Kayıt yazılmadı: bellekteki kopyayı veritabanındaki durumla eşitle.
+      await _syncTimer(timerId, timer);
+      await NotificationService.updateTimerNotification(activeTimers, activities);
+      _ensureTimerTicker();
+      notifyListeners();
+      return null;
     }
-    activeTimers.removeWhere((t) => t.id == timer.id);
+
+    // Veritabanı başarılı oldu -> belleği hemen güncelle; araya giren bir load() ile çakışmasın.
+    activeTimers.removeWhere((t) => t.id == timerId);
     for (final e in createdEntries) {
       _insertSorted(e);
     }
     _changed();
+    await _syncLinkedSteps();
+
+    // Hedef henüz tamamlanmadan manuel bitirildiyse veya açıkça istenmişse alarmı iptal et.
+    // Ancak süre bitip otomatik kaydedildiyse bildirim ekranda kalmaya devam etsin!
+    final shouldCancelAlarm = cancelAlarmNotification || !timer.isTargetReached;
+    if (shouldCancelAlarm) {
+      await NotificationService.cancelTimerAlarm(timerId);
+    }
     await NotificationService.updateTimerNotification(activeTimers, activities);
     _ensureTimerTicker();
 
     // Hedef ve limit durumlarını kontrol et
+    final actId = timer.activityId;
     final achieved = <Goal>[];
     final exceeded = <Goal>[];
     for (final e in createdEntries) {
@@ -1361,18 +1705,7 @@ class AppStore extends ChangeNotifier {
       }
     }
 
-    for (final g in exceeded) {
-      NotificationService.showLimitAlert(
-        '⚠️ Limit Aşıldı!',
-        '${g.name} limitinizi aştınız.',
-      );
-    }
-    for (final g in achieved) {
-      NotificationService.showLimitAlert(
-        '🎯 Hedefe Ulaşıldı!',
-        'Tebrikler! ${g.name} hedefini tamamladınız.',
-      );
-    }
+    _notifyGoalChanges(achieved, exceeded);
 
     return AddResult(createdEntries.last, achieved, exceeded: exceeded);
   }
@@ -1430,7 +1763,9 @@ class AppStore extends ChangeNotifier {
       final actName = act?.name ?? 'Aktivite';
 
       // Otomatik bitir ve kaydet (tamamlama bildirimi açık kalacak şekilde)
-      await finishTimer(timer.id, MidnightSplitChoice.startDay, false);
+      final saved = await _finishTimer(timer.id, MidnightSplitChoice.startDay, false, onlyIfCompleted: true);
+      // Sayacı bu arada başka bir çağrı ya da isolate bitirmiş/duraklatmışsa bildirimi tekrarlama.
+      if (saved == null) continue;
 
       // Bildirimin bildirim çekmecesinde görünmeye devam etmesini sağla
       await NotificationService.showTimerCompletedNotification(
@@ -1451,28 +1786,12 @@ class AppStore extends ChangeNotifier {
 
   // ---------------------------------------------------------------- istatistik
 
-  PeriodTotal totals(int activityId, DateTime from, DateTime to) {
-    final t = PeriodTotal();
-    for (final e in entriesIn(from, to)) {
-      if (e.activityId == activityId) t.add(e, e.unitId == null ? null : unit(e.unitId!));
-    }
-    return t;
-  }
-
   Map<int, PeriodTotal> totalsByActivity(DateTime from, DateTime to) {
     final res = <int, PeriodTotal>{};
     for (final e in entriesIn(from, to)) {
       res.putIfAbsent(e.activityId, PeriodTotal.new).add(e, e.unitId == null ? null : unit(e.unitId!));
     }
     return res;
-  }
-
-  /// "1,4 L · 5 kez"
-  String totalText(PeriodTotal t) {
-    final dim = t.mainDim;
-    final kez = '${t.count} kez';
-    if (dim == null) return kez;
-    return '${fmtBase(t.byDim[dim]!, dim)} · $kez';
   }
 
   // ---------------------------------------------------------------- hedefler
@@ -1554,26 +1873,9 @@ class AppStore extends ChangeNotifier {
     return st;
   }
 
-  String goalUnitSymbol(Goal g) => g.isCount ? 'kez' : unit(g.unitId ?? 'adet').symbol;
+  String goalUnitSymbol(Goal g) => g.isCount ? timesWord : unit(g.unitId ?? 'adet').symbol;
 
-  String goalValueText(Goal g, double v) => '${fmtNum(v)} ${goalUnitSymbol(g)}';
-
-  /// Periyodik hedeflerin geçmişi (en yeni önce), hedef başlangıcına kadar.
-  List<GoalStatus> goalHistory(Goal g, int n) {
-    final res = <GoalStatus>[];
-    if (g.period == GoalPeriod.total) return res;
-    final start = dayStart(DateTime.fromMillisecondsSinceEpoch(g.startDate));
-    var at = DateTime.now();
-    for (var i = 0; i < n; i++) {
-      final st = goalStatus(g, at: at);
-      if (st.to != null && !st.to!.isAfter(start)) break;
-      res.add(st);
-      final (f, _) = goalRange(g, at);
-      if (!f.isAfter(start)) break;
-      at = DateTime(f.year, f.month, f.day - 1, 12);
-    }
-    return res;
-  }
+  String goalValueText(Goal g, double v) => '${fmtNum(v)} ${g.isCount ? timesUnit(v) : goalUnitSymbol(g)}';
 
   /// Arka arkaya tamamlanan periyot sayısı (bugünkü henüz bitmediyse dünden başlar).
   int goalStreak(Goal g) {
@@ -1836,7 +2138,7 @@ class AppStore extends ChangeNotifier {
             lvl = 0;
           }
           final pct = (ratio * 100).round();
-          tip = '$valStr / $targetStr (%$pct)';
+          tip = '$valStr / $targetStr (${fmtPercent(pct)})';
         } else {
           lvl = val > 0 ? 4 : 0;
           tip = '$valStr / $targetStr';
@@ -1916,6 +2218,29 @@ class AppStore extends ChangeNotifier {
     return result;
   }
 
+  /// Hedefin geçmiş dönemlerinin sonuçları, en yenisi başta (başarılıysa true). İçinde bulunulan dönem
+  /// henüz başarılı değilse listeye alınmaz: bitmemiş bir dönem başarısız sayılmaz.
+  List<bool> _periodOutcomes(Goal g, {int limit = 365}) {
+    final outcomes = <bool>[];
+    if (g.period == GoalPeriod.total) return outcomes;
+    final start = dayStart(DateTime.fromMillisecondsSinceEpoch(g.startDate));
+    var at = DateTime.now();
+    for (var i = 0; i < limit; i++) {
+      final st = goalStatus(g, at: at);
+      if (st.to != null && !st.to!.isAfter(start)) break;
+      if (i > 0 || st.done) outcomes.add(st.done);
+      final (from, _) = goalRange(g, at);
+      if (!from.isAfter(start)) break;
+      at = DateTime(from.year, from.month, from.day - 1, 12);
+    }
+    return outcomes;
+  }
+
+  /// Hedefin ısı haritası ve seri bilgileri.
+  ///
+  /// Günlük hedefte her gün kendi hedefiyle ölçülür. Haftalık, aylık ve toplam hedeflerde bir günün rengi
+  /// o günün ait olduğu dönemin sonucunu gösterir (kayıt olan günler boyanır) ve seriler dönem sayar;
+  /// tek bir günü haftalık hedefle kıyaslamak hiçbir günü "tamam" göstermiyordu.
   HabitStreakInfo goalStreakInfo(Goal g) {
     final cached = _goalStreakCache[g.id];
     if (cached != null) return cached;
@@ -1924,7 +2249,7 @@ class AppStore extends ChangeNotifier {
     final today = dayStart(now);
     final goalStartDate = dayStart(DateTime.fromMillisecondsSinceEpoch(g.startDate));
 
-    final earliest = today.subtract(const Duration(days: 140));
+    final earliest = DateTime(today.year, today.month, today.day - 140);
     final evalStart = earliest.isBefore(goalStartDate) ? goalStartDate : earliest;
 
     final dailyCounts = <DateTime, int>{};
@@ -1932,6 +2257,7 @@ class AppStore extends ChangeNotifier {
     final dailyTooltips = <DateTime, String>{};
     final isTr = language == AppLanguage.tr;
     final unitSym = goalUnitSymbol(g);
+    final isDaily = g.period == GoalPeriod.day;
 
     final pcts = {for (final l in g.links) l.activityId: l.pct};
     final dayValues = <DateTime, double>{};
@@ -1949,16 +2275,33 @@ class AppStore extends ChangeNotifier {
       dayCounts[d] = (dayCounts[d] ?? 0) + 1;
     }
 
+    // Günün ait olduğu dönemin toplamı (dönem başına bir kez hesaplanır).
+    final periodValues = <DateTime, double>{};
+    double periodValueOf(DateTime day) {
+      final (from, to) = goalRange(g, day);
+      return periodValues[from] ??= goalValue(g, from, to).$1;
+    }
+
+    final periodLabel = switch (g.period) {
+      GoalPeriod.day => '',
+      GoalPeriod.week => isTr ? 'Hafta' : 'Week',
+      GoalPeriod.month => isTr ? 'Ay' : 'Month',
+      GoalPeriod.total => isTr ? 'Toplam' : 'Total',
+    };
+
+    final target = g.target;
+    final targetStr = '${fmtNum(target)} $unitSym';
     final daysCount = daysBetween(evalStart, today) + 1;
     for (int i = 0; i < daysCount; i++) {
-      final d = evalStart.add(Duration(days: i));
+      final d = DateTime(evalStart.year, evalStart.month, evalStart.day + i);
       if (d.isAfter(today)) break;
 
-      final val = dayValues[d] ?? 0.0;
+      final dayVal = dayValues[d] ?? 0.0;
       final count = dayCounts[d] ?? 0;
-      final target = g.target;
+      // Günün ölçüldüğü değer: günlük hedefte günün kendisi, diğerlerinde ait olduğu dönemin toplamı.
+      final val = isDaily ? dayVal : periodValueOf(d);
       final valStr = '${fmtNum(val)} $unitSym';
-      final targetStr = '${fmtNum(target)} $unitSym';
+      final measured = isDaily ? '$valStr / $targetStr' : '${fmtNum(dayVal)} $unitSym · $periodLabel: $valStr / $targetStr';
 
       if (g.isLimit) {
         final hasAnyAppActivity = allActiveDays.contains(d);
@@ -1966,7 +2309,7 @@ class AppStore extends ChangeNotifier {
           dailyCounts[d] = count > 0 ? count : 1;
           if (val <= target) {
             dailyLevels[d] = 4;
-            dailyTooltips[d] = '$valStr / $targetStr (${isTr ? "Limit korundu ✓" : "Within limit ✓"})';
+            dailyTooltips[d] = '$measured (${isTr ? "Limit korundu ✓" : "Within limit ✓"})';
           } else {
             final excessRatio = (val - target) / (target > 0 ? target : 1.0);
             int lvl;
@@ -1981,15 +2324,15 @@ class AppStore extends ChangeNotifier {
             }
             dailyLevels[d] = lvl;
             final diffStr = '+${fmtNum(val - target)} $unitSym';
-            dailyTooltips[d] = '$valStr / $targetStr ($diffStr ${isTr ? "aşıldı ⚠️" : "exceeded ⚠️"})';
+            dailyTooltips[d] = '$measured ($diffStr ${isTr ? "aşıldı ⚠️" : "exceeded ⚠️"})';
           }
         }
       } else {
-        if (count > 0 || val > 0) {
+        if (count > 0 || dayVal > 0) {
           dailyCounts[d] = count > 0 ? count : 1;
           if (val >= target) {
             dailyLevels[d] = 4;
-            dailyTooltips[d] = '$valStr / $targetStr (${isTr ? "Hedefe ulaşıldı ✓" : "Goal reached ✓"})';
+            dailyTooltips[d] = '$measured (${isTr ? "Hedefe ulaşıldı ✓" : "Goal reached ✓"})';
           } else if (target > 0) {
             final ratio = val / target;
             int lvl;
@@ -2004,10 +2347,10 @@ class AppStore extends ChangeNotifier {
             }
             dailyLevels[d] = lvl;
             final pct = (ratio * 100).round();
-            dailyTooltips[d] = '$valStr / $targetStr (%$pct)';
+            dailyTooltips[d] = '$measured (${fmtPercent(pct)})';
           } else {
             dailyLevels[d] = val > 0 ? 4 : 0;
-            dailyTooltips[d] = '$valStr / $targetStr';
+            dailyTooltips[d] = measured;
           }
         }
       }
@@ -2017,51 +2360,66 @@ class AppStore extends ChangeNotifier {
     final isDoneToday = todayStatus.done;
     final todayCount = dayCounts[today] ?? 0;
 
-    int currentStreak = 0;
-    DateTime checkDate = isDoneToday ? today : DateTime(today.year, today.month, today.day - 1);
-    while (checkDate.isAfter(goalStartDate) || checkDate == goalStartDate) {
-      final lvl = dailyLevels[checkDate];
-      if (lvl != null && lvl == 4) {
-        currentStreak++;
-        checkDate = DateTime(checkDate.year, checkDate.month, checkDate.day - 1);
-      } else {
-        break;
+    int currentStreak;
+    int longestStreak;
+    double consistency;
+    if (g.period == GoalPeriod.week || g.period == GoalPeriod.month) {
+      // Seriler dönem sayar: art arda tutturulan hafta ya da ay.
+      final outcomes = _periodOutcomes(g);
+      currentStreak = outcomes.takeWhile((ok) => ok).length;
+      longestStreak = 0;
+      var run = 0;
+      for (final ok in outcomes) {
+        run = ok ? run + 1 : 0;
+        if (run > longestStreak) longestStreak = run;
       }
-    }
-
-    int longestStreak = currentStreak;
-    if (dailyLevels.isNotEmpty) {
-      final sortedDays = dailyLevels.keys.toList()..sort();
-      int temp = 0;
-      DateTime? prev;
-      for (final day in sortedDays) {
-        if (dailyLevels[day] == 4) {
-          if (prev == null || daysBetween(prev, day) == 1) {
-            temp++;
-          } else {
-            temp = 1;
-          }
-          if (temp > longestStreak) longestStreak = temp;
-          prev = day;
+      final recent = outcomes.take(12).toList();
+      consistency = recent.isEmpty ? 0.0 : recent.where((ok) => ok).length / recent.length * 100.0;
+    } else {
+      currentStreak = 0;
+      DateTime checkDate = isDoneToday ? today : DateTime(today.year, today.month, today.day - 1);
+      while (checkDate.isAfter(goalStartDate) || checkDate == goalStartDate) {
+        final lvl = dailyLevels[checkDate];
+        if (lvl != null && lvl == 4) {
+          currentStreak++;
+          checkDate = DateTime(checkDate.year, checkDate.month, checkDate.day - 1);
         } else {
-          temp = 0;
-          prev = null;
+          break;
         }
       }
-    }
 
-    int successfulIn30 = 0;
-    int evaluatedIn30 = 0;
-    for (int i = 0; i < 30; i++) {
-      final d = DateTime(today.year, today.month, today.day - i);
-      if (d.isBefore(goalStartDate)) break;
-      evaluatedIn30++;
-      final lvl = dailyLevels[d];
-      if (lvl != null && lvl == 4) successfulIn30++;
+      longestStreak = currentStreak;
+      if (dailyLevels.isNotEmpty) {
+        final sortedDays = dailyLevels.keys.toList()..sort();
+        int temp = 0;
+        DateTime? prev;
+        for (final day in sortedDays) {
+          if (dailyLevels[day] == 4) {
+            if (prev == null || daysBetween(prev, day) == 1) {
+              temp++;
+            } else {
+              temp = 1;
+            }
+            if (temp > longestStreak) longestStreak = temp;
+            prev = day;
+          } else {
+            temp = 0;
+            prev = null;
+          }
+        }
+      }
+
+      int successfulIn30 = 0;
+      int evaluatedIn30 = 0;
+      for (int i = 0; i < 30; i++) {
+        final d = DateTime(today.year, today.month, today.day - i);
+        if (d.isBefore(goalStartDate)) break;
+        evaluatedIn30++;
+        final lvl = dailyLevels[d];
+        if (lvl != null && lvl == 4) successfulIn30++;
+      }
+      consistency = evaluatedIn30 > 0 ? (successfulIn30 / evaluatedIn30) * 100.0 : 0.0;
     }
-    final consistencyLast30 = evaluatedIn30 > 0
-        ? (successfulIn30 / evaluatedIn30) * 100.0
-        : 0.0;
 
     final result = HabitStreakInfo(
       currentStreak: currentStreak,
@@ -2069,10 +2427,11 @@ class AppStore extends ChangeNotifier {
       totalActiveDays: dailyCounts.length,
       isDoneToday: isDoneToday,
       todayCount: todayCount,
-      consistencyLast30: consistencyLast30,
+      consistencyLast30: consistency,
       dailyCounts: dailyCounts,
       dailyLevels: dailyLevels,
       dailyTooltips: dailyTooltips,
+      streakPeriod: g.period == GoalPeriod.week || g.period == GoalPeriod.month ? g.period : GoalPeriod.day,
     );
     _goalStreakCache[g.id] = result;
     return result;
@@ -2137,19 +2496,6 @@ class AppStore extends ChangeNotifier {
     _changed();
   }
 
-  Future<void> reorderQuick(int oldIndex, int newIndex) async {
-    final item = quickItems.removeAt(oldIndex);
-    quickItems.insert(newIndex, item);
-    final d = await db;
-    await d.transaction((tx) async {
-      for (var i = 0; i < quickItems.length; i++) {
-        quickItems[i].sort = i;
-        await tx.update('quick_items', {'sort': i}, where: 'id=?', whereArgs: [quickItems[i].id]);
-      }
-    });
-    _changed();
-  }
-
   /// Bir kerelik yapılacaklar, tamamlandıkları günden sonra listeden kalkar.
   Future<void> _cleanupQuickItems() async {
     final today = dayStart(DateTime.now());
@@ -2178,9 +2524,9 @@ class AppStore extends ChangeNotifier {
       final done = quickDone(q);
       String sub;
       if (!q.isTodo) {
-        sub = n > 0 ? 'Bugün $n' : '';
+        sub = n > 0 ? (strings.value.isTr ? 'Bugün $n' : 'Today $n') : '';
       } else {
-        sub = q.daily ? '' : 'bir kez';
+        sub = q.daily ? '' : (strings.value.isTr ? 'bir kez' : 'once');
       }
       return {
         'id': q.id,
@@ -2198,7 +2544,7 @@ class AppStore extends ChangeNotifier {
       if (g.isLimit) {
         goalParts.add(st.isExceeded ? '⚠️ ${g.name}!' : '✓ ${g.name}');
       } else {
-        goalParts.add(st.done ? '✓ ${g.name}' : '${g.name} %${(st.ratio * 100).floor()}');
+        goalParts.add(st.done ? '✓ ${g.name}' : '${g.name} ${fmtPercent((st.ratio * 100).floor())}');
       }
     }
     return {
@@ -2223,11 +2569,83 @@ class AppStore extends ChangeNotifier {
     return const JsonEncoder.withIndent(' ').convert(out);
   }
 
+  /// load()'un her tablonun satırlarını okurken kullandığı dönüştürücüler.
+  static final Map<String, void Function(Map<String, Object?>)> _backupRowReaders = {
+    'units': Unit.fromMap,
+    'measures': Measure.fromMap,
+    'activities': Activity.fromMap,
+    'entries': Entry.fromMap,
+    'goals': Goal.fromMap,
+    'goal_links': GoalLink.fromMap,
+    'quick_items': QuickItem.fromMap,
+    'settings': (r) {
+      if (r['key'] is! String || r['value'] is! String) throw const FormatException('settings');
+    },
+    'active_timers': ActiveTimer.fromMap,
+    'roadmaps': Roadmap.fromMap,
+    'roadmap_steps': RoadmapStep.fromMap,
+  };
+
+  /// Yedeği veritabanına dokunmadan önce doğrular ve tablo başına satırları döner. load()'un okuyamayacağı
+  /// tek bir satır bile içe aktarılırsa uygulama bir daha açılamaz; böyle bir yedek baştan reddedilir.
+  Map<String, List<Map<String, Object?>>> _validatedBackupTables(Map<dynamic, dynamic> backup) {
+    final tables = <String, List<Map<String, Object?>>>{};
+    for (final t in AppDb.tables) {
+      final rows = <Map<String, Object?>>[];
+      try {
+        for (final r in (backup[t] as List?) ?? const []) {
+          final row = Map<String, Object?>.from(r as Map);
+          _backupRowReaders[t]?.call(row);
+          rows.add(row);
+        }
+      } catch (_) {
+        throw FormatException(strings.value.isTr
+            ? 'Yedek okunamadı: "$t" tablosunun ${rows.length + 1}. satırı geçersiz.'
+            : 'The backup cannot be read: row ${rows.length + 1} of table "$t" is invalid.');
+      }
+      tables[t] = rows;
+    }
+    return tables;
+  }
+
+  /// Yedekteki çalışan sayaçları, yedeğin alındığı andaki süreleriyle duraklatılmış hâle getirir.
+  /// Olduğu gibi geri yüklenen bir sayaç yedekten beri hep çalışmış sayılırdı: geri sayımlar "tamamlandı"
+  /// diye kendiliğinden kaydedilir, kronometreler günlerce süre gösterirdi.
+  void _pauseBackupTimers(List<Map<String, Object?>> rows, Object? exportedAt) {
+    final exportedMs = exportedAt is String ? DateTime.tryParse(exportedAt)?.millisecondsSinceEpoch : null;
+    for (final row in rows) {
+      if (row['is_running'] != 1) continue;
+      final resumedAt = row['last_resume_ts'];
+      if (exportedMs != null && resumedAt is int && exportedMs > resumedAt) {
+        row['accumulated_ms'] = ((row['accumulated_ms'] as int?) ?? 0) + (exportedMs - resumedAt);
+        var segments = <Object?>[];
+        try {
+          final decoded = jsonDecode(row['segments'] as String? ?? '[]');
+          if (decoded is List) segments = decoded;
+        } catch (_) {}
+        row['segments'] = jsonEncode([...segments, TimerSegment(startTs: resumedAt, endTs: exportedMs).toMap()]);
+      }
+      row['is_running'] = 0;
+      row['last_resume_ts'] = null;
+    }
+  }
+
   Future<void> importJson(String json) async {
     final m = jsonDecode(json);
     if (m is! Map || m['app'] != 'takip') {
-      throw const FormatException('Bu dosya bir Takip yedeği değil.');
+      throw FormatException(strings.value.isTr ? 'Bu dosya bir Takip yedeği değil.' : 'This file is not a Takip backup.');
     }
+    final version = m['version'];
+    if (version is int && version > AppDb.currentVersion) {
+      throw FormatException(
+        strings.value.isTr
+            ? 'Bu yedek uygulamanın daha yeni bir sürümüyle alınmış. Önce uygulamayı güncelleyin.'
+            : 'This backup was made with a newer version of the app. Update the app first.',
+      );
+    }
+    final tables = _validatedBackupTables(m);
+    _pauseBackupTimers(tables['active_timers']!, m['exportedAt']);
+
     // Geri yükleme öncesinde mevcut verileri korumak için güvenlik yedeği al
     try {
       await BackupService.createPreRestoreSnapshot(this);
@@ -2239,12 +2657,13 @@ class AppStore extends ChangeNotifier {
         await tx.delete(t);
       }
       for (final t in AppDb.tables) {
-        final rows = (m[t] as List?) ?? const [];
-        for (final r in rows) {
-          await tx.insert(t, Map<String, Object?>.from(r as Map));
+        for (final row in tables[t]!) {
+          await tx.insert(t, row);
         }
       }
     });
+    // Adım durumu da yedektekiyle değişir.
+    _stepLive = false;
     await load();
   }
 
@@ -2264,12 +2683,6 @@ class AppStore extends ChangeNotifier {
     roadmaps.insert(0, roadmap);
     _changed();
     return roadmap;
-  }
-
-  Future<void> updateRoadmap(Roadmap roadmap) async {
-    final d = await db;
-    await d.update('roadmaps', roadmap.toMap(), where: 'id = ?', whereArgs: [roadmap.id]);
-    _changed();
   }
 
   Future<void> deleteRoadmap(int roadmapId) async {
@@ -2301,8 +2714,11 @@ class AppStore extends ChangeNotifier {
     }, where: 'id = ?', whereArgs: [roadmapId]);
 
     _changed();
+    // Yolculuk sürmeye başladıysa bağlı adımlar kayıtlara göre işaretlenir.
+    await _syncLinkedSteps();
   }
 
+  /// Adımı elle işaretler ya da işaretini kaldırır.
   Future<void> toggleRoadmapStep(int stepId, {bool? completed}) async {
     for (final r in roadmaps) {
       final step = r.steps.where((s) => s.id == stepId).firstOrNull;
@@ -2310,34 +2726,151 @@ class AppStore extends ChangeNotifier {
         final targetState = completed ?? !step.isCompleted;
         step.isCompleted = targetState;
         step.completedAt = targetState ? DateTime.now().millisecondsSinceEpoch : null;
+        // Elle verilen karar uygulamanınkinin yerine geçer. Hedefi dolmuş adımın işaretini kaldıran
+        // kullanıcı onu açık tutmak istiyordur; bu not düşülmezse adım ilk kayıtta yeniden işaretlenirdi.
+        step.autoCompleted = false;
+        step.keptOpen = !targetState && (stepProgress(r, step)?.reached ?? false);
         final d = await db;
         await d.update('roadmap_steps', {
           'is_completed': step.isCompleted ? 1 : 0,
           'completed_at': step.completedAt,
+          'auto_completed': 0,
+          'kept_open': step.keptOpen ? 1 : 0,
         }, where: 'id = ?', whereArgs: [stepId]);
 
-        // Tüm adımlar tamamlandı mı kontrol et
-        if (r.steps.isNotEmpty && r.steps.every((s) => s.isCompleted)) {
-          r.status = 'completed';
-          r.completedAt = DateTime.now().millisecondsSinceEpoch;
-          await d.update('roadmaps', {
-            'status': 'completed',
-            'completed_at': r.completedAt,
-          }, where: 'id = ?', whereArgs: [r.id]);
-        } else if (r.isCompleted && !targetState) {
-          // Geri alındıysa status active'e dönsün
-          r.status = 'active';
-          r.completedAt = null;
-          await d.update('roadmaps', {
-            'status': 'active',
-            'completed_at': null,
-          }, where: 'id = ?', whereArgs: [r.id]);
-        }
-
+        await _settleRoadmapStatus(r, reopened: !targetState);
         _changed();
         break;
       }
     }
+  }
+
+  /// Adımların durumuna göre yolculuğu kapatır ya da yeniden açar: bütün adımlar tamamlandıysa yolculuk
+  /// tamamlanır; tamamlanmış bir yolculuğun adımı geri alındıysa ([reopened]) yolculuk sürmeye döner.
+  Future<void> _settleRoadmapStatus(Roadmap r, {required bool reopened}) async {
+    final allDone = r.steps.isNotEmpty && r.steps.every((s) => s.isCompleted);
+    if (allDone && !r.isCompleted) {
+      r.status = 'completed';
+      r.completedAt = DateTime.now().millisecondsSinceEpoch;
+    } else if (!allDone && r.isCompleted && reopened) {
+      r.status = 'active';
+      r.completedAt = null;
+    } else {
+      return;
+    }
+    await (await db).update('roadmaps', {'status': r.status, 'completed_at': r.completedAt},
+        where: 'id = ?', whereArgs: [r.id]);
+  }
+
+  /// [text] ile yazılmış birim ("dk", "dakika", "min", "km", kullanıcının kendi birimi); tanınmıyorsa null.
+  Unit? _unitNamed(String? text) {
+    final t = normalizeTr(text ?? '');
+    if (t.isEmpty) return null;
+    final id = NaturalLanguageParser.unitIdForWord(t);
+    if (id != null) return unit(id);
+    return allUnits
+        .where((u) => normalizeTr(u.id) == t || normalizeTr(u.symbol) == t || normalizeTr(u.name) == t)
+        .firstOrNull;
+  }
+
+  /// Adımın, bağlı aktivitesinin kayıtlarından hesaplanan ilerlemesi. Adım bir aktiviteye bağlı değilse ya da
+  /// yolculuk başlamadıysa null döner. Yolculuğun başladığı andan sonraki kayıtlar sayılır; yolculuğun bütün
+  /// adımları aynı anda birikir, yalnızca sıradaki değil. Duraklatılmış yolculukta da birikir: aradaki
+  /// kayıtlar gerçekten yapılmış iştir ve ilerleme çubuğu ile işaret birbirini tutmalıdır.
+  ///
+  /// Hedefin birimi ölçülebilir bir birimse (dk, saat, km, L...) aynı boyuttaki kayıtlar o birime çevrilip
+  /// toplanır. Değilse ("bölüm", "sayfa", "adet") her kayıt kendi adediyle sayılır: birimsiz kayıt miktarı
+  /// kadar, adet birimli kayıt değeri kadar, süresi ya da hacmi ölçülmüş bir kayıt ise bir kez. Hedefi
+  /// yazılmamış adım (görev), aktivite bir kez yapılınca tamamlanır.
+  StepProgress? stepProgress(Roadmap r, RoadmapStep step) {
+    if (r.isNotStarted || !activities.containsKey(step.linkedActivityId)) return null;
+    // Başlangıcı yazılmamış yolculuk (eski bir sürümden kalan ya da hiç başlatılmadan adımları elle
+    // işaretlenip tamamlanan) oluşturulduğu andan beri sayılır.
+    final since = r.startedAt ?? r.createdAt;
+
+    final hasTarget = (step.target ?? 0) > 0;
+    final goalUnit = hasTarget ? _unitNamed(step.unit) : null;
+    final measured = goalUnit != null && goalUnit.dim != 'count';
+
+    var done = 0.0;
+    for (final e in entriesIn(DateTime.fromMillisecondsSinceEpoch(since), null)) {
+      if (e.activityId != step.linkedActivityId) continue;
+      final u = e.unitId == null ? null : unit(e.unitId!);
+      if (measured) {
+        if (u != null && e.value != null && u.dim == goalUnit.dim) done += e.value! * u.factor / goalUnit.factor;
+      } else if (u == null) {
+        done += e.qty;
+      } else if (u.dim == 'count') {
+        done += e.value ?? e.qty;
+      } else {
+        done += 1;
+      }
+    }
+    return StepProgress(done, hasTarget ? step.target! : 1, hasTarget ? (step.unit ?? '').trim() : '');
+  }
+
+  /// Bağlı aktivitesi olan adımları kayıtlara uydurur. Hedefine ulaşan adım tamamlanır; uygulamanın
+  /// tamamladığı bir adım, kayıt silinip hedefin altına düşülürse yeniden açılır (yanlışlıkla eklenip geri
+  /// alınan bir kayıt adımı tamamlanmış bırakmasın). Kullanıcının kararına dokunulmaz: elle işaretlenmiş adım
+  /// işaretli, hedefi dolduğu hâlde işareti elle kaldırılmış adım açık kalır. Başlamış bütün yolculuklara
+  /// bakılır; tamamlanmış olanlara da, geri alma onları yeniden açabilsin diye.
+  ///
+  /// [announce] ise yeni tamamlanan adımlar bildirilir; veriler yeniden okunurken sessizce yapılır.
+  Future<void> _syncLinkedSteps({bool announce = true}) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final flipped = <(Roadmap, RoadmapStep)>[];
+    for (final r in roadmaps) {
+      for (final step in r.steps) {
+        final progress = stepProgress(r, step);
+        if (progress == null) continue;
+        if (progress.reached && !step.isCompleted && !step.keptOpen) {
+          step.isCompleted = true;
+          step.completedAt = now;
+          step.autoCompleted = true;
+        } else if (!progress.reached && step.isCompleted && step.autoCompleted) {
+          step.isCompleted = false;
+          step.completedAt = null;
+          step.autoCompleted = false;
+        } else {
+          continue;
+        }
+        flipped.add((r, step));
+      }
+    }
+    if (flipped.isEmpty) return;
+
+    // Bellek yukarıda hemen güncellendi: araya giren ikinci bir çağrı aynı adımı yeniden çevirmez.
+    final d = await db;
+    for (final (_, step) in flipped) {
+      await d.update('roadmap_steps', {
+        'is_completed': step.isCompleted ? 1 : 0,
+        'completed_at': step.completedAt,
+        'auto_completed': step.autoCompleted ? 1 : 0,
+      }, where: 'id = ?', whereArgs: [step.id]);
+    }
+    for (final r in {for (final (r, _) in flipped) r}) {
+      final wasCompleted = r.isCompleted;
+      await _settleRoadmapStatus(r, reopened: flipped.any((f) => f.$1 == r && !f.$2.isCompleted));
+      if (announce && r.isCompleted && !wasCompleted) {
+        final isTr = strings.value.isTr;
+        NotificationService.showLimitAlert(
+          isTr ? '🏁 Yol Haritası Tamamlandı!' : '🏁 Roadmap Completed!',
+          isTr ? '"${r.title}" yolculuğunun bütün adımları tamam.' : 'Every step of "${r.title}" is done.',
+        );
+      }
+    }
+    if (announce) {
+      final isTr = strings.value.isTr;
+      for (final (r, step) in flipped) {
+        // Yolculuk bittiyse onun bildirimi yeter; duraklatılmış yolculuğun adımı sessizce işaretlenir.
+        if (!step.isCompleted || !r.isActive) continue;
+        NotificationService.showLimitAlert(
+          isTr ? '🗺️ Adım Tamamlandı' : '🗺️ Step Completed',
+          '${step.title} · ${r.title}',
+        );
+      }
+    }
+    _changed();
   }
 
   Future<void> addRoadmapStep(int roadmapId, RoadmapStep step) async {
@@ -2350,6 +2883,25 @@ class AppStore extends ChangeNotifier {
     step.id = stepId;
     r.steps.add(step);
     _changed();
+    await _syncLinkedSteps();
+  }
+
+  /// Adımı bir aktiviteye bağlar ([activityId] null ise bağlantıyı kaldırır). Bağlı aktivitenin kayıtları
+  /// adımın ilerlemesini belirler ([stepProgress]) ve hedefe ulaşınca adımı kendiliğinden tamamlar;
+  /// aktivite Günlük ekranındaki yol haritası panelinden de tek dokunuşla kaydedilir.
+  Future<void> setRoadmapStepActivity(int stepId, int? activityId) async {
+    for (final r in roadmaps) {
+      final step = r.steps.where((s) => s.id == stepId).firstOrNull;
+      if (step == null) continue;
+      step.linkedActivityId = activityId;
+      // Açık tutma kararı eski aktivitenin kayıtları içindi.
+      step.keptOpen = false;
+      await (await db).update('roadmap_steps', {'linked_activity_id': activityId, 'kept_open': 0},
+          where: 'id = ?', whereArgs: [stepId]);
+      _changed();
+      await _syncLinkedSteps();
+      return;
+    }
   }
 
   Future<void> deleteRoadmapStep(int roadmapId, int stepId) async {
@@ -2361,6 +2913,9 @@ class AppStore extends ChangeNotifier {
     _changed();
   }
 
+  /// Yolculuğu başlatılmamış hâline döndürür: adımların işareti kalkar ve başlangıç anı silinir. Yeniden
+  /// başlatıldığında bağlı aktivitelerin yalnızca o andan sonraki kayıtları sayılır; eski başlangıç kalsaydı
+  /// adımlar eski kayıtlarla hemen yeniden tamamlanırdı.
   Future<void> resetRoadmapProgress(int roadmapId) async {
     final r = roadmaps.where((x) => x.id == roadmapId).firstOrNull;
     if (r == null) return;
@@ -2368,16 +2923,20 @@ class AppStore extends ChangeNotifier {
     for (final s in r.steps) {
       s.isCompleted = false;
       s.completedAt = null;
+      s.autoCompleted = false;
+      s.keptOpen = false;
     }
     await d.update('roadmap_steps', {
       'is_completed': 0,
       'completed_at': null,
+      'auto_completed': 0,
+      'kept_open': 0,
     }, where: 'roadmap_id = ?', whereArgs: [roadmapId]);
-    r.status = 'paused';
+    r.status = 'not_started';
     r.startedAt = null;
     r.completedAt = null;
     await d.update('roadmaps', {
-      'status': 'paused',
+      'status': 'not_started',
       'started_at': null,
       'completed_at': null,
     }, where: 'id = ?', whereArgs: [roadmapId]);

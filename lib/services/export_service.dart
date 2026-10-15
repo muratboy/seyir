@@ -17,21 +17,12 @@ class ExportService {
   /// CSV formatında dışa aktarır ve sistem paylaşım penceresini açar.
   static Future<void> exportCsv(BuildContext context, AppStore store) async {
     try {
+      final isTr = store.language == AppLanguage.tr;
       final rows = <List<dynamic>>[];
       // Başlık satırı
-      rows.add([
-        'ID',
-        'Tarih',
-        'Saat',
-        'Aktivite',
-        'Kategori',
-        'Adet / Çarpan',
-        'Ölçü Adı',
-        'Hesaplanan Miktar',
-        'Birim',
-        'Detay',
-        'Not',
-      ]);
+      rows.add(isTr
+          ? ['ID', 'Tarih', 'Saat', 'Aktivite', 'Kategori', 'Adet / Çarpan', 'Ölçü Adı', 'Hesaplanan Miktar', 'Birim', 'Detay', 'Not']
+          : ['ID', 'Date', 'Time', 'Activity', 'Category', 'Quantity', 'Measure', 'Amount', 'Unit', 'Detail', 'Note']);
 
       final dateFmt = DateFormat('yyyy-MM-dd');
       final timeFmt = DateFormat('HH:mm:ss');
@@ -41,11 +32,11 @@ class ExportService {
         final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
         final dateStr = dateFmt.format(dt);
         final timeStr = timeFmt.format(dt);
-        final actName = '${act?.emoji ?? ''} ${act?.name ?? 'Bilinmeyen'}'.trim();
-        final catName = act?.categoryDef.name(store.language == AppLanguage.tr) ?? 'Genel';
+        final actName = '${act?.emoji ?? ''} ${act?.name ?? (isTr ? 'Bilinmeyen' : 'Unknown')}'.trim();
+        final catName = act?.categoryDef.name(isTr) ?? (isTr ? 'Genel' : 'General');
         final m = store.measureById(e.measureId);
         final measureName = m?.name ?? '';
-        final unitStr = e.unitId ?? '';
+        final unitStr = e.unitId == null ? '' : store.unit(e.unitId!).symbol;
         final note = e.note ?? '';
         final calculatedVal = e.value != null ? fmtNum(e.value!) : fmtNum(e.qty);
         final detail = store.entryDetail(e);
@@ -76,13 +67,13 @@ class ExportService {
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(filePath)],
-          text: 'Takip Kayıtları CSV Yedeği ($nowStr)',
+          text: isTr ? 'Takip Kayıtları CSV Yedeği ($nowStr)' : 'Takip entries as CSV ($nowStr)',
         ),
       );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('CSV Dışa Aktarma Hatası: $e')),
+          SnackBar(content: Text('${strings.value.isTr ? "CSV Dışa Aktarma Hatası" : "CSV export failed"}: $e')),
         );
       }
     }
@@ -119,7 +110,7 @@ class ExportService {
       final categoryCounts = <String, int>{};
       for (final e in store.entries) {
         final act = store.activities[e.activityId];
-        final cat = act?.categoryDef.name(isTr) ?? 'Genel';
+        final cat = act?.categoryDef.name(isTr) ?? (isTr ? 'Genel' : 'General');
         categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
       }
 
@@ -139,7 +130,7 @@ class ExportService {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
                     pw.Text(
-                      'TAKIP - RAPOR',
+                      isTr ? 'TAKIP - RAPOR' : 'TAKIP - REPORT',
                       style: pw.TextStyle(
                         fontSize: 24,
                         fontWeight: pw.FontWeight.bold,
@@ -165,9 +156,9 @@ class ExportService {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
                   children: [
-                    _buildStatCard('Toplam Kayıt', '$totalEntries'),
-                    _buildStatCard('Aktivite Çeşidi', '$uniqueActivities'),
-                    _buildStatCard('Tanımlı Hedef', '$activeGoals'),
+                    _buildStatCard(isTr ? 'Toplam Kayıt' : 'Entries', '$totalEntries'),
+                    _buildStatCard(isTr ? 'Aktivite Çeşidi' : 'Activities', '$uniqueActivities'),
+                    _buildStatCard(isTr ? 'Tanımlı Hedef' : 'Goals', '$activeGoals'),
                   ],
                 ),
               ),
@@ -175,17 +166,17 @@ class ExportService {
 
               // Kategori Dağılımı Tablosu
               pw.Text(
-                'Kategori Dağılımı',
+                isTr ? 'Kategori Dağılımı' : 'Categories',
                 style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
               ),
               pw.SizedBox(height: 8),
               pw.TableHelper.fromTextArray(
-                headers: ['Kategori', 'Kayıt Sayısı', 'Oran'],
+                headers: isTr ? ['Kategori', 'Kayıt Sayısı', 'Oran'] : ['Category', 'Entries', 'Share'],
                 data: categoryCounts.entries.map((entry) {
                   final pct = totalEntries > 0
                       ? ((entry.value / totalEntries) * 100).toStringAsFixed(1)
                       : '0';
-                  return [entry.key, '${entry.value}', '%$pct'];
+                  return [entry.key, '${entry.value}', fmtPercent(pct)];
                 }).toList(),
                 headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
                 headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey700),
@@ -197,21 +188,23 @@ class ExportService {
               // Hedefler ve Limitler Tablosu
               if (store.goals.isNotEmpty) ...[
                 pw.Text(
-                  'Hedef ve Limit Durumu',
+                  isTr ? 'Hedef ve Limit Durumu' : 'Goals and Limits',
                   style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
                 ),
                 pw.SizedBox(height: 8),
                 pw.TableHelper.fromTextArray(
-                  headers: ['Hedef Adı', 'Tür', 'Periyot', 'Hedef', 'İlerleme', 'Durum'],
+                  headers: isTr
+                      ? ['Hedef Adı', 'Tür', 'Periyot', 'Hedef', 'İlerleme', 'Durum']
+                      : ['Goal', 'Kind', 'Period', 'Target', 'Progress', 'Status'],
                   data: store.goals.map((g) {
                     final st = store.goalStatus(g);
-                    final typeStr = g.isLimit ? 'Limit (Maks)' : 'Hedef (Min)';
-                    final periodStr = periodNames[g.period] ?? '';
-                    final targetStr = '${g.target} ${g.unitId ?? ''}'.trim();
-                    final currentStr = '${st.value.toStringAsFixed(1)} ${g.unitId ?? ''}'.trim();
+                    final typeStr = g.isLimit ? (isTr ? 'Limit (Maks)' : 'Limit (max)') : (isTr ? 'Hedef (Min)' : 'Goal (min)');
+                    final periodStr = periodName(g.period, isTr: isTr);
+                    final targetStr = store.goalValueText(g, g.target);
+                    final currentStr = store.goalValueText(g, st.value);
                     final statusStr = g.isLimit
-                        ? (st.isExceeded ? 'AŞILDI (!)' : 'Normal')
-                        : (st.done ? 'TAMAMLANDI' : '%${(st.ratio * 100).floor()}');
+                        ? (st.isExceeded ? (isTr ? 'AŞILDI (!)' : 'EXCEEDED (!)') : (isTr ? 'Normal' : 'Within limit'))
+                        : (st.done ? (isTr ? 'TAMAMLANDI' : 'DONE') : fmtPercent((st.ratio * 100).floor()));
                     return [g.name, typeStr, periodStr, targetStr, currentStr, statusStr];
                   }).toList(),
                   headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
@@ -224,20 +217,21 @@ class ExportService {
 
               // Son Kayıtlar
               pw.Text(
-                'Son Günlük Kayıtlar (Son ${recentEntries.length} Giriş)',
+                isTr ? 'Son Günlük Kayıtlar (Son ${recentEntries.length} Giriş)' : 'Latest Entries (${recentEntries.length})',
                 style: pw.TextStyle(fontSize: 16, fontWeight: pw.FontWeight.bold),
               ),
               pw.SizedBox(height: 8),
               pw.TableHelper.fromTextArray(
-                headers: ['Tarih/Saat', 'Aktivite', 'Kategori', 'Miktar', 'Not'],
+                headers: isTr
+                    ? ['Tarih/Saat', 'Aktivite', 'Kategori', 'Miktar', 'Not']
+                    : ['Date/Time', 'Activity', 'Category', 'Amount', 'Note'],
                 data: recentEntries.map((e) {
                   final act = store.activities[e.activityId];
                   final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
                   final dtStr = '${dateFmt.format(dt)} ${timeFmt.format(dt)}';
                   final actName = act?.name ?? '';
                   final catName = act?.categoryDef.name(isTr) ?? '';
-                  final m = store.measureById(e.measureId);
-                  final qtyStr = '${e.qty} ${m?.name ?? e.unitId ?? ''}'.trim();
+                  final qtyStr = store.entryDetail(e);
                   return [dtStr, actName, catName, qtyStr, e.note ?? ''];
                 }).toList(),
                 headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
@@ -259,13 +253,13 @@ class ExportService {
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(filePath)],
-          text: 'Takip Alışkanlık & Aktivite PDF Raporu ($nowStr)',
+          text: isTr ? 'Takip Alışkanlık & Aktivite PDF Raporu ($nowStr)' : 'Takip habit & activity report ($nowStr)',
         ),
       );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('PDF Oluşturma Hatası: $e')),
+          SnackBar(content: Text('${strings.value.isTr ? "PDF Oluşturma Hatası" : "PDF export failed"}: $e')),
         );
       }
     }

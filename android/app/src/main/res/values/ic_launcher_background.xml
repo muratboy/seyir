@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Simgenin ön planı opaktır; bu renk yalnızca başlatıcı canlandırmalarında kenardan görünebilir. -->
+    <color name="ic_launcher_background">#182C8F</color>
+</resources>

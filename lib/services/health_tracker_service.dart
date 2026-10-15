@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'package:flutter/foundation.dart';
+import 'package:flutter/services.dart';
 import 'package:pedometer/pedometer.dart';
 import '../data/store.dart';
 
@@ -11,12 +12,36 @@ class HealthTrackerService {
 
   StreamSubscription<StepCount>? _stepSubscription;
   bool _isListening = false;
-  bool _sensorAvailable = true;
-  String? _lastError;
 
   bool get isListening => _isListening;
-  bool get sensorAvailable => _sensorAvailable;
-  String? get lastError => _lastError;
+
+  static const _permissions = MethodChannel('dev.takip.takip/permissions');
+
+  /// Adım sensörü için Android 10+ "fiziksel aktivite" iznini ister. İzin verildiyse ya da gerekmiyorsa
+  /// true döner. pedometer eklentisi bu izni kendisi istemez; izin yoksa sensör hiç veri göndermez.
+  Future<bool> requestStepPermission() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
+    try {
+      return await _permissions.invokeMethod<bool>('requestActivityRecognition') ?? false;
+    } on MissingPluginException {
+      // Ekranı olmayan bir isolate'tayız (bildirim ya da widget): izin penceresi açılamaz.
+      return true;
+    } catch (e) {
+      debugPrint('HealthTrackerService: permission request failed: $e');
+      return false;
+    }
+  }
+
+  /// Fiziksel aktivite izni verilmiş mi; pencere açmadan bakar. İzin yokken sensör hata vermez, yalnızca
+  /// hiç okuma göndermez, bu yüzden eksik izin ancak böyle anlaşılır.
+  Future<bool> hasStepPermission() async {
+    if (kIsWeb || defaultTargetPlatform != TargetPlatform.android) return true;
+    try {
+      return await _permissions.invokeMethod<bool>('hasActivityRecognition') ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
 
   /// Adım dinleyicisini başlatır.
   void startStepTracking(AppStore store) {
@@ -26,14 +51,10 @@ class HealthTrackerService {
     try {
       _stepSubscription = Pedometer.stepCountStream.listen(
         (StepCount event) {
-          _sensorAvailable = true;
-          _lastError = null;
           store.handlePedometerStepEvent(event.steps);
         },
         onError: (error) {
           debugPrint('HealthTrackerService: Pedometer error: $error');
-          _sensorAvailable = false;
-          _lastError = error.toString();
           // Sensör hatası uygulamayı çökertmez; kullanıcıya nazikçe bildirilir
           store.handlePedometerError(error.toString());
         },
@@ -42,8 +63,6 @@ class HealthTrackerService {
       _isListening = true;
     } catch (e) {
       debugPrint('HealthTrackerService: Could not listen to pedometer: $e');
-      _sensorAvailable = false;
-      _lastError = e.toString();
     }
   }
 

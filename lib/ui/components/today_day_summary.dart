@@ -4,6 +4,7 @@ import '../../data/models.dart';
 import '../../data/store.dart';
 import '../../logic/format.dart';
 import '../../logic/l10n.dart';
+import '../app_font.dart';
 
 class TodayDaySummary extends StatelessWidget {
   final DateTime currentDay;
@@ -43,7 +44,7 @@ class TodayDaySummary extends StatelessWidget {
                   const SizedBox(width: 5),
                   Text(
                     fmtAmount(summary.totalTimeMinutes, 'time'),
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: scheme.onSurface),
+                    style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold, color: scheme.onSurface),
                   ),
                 ],
               ),
@@ -67,7 +68,7 @@ class TodayDaySummary extends StatelessWidget {
                   const SizedBox(width: 5),
                   Text(
                     fmtAmount(summary.totalVolumeLiters, 'volume'),
-                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blue),
+                    style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold, color: Colors.blue),
                   ),
                 ],
               ),
@@ -91,7 +92,7 @@ class TodayDaySummary extends StatelessWidget {
                   const SizedBox(width: 5),
                   Text(
                     '${summary.count} ${s.entriesCountSuffix}',
-                    style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: scheme.onSurface),
+                    style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold, color: scheme.onSurface),
                   ),
                 ],
               ),
@@ -134,14 +135,14 @@ class TodayDaySummary extends StatelessWidget {
                     const SizedBox(width: 6),
                     Text(
                       g.name,
-                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: badgeColor),
+                      style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.w600, color: badgeColor),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       isLimit
                           ? (isExceeded ? '⚠️' : '✓')
-                          : (isDone ? '✓' : '%${(st.ratio * 100).floor()}'),
-                      style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: badgeColor),
+                          : (isDone ? '✓' : fmtPercent((st.ratio * 100).floor())),
+                      style: TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.bold, color: badgeColor),
                     ),
                   ],
                 ),

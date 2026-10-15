@@ -5,6 +5,7 @@ import '../../data/store.dart';
 import '../../logic/format.dart';
 import '../../logic/l10n.dart';
 import '../common.dart';
+import '../app_font.dart';
 
 /// Günün akışı (Timeline) - Liste ve Kompakt Şerit görünümleri ve kayıt düzenleme
 class TodayTimeline extends StatelessWidget {
@@ -48,15 +49,15 @@ class TodayTimeline extends StatelessWidget {
                     const SizedBox(height: 10),
                     Text(
                       s.timelineEmpty,
-                      style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                      style: TextStyle(fontSize: AppFont.subtitle, fontWeight: FontWeight.w600, color: scheme.onSurface),
                       textAlign: TextAlign.center,
                     ),
                     const SizedBox(height: 6),
                     Text(
                       s.isTr
-                          ? 'Yukarıdaki alandan yeni bir aktivite başlatabilir veya hızlı kısayolları kullanabilirsin.'
-                          : 'You can start an activity above or tap one of the quick shortcuts.',
-                      style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant),
+                          ? 'Aşağıdaki kutuya yazarak yeni bir kayıt ekleyebilir veya hızlı kısayolları kullanabilirsin.'
+                          : 'Type in the box below to add an entry, or tap one of the quick shortcuts.',
+                      style: TextStyle(fontSize: AppFont.small, color: scheme.onSurfaceVariant),
                       textAlign: TextAlign.center,
                     ),
                   ],
@@ -161,7 +162,7 @@ class TodayTimeline extends StatelessWidget {
                                 act.name,
                                 style: const TextStyle(
                                   fontWeight: FontWeight.w600,
-                                  fontSize: 13.5,
+                                  fontSize: AppFont.body,
                                   letterSpacing: -0.2,
                                 ),
                                 maxLines: 1,
@@ -186,7 +187,7 @@ class TodayTimeline extends StatelessWidget {
                                         ? '${act.categoryDef.emoji} ${act.categoryDef.name(s.isTr)}'
                                         : ''),
                                 style: TextStyle(
-                                  fontSize: 11.5,
+                                  fontSize: AppFont.caption,
                                   color: scheme.onSurfaceVariant,
                                   fontWeight: FontWeight.w500,
                                 ),
@@ -210,7 +211,7 @@ class TodayTimeline extends StatelessWidget {
                                     Text(
                                       activeTimer.displayDuration,
                                       style: const TextStyle(
-                                        fontSize: 9.5,
+                                        fontSize: AppFont.micro,
                                         color: Colors.green,
                                         fontWeight: FontWeight.bold,
                                       ),
@@ -222,7 +223,7 @@ class TodayTimeline extends StatelessWidget {
                               Text(
                                 timeStr,
                                 style: TextStyle(
-                                  fontSize: 10.5,
+                                  fontSize: AppFont.micro,
                                   fontWeight: FontWeight.w600,
                                   color: scheme.primary.withValues(alpha: 0.85),
                                 ),
@@ -261,7 +262,7 @@ class TodayTimeline extends StatelessWidget {
         final activeTimer = store.getTimerForActivity(act.id);
 
         return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
           elevation: 0,
           color: activeTimer != null
               ? Colors.green.withValues(alpha: 0.08)
@@ -277,13 +278,13 @@ class TodayTimeline extends StatelessWidget {
             onTap: () => _showEntryEditSheet(context, entry),
             onLongPress: () => showActivityEditDialog(context, act),
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
               child: Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   // 1. Sol: Büyük ve net ikon (yuvarlak disk olmadan)
-                  ActivityAvatar(act.id, size: 44),
-                  const SizedBox(width: 14),
+                  ActivityAvatar(act.id, size: 36),
+                  const SizedBox(width: 12),
 
                   // 2. Orta: Bilgiler (Hiyerarşik ve şık)
                   Expanded(
@@ -291,64 +292,44 @@ class TodayTimeline extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Row(
-                          children: [
-                            Flexible(
-                              child: Text(
-                                act.name,
-                                style: const TextStyle(
-                                  fontWeight: FontWeight.w600,
-                                  fontSize: 16,
-                                  letterSpacing: -0.2,
-                                ),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                            if (act.category != null) ...[
-                              const SizedBox(width: 8),
-                              Container(
-                                padding: const EdgeInsets.symmetric(horizontal: 7, vertical: 2),
-                                decoration: BoxDecoration(
-                                  color: act.displayColor.withValues(alpha: 0.14),
-                                  borderRadius: BorderRadius.circular(6),
-                                ),
-                                child: Text(
-                                  '${act.categoryDef.emoji} ${act.categoryDef.name(s.isTr)}',
-                                  style: TextStyle(
-                                    fontSize: 10.5,
-                                    fontWeight: FontWeight.w600,
-                                    color: act.displayColor,
-                                  ),
-                                ),
-                              ),
-                            ],
-                          ],
+                        NameWithCategory(
+                          activity: act,
+                          nameStyle: const TextStyle(
+                            fontWeight: FontWeight.w600,
+                            fontSize: AppFont.subtitle,
+                            letterSpacing: -0.2,
+                          ),
                         ),
                         if (activeTimer != null || detail.isNotEmpty) ...[
                           const SizedBox(height: 3),
                           Row(
                             children: [
                               if (activeTimer != null) ...[
-                                Container(
-                                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.withValues(alpha: 0.15),
-                                    borderRadius: BorderRadius.circular(6),
-                                  ),
-                                  child: Row(
-                                    mainAxisSize: MainAxisSize.min,
-                                    children: [
-                                      const Icon(Icons.timer_outlined, size: 12, color: Colors.green),
-                                      const SizedBox(width: 4),
-                                      Text(
-                                        '${s.isTr ? "Sayaç çalışıyor" : "Timer running"} (${activeTimer.displayDuration})',
-                                        style: const TextStyle(
-                                          fontSize: 11,
-                                          color: Colors.green,
-                                          fontWeight: FontWeight.bold,
+                                // Yalnızca simge ve süre: "Sayaç çalışıyor" yazısı telefon genişliğinde
+                                // satıra sığmıyordu, satırın yeşil çerçevesi de aynı şeyi söylüyor.
+                                Tooltip(
+                                  message: s.isTr ? 'Sayaç çalışıyor' : 'Timer running',
+                                  child: Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                                    decoration: BoxDecoration(
+                                      color: Colors.green.withValues(alpha: 0.15),
+                                      borderRadius: BorderRadius.circular(6),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.timer_outlined, size: 12, color: Colors.green),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          activeTimer.displayDuration,
+                                          style: const TextStyle(
+                                            fontSize: AppFont.micro,
+                                            color: Colors.green,
+                                            fontWeight: FontWeight.bold,
+                                          ),
                                         ),
-                                      ),
-                                    ],
+                                      ],
+                                    ),
                                   ),
                                 ),
                                 if (detail.isNotEmpty) const SizedBox(width: 8),
@@ -360,7 +341,7 @@ class TodayTimeline extends StatelessWidget {
                                     style: TextStyle(
                                       color: scheme.onSurfaceVariant,
                                       fontWeight: FontWeight.w500,
-                                      fontSize: 13,
+                                      fontSize: AppFont.small,
                                     ),
                                     overflow: TextOverflow.ellipsis,
                                   ),
@@ -380,7 +361,7 @@ class TodayTimeline extends StatelessWidget {
                                   style: TextStyle(
                                     fontStyle: FontStyle.italic,
                                     color: scheme.onSurfaceVariant,
-                                    fontSize: 12,
+                                    fontSize: AppFont.caption,
                                   ),
                                   maxLines: 1,
                                   overflow: TextOverflow.ellipsis,
@@ -408,7 +389,7 @@ class TodayTimeline extends StatelessWidget {
                         child: Text(
                           timeStr,
                           style: TextStyle(
-                            fontSize: 12.5,
+                            fontSize: AppFont.small,
                             color: scheme.primary,
                             fontWeight: FontWeight.w700,
                           ),
@@ -419,7 +400,7 @@ class TodayTimeline extends StatelessWidget {
                         Text(
                           fmtAmount(entry.duration!.inMinutes.toDouble(), 'time'),
                           style: TextStyle(
-                            fontSize: 11,
+                            fontSize: AppFont.micro,
                             color: scheme.onSurfaceVariant,
                             fontWeight: FontWeight.w500,
                           ),
@@ -530,7 +511,7 @@ class TodayTimeline extends StatelessWidget {
                               Flexible(
                                 child: Text(
                                   act.name,
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
                                   overflow: TextOverflow.ellipsis,
                                 ),
                               ),
@@ -556,7 +537,7 @@ class TodayTimeline extends StatelessWidget {
                                   ? '${s.isTr ? "Süre Aralığı" : "Interval"}: ${fmtTime(startTime)}–${fmtTime(endTime)} (${fmtDateShort(startTime)})'
                                   : '${s.isTr ? "Eklenme" : "Logged"}: ${fmtTime(refTime)} - ${fmtDateShort(refTime)}',
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: AppFont.caption,
                                 color: Theme.of(c).colorScheme.onSurfaceVariant,
                               ),
                             );
@@ -626,21 +607,21 @@ class TodayTimeline extends StatelessWidget {
                                       TextSpan(
                                         text: s.isTr ? 'Girilen Zaman: ' : 'Entered Time: ',
                                         style: TextStyle(
-                                          fontSize: 12,
+                                          fontSize: AppFont.caption,
                                           color: Theme.of(c).colorScheme.onSurfaceVariant,
                                         ),
                                       ),
                                       TextSpan(
                                         text: fmtTime(refTime),
                                         style: const TextStyle(
-                                          fontSize: 14,
+                                          fontSize: AppFont.body,
                                           fontWeight: FontWeight.bold,
                                         ),
                                       ),
                                       TextSpan(
                                         text: ' (${fmtAmount(durMins.toDouble(), 'time')})',
                                         style: TextStyle(
-                                          fontSize: 12,
+                                          fontSize: AppFont.caption,
                                           color: Theme.of(c).colorScheme.primary,
                                           fontWeight: FontWeight.w600,
                                         ),
@@ -657,7 +638,7 @@ class TodayTimeline extends StatelessWidget {
                                 icon: const Icon(Icons.edit_outlined, size: 14),
                                 label: Text(
                                   s.isTr ? 'Değiştir' : 'Change',
-                                  style: const TextStyle(fontSize: 11.5),
+                                  style: const TextStyle(fontSize: AppFont.caption),
                                 ),
                                 onPressed: () async {
                                   final t = await showTimePicker(
@@ -696,12 +677,12 @@ class TodayTimeline extends StatelessWidget {
                                     children: [
                                       Text(
                                         s.isTr ? 'Başlangıç Al' : 'As Start',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.caption),
                                       ),
                                       Text(
                                         '${fmtTime(refTime)}–${fmtTime(refTime.add(Duration(minutes: durMins)))}',
                                         style: TextStyle(
-                                          fontSize: 10.5,
+                                          fontSize: AppFont.micro,
                                           color: !isEndMode
                                               ? Theme.of(c).colorScheme.onPrimaryContainer
                                               : Theme.of(c).colorScheme.onSurfaceVariant,
@@ -721,12 +702,12 @@ class TodayTimeline extends StatelessWidget {
                                     children: [
                                       Text(
                                         s.isTr ? 'Bitiş Al' : 'As End',
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.caption),
                                       ),
                                       Text(
                                         '${fmtTime(refTime.subtract(Duration(minutes: durMins)))}–${fmtTime(refTime)}',
                                         style: TextStyle(
-                                          fontSize: 10.5,
+                                          fontSize: AppFont.micro,
                                           color: isEndMode
                                               ? Theme.of(c).colorScheme.onPrimaryContainer
                                               : Theme.of(c).colorScheme.onSurfaceVariant,
@@ -759,7 +740,7 @@ class TodayTimeline extends StatelessWidget {
                                 Text(
                                   '${s.isTr ? "Kayıt Aralığı" : "Interval"}: ${fmtTime(startTime)} – ${fmtTime(endTime)}',
                                   style: TextStyle(
-                                    fontSize: 12,
+                                    fontSize: AppFont.caption,
                                     fontWeight: FontWeight.w600,
                                     color: Theme.of(c).colorScheme.primary,
                                   ),
@@ -786,8 +767,7 @@ class TodayTimeline extends StatelessWidget {
                   measureId: measureId,
                   qty: qty,
                   onChanged: (mId, qVal) => setS(() {
-                    measureId = mId;
-                    qty = qVal;
+                    (measureId, qty) = store.entryEditSelection(e, mId, qVal);
                   }),
                 ),
                 const SizedBox(height: 12),
@@ -803,22 +783,25 @@ class TodayTimeline extends StatelessWidget {
                   children: [
                     Icon(Icons.flag_outlined, size: 16, color: Theme.of(c).colorScheme.primary),
                     const SizedBox(width: 6),
-                    Text(
-                      s.linkedGoals,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: Theme.of(c).colorScheme.primary,
+                    Expanded(
+                      child: Text(
+                        s.linkedGoals,
+                        style: TextStyle(
+                          fontSize: AppFont.caption,
+                          fontWeight: FontWeight.w600,
+                          color: Theme.of(c).colorScheme.primary,
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
                       ),
                     ),
-                    const Spacer(),
                     TextButton.icon(
                       style: TextButton.styleFrom(
                         visualDensity: VisualDensity.compact,
                         padding: const EdgeInsets.symmetric(horizontal: 6),
                       ),
                       icon: const Icon(Icons.tune, size: 14),
-                      label: Text(s.isTr ? 'Hedefleri Düzenle' : 'Manage Goals', style: const TextStyle(fontSize: 12)),
+                      label: Text(s.isTr ? 'Hedefleri Düzenle' : 'Manage Goals', style: const TextStyle(fontSize: AppFont.caption)),
                       onPressed: () {
                         Navigator.pop(c);
                         showActivityEditDialog(context, act);
@@ -837,7 +820,7 @@ class TodayTimeline extends StatelessWidget {
                               ? 'Bu aktivite henüz bir hedef veya limite bağlı değil.'
                               : 'This activity is not linked to any goal or limit yet.',
                           style: TextStyle(
-                            fontSize: 12,
+                            fontSize: AppFont.caption,
                             color: Theme.of(c).colorScheme.onSurfaceVariant,
                           ),
                         ),
@@ -859,7 +842,7 @@ class TodayTimeline extends StatelessWidget {
                               ),
                               label: Text(
                                 g.name,
-                                style: const TextStyle(fontSize: 12),
+                                style: const TextStyle(fontSize: AppFont.caption),
                               ),
                             ),
                         ],

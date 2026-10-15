@@ -6,6 +6,8 @@ import '../../data/store.dart';
 import '../../logic/l10n.dart';
 import '../common.dart';
 import '../contribution_heatmap.dart';
+import '../../logic/format.dart';
+import '../app_font.dart';
 
 class HabitsTab extends StatelessWidget {
   const HabitsTab({super.key});
@@ -34,8 +36,13 @@ class HabitsTab extends StatelessWidget {
     }
   }
 
+  // Hedefler sayfası bu listeyi sabit (const) olarak gömer; sayfa yeniden çizilse de sabit bir bileşen
+  // yeniden çizilmez. Liste bu yüzden store'u kendisi dinler: yoksa eklenen ya da silinen öğe, sekmeden
+  // çıkıp geri gelinene kadar ekranda değişmiyordu.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnimatedBuilder(animation: store, builder: (context, _) => _list(context));
+
+  Widget _list(BuildContext context) {
     final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
     final habits = store.habitActivities;
@@ -58,14 +65,14 @@ class HabitsTab extends StatelessWidget {
               const SizedBox(height: 18),
               Text(
                 s.noHabitsTitle,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 8),
               Text(
                 s.noHabitsDesc,
                 textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 13.5),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppFont.body),
               ),
               const SizedBox(height: 20),
               FilledButton.icon(
@@ -108,7 +115,7 @@ class HabitsTab extends StatelessWidget {
                       Text(
                         '$totalHabits',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: AppFont.title,
                           fontWeight: FontWeight.bold,
                           color: scheme.primary,
                         ),
@@ -116,7 +123,7 @@ class HabitsTab extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         s.isTr ? 'Alışkanlık' : 'Habits',
-                        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                        style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -132,7 +139,7 @@ class HabitsTab extends StatelessWidget {
                       Text(
                         '$maxStreak ${s.isTr ? "Gün" : "Days"}',
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: AppFont.title,
                           fontWeight: FontWeight.bold,
                           color: Colors.orange,
                         ),
@@ -140,7 +147,7 @@ class HabitsTab extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         s.longestStreak,
-                        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                        style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -156,7 +163,7 @@ class HabitsTab extends StatelessWidget {
                       Text(
                         '$doneTodayCount / $totalHabits',
                         style: TextStyle(
-                          fontSize: 18,
+                          fontSize: AppFont.title,
                           fontWeight: FontWeight.bold,
                           color: doneTodayCount == totalHabits ? Colors.green : scheme.onSurface,
                         ),
@@ -164,7 +171,7 @@ class HabitsTab extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         s.doneToday,
-                        style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                        style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
                       ),
                     ],
                   ),
@@ -211,32 +218,9 @@ class HabitsTab extends StatelessWidget {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Row(
-                        children: [
-                          Flexible(
-                            child: Text(
-                              habit.name,
-                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                              overflow: TextOverflow.ellipsis,
-                            ),
-                          ),
-                          const SizedBox(width: 6),
-                          Container(
-                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                            decoration: BoxDecoration(
-                              color: habit.displayColor.withValues(alpha: 0.15),
-                              borderRadius: BorderRadius.circular(6),
-                            ),
-                            child: Text(
-                              '${habit.categoryDef.emoji} ${habit.categoryDef.name(s.isTr)}',
-                              style: TextStyle(
-                                fontSize: 10.5,
-                                fontWeight: FontWeight.w600,
-                                color: habit.displayColor,
-                              ),
-                            ),
-                          ),
-                        ],
+                      NameWithCategory(
+                        activity: habit,
+                        nameStyle: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
                       ),
                       const SizedBox(height: 3),
                       Text(
@@ -248,7 +232,7 @@ class HabitsTab extends StatelessWidget {
                                 ? '⏳ Bugün henüz yapılmadı'
                                 : '⏳ Not done yet today'),
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppFont.caption,
                           color: streakInfo.isDoneToday ? Colors.green.shade700 : Colors.orange.shade800,
                           fontWeight: FontWeight.w600,
                         ),
@@ -295,42 +279,45 @@ class HabitsTab extends StatelessWidget {
             ),
             const SizedBox(height: 12),
 
-            // Streak Badges Row (3 KPI cards)
-            Row(
-              children: [
-                Expanded(
-                  child: _buildStreakBadge(
-                    context: context,
-                    icon: '🔥',
-                    title: s.currentStreak,
-                    value: '${streakInfo.currentStreak} ${s.isTr ? "Gün" : "Days"}',
-                    color: Colors.orange,
-                    isHighlighted: streakInfo.currentStreak > 0,
+            // Streak Badges Row (3 KPI cards): başlıklar iki satıra geçebilir, kutular aynı boyda kalır.
+            IntrinsicHeight(
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(
+                    child: _buildStreakBadge(
+                      context: context,
+                      icon: '🔥',
+                      title: s.currentStreak,
+                      value: '${streakInfo.currentStreak} ${s.isTr ? "Gün" : "Days"}',
+                      color: Colors.orange,
+                      isHighlighted: streakInfo.currentStreak > 0,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStreakBadge(
-                    context: context,
-                    icon: '🏆',
-                    title: s.longestStreak,
-                    value: '${streakInfo.longestStreak} ${s.isTr ? "Gün" : "Days"}',
-                    color: Colors.amber,
-                    isHighlighted: streakInfo.longestStreak > 0,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildStreakBadge(
+                      context: context,
+                      icon: '🏆',
+                      title: s.longestStreak,
+                      value: '${streakInfo.longestStreak} ${s.isTr ? "Gün" : "Days"}',
+                      color: Colors.amber,
+                      isHighlighted: streakInfo.longestStreak > 0,
+                    ),
                   ),
-                ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _buildStreakBadge(
-                    context: context,
-                    icon: '📈',
-                    title: s.consistency30,
-                    value: '%${streakInfo.consistencyLast30.round()}',
-                    color: Colors.blue,
-                    isHighlighted: streakInfo.consistencyLast30 > 0,
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: _buildStreakBadge(
+                      context: context,
+                      icon: '📈',
+                      title: s.consistency30,
+                      value: fmtPercent(streakInfo.consistencyLast30.round()),
+                      color: Colors.blue,
+                      isHighlighted: streakInfo.consistencyLast30 > 0,
+                    ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
             const SizedBox(height: 14),
 
@@ -416,32 +403,40 @@ class HabitsTab extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          // Başlık kutunun bütün genişliğini kullanır (simge değerin yanındadır): üç kutu yan yana dururken
+          // simgenin yanında "Mevcut Seri" bile tek kelimesi sığmadan bölünüyordu.
+          Text(
+            title,
+            style: TextStyle(
+              fontSize: AppFont.micro,
+              fontWeight: FontWeight.w600,
+              color: scheme.onSurfaceVariant,
+            ),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          const Spacer(),
+          const SizedBox(height: 3),
           Row(
             children: [
-              Text(icon, style: const TextStyle(fontSize: 12)),
+              Text(icon, style: const TextStyle(fontSize: AppFont.caption)),
               const SizedBox(width: 4),
-              Expanded(
-                child: Text(
-                  title,
-                  style: TextStyle(
-                    fontSize: 9.5,
-                    fontWeight: FontWeight.w600,
-                    color: scheme.onSurfaceVariant,
+              Flexible(
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    value,
+                    maxLines: 1,
+                    style: TextStyle(
+                      fontSize: AppFont.body,
+                      fontWeight: FontWeight.bold,
+                      color: isHighlighted ? color.shade700 : scheme.onSurface,
+                    ),
                   ),
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
-          ),
-          const SizedBox(height: 3),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 13.5,
-              fontWeight: FontWeight.bold,
-              color: isHighlighted ? color.shade700 : scheme.onSurface,
-            ),
           ),
         ],
       ),

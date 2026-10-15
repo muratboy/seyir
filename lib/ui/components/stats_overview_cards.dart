@@ -1,130 +1,171 @@
 import 'package:flutter/material.dart';
 
-import '../../data/models.dart';
 import '../../data/store.dart';
 import '../../logic/format.dart';
 import '../../logic/l10n.dart';
+import '../../logic/period_stats.dart';
+import '../app_font.dart';
+import 'stats_common.dart';
 
-IconData dimIcon(String dim) {
-  switch (dim) {
-    case 'volume':
-      return Icons.water_drop_rounded;
-    case 'mass':
-      return Icons.fitness_center_rounded;
-    case 'time':
-      return Icons.schedule_rounded;
-    case 'count':
-      return Icons.tag_rounded;
-    case 'distance':
-      return Icons.route_rounded;
-    case 'energy':
-      return Icons.bolt_rounded;
-    default:
-      return Icons.interests_rounded;
-  }
-}
-
+/// Dönemin özeti: dört kutu ve altında boyutlara göre toplamlar.
+///
+/// Tüm aktiviteler birlikteyken kutular kayıt sayısı üzerinden konuşur; tek bir aktivite seçiliyken o
+/// aktivitenin miktarını (süre, hacim, mesafe...) öne alır. Gün görünümünde "günlük ortalama" gibi bir güne
+/// uymayan kutuların yerini günün ilk ve son kaydı alır.
 class StatsOverviewCard extends StatelessWidget {
-  final List<Entry> entries;
-  final DateTime from;
-  final DateTime to;
-  final String rangeMode; // 'day', 'week', 'month', 'year'
+  final PeriodStats stats;
+  final bool singleActivity;
+
+  /// Grafikle ortak ölçüt (null = kayıt sayısı); "en yoğun" kutusu grafikteki en uzun çubuğu söyler.
+  final String? metric;
+
+  /// Dönemde kaydı olan farklı aktivite sayısı.
+  final int activityCount;
 
   const StatsOverviewCard({
     super.key,
-    required this.entries,
-    required this.from,
-    required this.to,
-    required this.rangeMode,
+    required this.stats,
+    required this.singleActivity,
+    required this.metric,
+    required this.activityCount,
   });
+
+  bool get _isTr => strings.value.isTr;
+
+  /// Neyle karşılaştırıldığı. Süren dönem, önceki dönemin aynı ana kadarki bölümüyle kıyaslanır.
+  String get _comparedWith {
+    final partial = stats.comparesPartial;
+    return switch (stats.period.range) {
+      StatRange.day => partial
+          ? (_isTr ? 'dün bu saate kadar' : 'yesterday by now:')
+          : (_isTr ? 'önceki gün' : 'previous day:'),
+      StatRange.week => partial
+          ? (_isTr ? 'geçen hafta bu vakte kadar' : 'last week by now:')
+          : (_isTr ? 'önceki hafta' : 'previous week:'),
+      StatRange.month => partial
+          ? (_isTr ? 'geçen ay bu vakte kadar' : 'last month by now:')
+          : (_isTr ? 'önceki ay' : 'previous month:'),
+      StatRange.year => partial
+          ? (_isTr ? 'geçen yıl bu vakte kadar' : 'last year by now:')
+          : (_isTr ? 'önceki yıl' : 'previous year:'),
+    };
+  }
+
+  /// "▲ 2 · geçen hafta bu vakte kadar 4"; kıyaslanacak veri yoksa null.
+  String? _comparison(String? dim) {
+    if (!stats.hasComparison) return null;
+    String plain(double v) => dim == null ? fmtNum(v) : store.fmtBase(v, dim);
+    final before = stats.previous.value(dim);
+    final diff = stats.total.value(dim) - before;
+    final change = diff.abs() < 1e-9
+        ? (_isTr ? 'aynı' : 'same')
+        : '${diff > 0 ? '▲' : '▼'} ${plain(diff.abs())}';
+    return '$change · $_comparedWith ${plain(before)}';
+  }
 
   @override
   Widget build(BuildContext context) {
     final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
+    final total = stats.total;
+    final isDay = stats.period.range == StatRange.day;
+    final mainDim = singleActivity ? total.mainDim : null;
+    final activeDays = _isTr
+        ? '${stats.activeDays} / ${stats.elapsedDays} gün'
+        : '${stats.activeDays} of ${stats.elapsedDays} days';
 
-    final periodTotal = PeriodTotal();
-    for (final e in entries) {
-      periodTotal.add(e, e.unitId != null ? store.unit(e.unitId!) : null);
-    }
+    final countBox = KpiBox(
+      title: s.metricCount,
+      value: '${total.count}',
+      subtitle: mainDim != null
+          ? (isDay ? '' : (_isTr ? '$activeDays aktif' : '$activeDays active'))
+          : (_comparison(null) ??
+              (singleActivity ? '' : (_isTr ? '$activityCount aktivite' : '$activityCount activities'))),
+      icon: metricIcon(null),
+      color: mainDim != null ? Colors.amber.shade700 : scheme.primary,
+    );
 
-    final totalLogs = entries.length;
-    final mainDim = periodTotal.mainDim;
-    final uniqueActivities = entries.map((e) => e.activityId).toSet().length;
+    final busiest = stats.busiestBucket(metric);
+    final busiestBox = KpiBox(
+      title: switch (stats.period.range) {
+        StatRange.day => _isTr ? 'En Yoğun Saat' : 'Busiest Hour',
+        StatRange.week || StatRange.month => _isTr ? 'En Yoğun Gün' : 'Busiest Day',
+        StatRange.year => _isTr ? 'En Yoğun Ay' : 'Busiest Month',
+      },
+      value: busiest == null ? '–' : bucketName(stats.period, busiest),
+      subtitle: busiest == null ? '' : fmtMetric(stats.buckets[busiest].value(metric), metric),
+      icon: Icons.local_fire_department_rounded,
+      color: Colors.deepOrange.shade600,
+    );
 
-    // Period days calculation
-    int periodDays;
-    switch (rangeMode) {
-      case 'day':
-        periodDays = 1;
-        break;
-      case 'week':
-        periodDays = 7;
-        break;
-      case 'month':
-        periodDays = DateTime(from.year, from.month + 1, 0).day;
-        break;
-      case 'year':
-        periodDays = (to.difference(from).inHours / 24).round();
-        break;
-      default:
-        periodDays = 7;
-    }
-    if (periodDays <= 0) periodDays = 1;
+    final first = stats.firstEntry;
+    final last = stats.lastEntry;
+    final firstLastBox = KpiBox(
+      title: _isTr ? 'İlk – Son Kayıt' : 'First – Last Entry',
+      value: first == null || last == null
+          ? '–'
+          : (fmtTime(first) == fmtTime(last) ? fmtTime(first) : '${fmtTime(first)} – ${fmtTime(last)}'),
+      subtitle: '',
+      icon: Icons.schedule_rounded,
+      color: Colors.teal.shade600,
+    );
 
-    final avgPerDay = fmtNum1(totalLogs / periodDays);
+    final boxes = <KpiBox>[
+      if (mainDim != null)
+        KpiBox(
+          title: store.dimName(mainDim),
+          value: store.fmtBase(total.value(mainDim), mainDim),
+          subtitle: _comparison(mainDim) ?? (_isTr ? 'toplam' : 'in total'),
+          icon: dimIcon(mainDim),
+          color: scheme.primary,
+        ),
+      countBox,
+      if (isDay) ...[
+        if (!singleActivity)
+          KpiBox(
+            title: _isTr ? 'Aktivite' : 'Activities',
+            value: '$activityCount',
+            subtitle: _isTr ? 'farklı aktivite' : 'different activities',
+            icon: Icons.category_outlined,
+            color: Colors.amber.shade700,
+          ),
+        firstLastBox,
+      ] else ...[
+        if (mainDim == null)
+          KpiBox(
+            title: _isTr ? 'Aktif Gün' : 'Active Days',
+            value: '${stats.activeDays} / ${stats.elapsedDays}',
+            subtitle: _isTr ? 'kayıt olan gün' : 'days with entries',
+            icon: Icons.event_available_rounded,
+            color: Colors.amber.shade700,
+          ),
+        mainDim == null
+            ? KpiBox(
+                title: s.dailyAverage,
+                value: fmtNum1(total.count / stats.elapsedDays),
+                subtitle: s.entriesPerDay,
+                icon: Icons.trending_up_rounded,
+                color: Colors.teal.shade600,
+              )
+            : KpiBox(
+                title: s.dailyAverage,
+                value: store.fmtBase(total.value(mainDim) / stats.elapsedDays, mainDim),
+                // Her gün yapılmayan bir işte "yaptığım günlerde ne kadar" sorusu ayrı bir bilgidir.
+                subtitle: stats.activeDays > 0 && stats.activeDays < stats.elapsedDays
+                    ? (_isTr
+                        ? 'aktif günlerde ${store.fmtBase(total.value(mainDim) / stats.activeDays, mainDim)}'
+                        : '${store.fmtBase(total.value(mainDim) / stats.activeDays, mainDim)} on active days')
+                    : (_isTr ? 'gün başına' : 'per day'),
+                icon: Icons.trending_up_rounded,
+                color: Colors.teal.shade600,
+              ),
+      ],
+      busiestBox,
+    ];
 
-    // Peak active hour or day
-    String peakText = '-';
-    if (entries.isNotEmpty) {
-      if (rangeMode == 'day') {
-        // Group by 4-hour blocks
-        final counts = List.filled(6, 0);
-        for (final e in entries) {
-          final h = DateTime.fromMillisecondsSinceEpoch(e.ts).hour;
-          counts[h ~/ 4]++;
-        }
-        var maxIdx = 0;
-        for (var i = 1; i < 6; i++) {
-          if (counts[i] > counts[maxIdx]) maxIdx = i;
-        }
-        final startH = maxIdx * 4;
-        peakText = '${startH.toString().padLeft(2, '0')}:00 - ${(startH + 4).toString().padLeft(2, '0')}:00';
-      } else if (rangeMode == 'week') {
-        final dayNames = s.isTr
-            ? ['Pazartesi', 'Salı', 'Çarşamba', 'Perşembe', 'Cuma', 'Cumartesi', 'Pazar']
-            : ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
-        final counts = List.filled(7, 0);
-        for (final e in entries) {
-          final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
-          final diff = dt.difference(from).inDays;
-          if (diff >= 0 && diff < 7) counts[diff]++;
-        }
-        var maxIdx = 0;
-        for (var i = 1; i < 7; i++) {
-          if (counts[i] > counts[maxIdx]) maxIdx = i;
-        }
-        if (counts[maxIdx] > 0) {
-          peakText = '${dayNames[maxIdx]} · ${counts[maxIdx]} ${s.entriesCountSuffix}';
-        }
-      } else {
-        // Most logged activity name
-        final actCounts = <int, int>{};
-        for (final e in entries) {
-          actCounts[e.activityId] = (actCounts[e.activityId] ?? 0) + 1;
-        }
-        var topActId = entries.first.activityId;
-        var maxC = 0;
-        for (final entry in actCounts.entries) {
-          if (entry.value > maxC) {
-            maxC = entry.value;
-            topActId = entry.key;
-          }
-        }
-        final a = store.activity(topActId);
-        peakText = '${a.name} ($maxC)';
-      }
-    }
+    // Kutularda yer almayan boyutların toplamları.
+    final otherDims =
+        availableMetrics(total, singleActivity: singleActivity).whereType<String>().where((d) => d != mainDim);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
@@ -135,117 +176,56 @@ class StatsOverviewCard extends StatelessWidget {
       ),
       color: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
       child: Padding(
-        padding: const EdgeInsets.all(16),
+        padding: const EdgeInsets.all(12),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            // KPI Grid 2x2
-            Row(
-              children: [
-                Expanded(
-                  child: KpiBox(
-                    title: s.totalCount,
-                    value: '$totalLogs',
-                    subtitle: s.isTr
-                        ? '$uniqueActivities aktivite çeşidi'
-                        : '$uniqueActivities activity types',
-                    icon: Icons.playlist_add_check_rounded,
-                    color: scheme.primary,
-                  ),
+            // Kutular ikişerli dizilir; tek kalan kutu satırı kaplar.
+            for (var i = 0; i < boxes.length; i += 2) ...[
+              if (i > 0) const SizedBox(height: 8),
+              IntrinsicHeight(
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: boxes[i]),
+                    if (i + 1 < boxes.length) ...[
+                      const SizedBox(width: 8),
+                      Expanded(child: boxes[i + 1]),
+                    ],
+                  ],
                 ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: KpiBox(
-                    title: mainDim != null
-                        ? store.dimName(mainDim)
-                        : (s.isTr ? 'Toplam Süre' : 'Total Duration'),
-                    value: mainDim != null && periodTotal.byDim[mainDim] != null
-                        ? store.fmtBase(periodTotal.byDim[mainDim]!, mainDim)
-                        : (totalLogs > 0 ? '$totalLogs' : '0'),
-                    subtitle: mainDim != null
-                        ? (s.isTr ? 'Ana odak' : 'Main focus')
-                        : s.metricCount,
-                    icon: dimIcon(mainDim ?? 'time'),
-                    color: Colors.amber.shade700,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 10),
-            Row(
-              children: [
-                Expanded(
-                  child: KpiBox(
-                    title: s.dailyAverage,
-                    value: avgPerDay,
-                    subtitle: s.entriesPerDay,
-                    icon: Icons.trending_up_rounded,
-                    color: Colors.teal.shade600,
-                  ),
-                ),
-                const SizedBox(width: 10),
-                Expanded(
-                  child: KpiBox(
-                    title: s.peakPoint,
-                    value: peakText,
-                    subtitle: s.isTr ? 'En yüksek hacim' : 'Highest volume',
-                    icon: Icons.local_fire_department_rounded,
-                    color: Colors.deepOrange.shade600,
-                  ),
-                ),
-              ],
-            ),
-
-            // Secondary dimensions pill badges
-            if (periodTotal.byDim.length > 1) ...[
-              const SizedBox(height: 12),
-              Divider(
-                height: 1,
-                thickness: 0.5,
-                color: scheme.outlineVariant.withValues(alpha: 0.3),
               ),
+            ],
+            if (otherDims.isNotEmpty) ...[
               const SizedBox(height: 10),
               Wrap(
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  for (final entry in periodTotal.byDim.entries)
-                    if (entry.key != mainDim)
-                      Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-                        decoration: BoxDecoration(
-                          color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                          borderRadius: BorderRadius.circular(10),
-                          border: Border.all(
-                            color: scheme.outlineVariant.withValues(alpha: 0.25),
-                          ),
-                        ),
-                        child: Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(
-                              dimIcon(entry.key),
-                              size: 14,
-                              color: scheme.primary,
-                            ),
-                            const SizedBox(width: 6),
-                            Text(
-                              '${store.dimName(entry.key)}: ',
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: scheme.onSurfaceVariant,
-                              ),
-                            ),
-                            Text(
-                              store.fmtBase(entry.value, entry.key),
-                              style: const TextStyle(
-                                fontSize: 12,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                          ],
-                        ),
+                  for (final dim in otherDims)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.25)),
                       ),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Icon(dimIcon(dim), size: 14, color: scheme.primary),
+                          const SizedBox(width: 6),
+                          Text(
+                            '${store.dimName(dim)}: ',
+                            style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
+                          ),
+                          Text(
+                            store.fmtBase(total.value(dim), dim),
+                            style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold),
+                          ),
+                        ],
+                      ),
+                    ),
                 ],
               ),
             ],
@@ -259,6 +239,8 @@ class StatsOverviewCard extends StatelessWidget {
 class KpiBox extends StatelessWidget {
   final String title;
   final String value;
+
+  /// Boşsa yazılmaz.
   final String subtitle;
   final IconData icon;
   final Color color;
@@ -281,16 +263,7 @@ class KpiBox extends StatelessWidget {
       decoration: BoxDecoration(
         color: scheme.surface,
         borderRadius: BorderRadius.circular(16),
-        border: Border.all(
-          color: scheme.outlineVariant.withValues(alpha: 0.2),
-        ),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withValues(alpha: 0.02),
-            blurRadius: 4,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.2)),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -310,37 +283,45 @@ class KpiBox extends StatelessWidget {
                 child: Text(
                   title,
                   style: TextStyle(
-                    fontSize: 11.5,
+                    fontSize: AppFont.caption,
                     fontWeight: FontWeight.w600,
                     color: scheme.onSurfaceVariant,
                   ),
+                  // Dar ekranda "Günlük Ortalama" tek satıra sığmıyor; kesilmek yerine alt satıra geçer.
+                  maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                 ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text(
-            value,
-            style: TextStyle(
-              fontSize: 19,
-              fontWeight: FontWeight.bold,
-              color: scheme.onSurface,
-              letterSpacing: -0.5,
+          // Uzun değer ("12 Ekim, Pazartesi") kesilmek yerine küçülür.
+          FittedBox(
+            fit: BoxFit.scaleDown,
+            alignment: Alignment.centerLeft,
+            child: Text(
+              value,
+              style: TextStyle(
+                fontSize: AppFont.title,
+                fontWeight: FontWeight.bold,
+                color: scheme.onSurface,
+                letterSpacing: -0.5,
+              ),
+              maxLines: 1,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
           ),
-          const SizedBox(height: 2),
-          Text(
-            subtitle,
-            style: TextStyle(
-              fontSize: 10.5,
-              color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+          if (subtitle.isNotEmpty) ...[
+            const SizedBox(height: 2),
+            Text(
+              subtitle,
+              style: TextStyle(
+                fontSize: AppFont.micro,
+                color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
+              ),
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
             ),
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-          ),
+          ],
         ],
       ),
     );

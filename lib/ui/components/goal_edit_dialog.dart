@@ -6,6 +6,7 @@ import '../../logic/format.dart';
 import '../../logic/l10n.dart';
 import '../../logic/text_match.dart';
 import '../common.dart';
+import '../app_font.dart';
 
 class GoalEditDialog {
   static Future<void> show(BuildContext context, {Goal? existing}) async {
@@ -51,7 +52,7 @@ class GoalEditDialog {
                 Text(
                   s.goalKind,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: AppFont.caption,
                     fontWeight: FontWeight.w600,
                     color: Theme.of(c).colorScheme.primary,
                   ),
@@ -81,7 +82,7 @@ class GoalEditDialog {
                   child: Text(
                     type == 'limit' ? s.goalKindLimitDesc : s.goalKindTargetDesc,
                     style: TextStyle(
-                      fontSize: 11,
+                      fontSize: AppFont.micro,
                       color: Theme.of(c).colorScheme.onSurfaceVariant,
                     ),
                   ),
@@ -91,7 +92,7 @@ class GoalEditDialog {
                 Text(
                   s.goalType,
                   style: TextStyle(
-                    fontSize: 12,
+                    fontSize: AppFont.caption,
                     fontWeight: FontWeight.w600,
                     color: Theme.of(c).colorScheme.primary,
                   ),
@@ -140,6 +141,10 @@ class GoalEditDialog {
                           initialValue: unitId,
                           isExpanded: true,
                           decoration: InputDecoration(labelText: s.unit),
+                          // Kapalıyken yalnızca kısaltma: "Litre (L)" dar ekranda "Litr…" diye kesiliyordu.
+                          selectedItemBuilder: (context) => [
+                            for (final u in store.allUnits) Align(alignment: Alignment.centerLeft, child: Text(u.symbol)),
+                          ],
                           items: [
                             for (final u in store.allUnits)
                               DropdownMenuItem(
@@ -206,7 +211,7 @@ class GoalEditDialog {
                     onTap: () async {
                       final picked = await showDatePicker(
                         context: c,
-                        initialDate: endDate!,
+                        initialDate: endDate,
                         firstDate: DateTime.now(),
                         lastDate: DateTime.now().add(const Duration(days: 3650)),
                       );
@@ -217,16 +222,17 @@ class GoalEditDialog {
 
                 const Divider(height: 24),
 
-                // Connected Activities
-                Row(
+                // Connected Activities: başlık ve düğme yan yana sığmazsa düğme alt satıra geçer (başlık dar
+                // ekranda üç satıra bölünüyordu).
+                Wrap(
+                  alignment: WrapAlignment.spaceBetween,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
-                    Expanded(
-                      child: Text(
-                        s.linkedActivities,
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(c).colorScheme.primary,
-                        ),
+                    Text(
+                      s.linkedActivities,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(c).colorScheme.primary,
                       ),
                     ),
                     TextButton.icon(
@@ -257,7 +263,7 @@ class GoalEditDialog {
                       s.isTr
                           ? 'Henüz aktivite bağlanmadı. Yukarıdan ekleyin (örn: Çay, Su, Yoğurt).'
                           : 'No activities linked yet. Add above.',
-                      style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: 13),
+                      style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: AppFont.small),
                     ),
                   )
                 else
@@ -274,7 +280,7 @@ class GoalEditDialog {
                             children: [
                               Row(
                                 children: [
-                                  Text(act.emoji ?? '🔹', style: const TextStyle(fontSize: 16)),
+                                  Text(act.emoji ?? '🔹', style: const TextStyle(fontSize: AppFont.subtitle)),
                                   const SizedBox(width: 8),
                                   Expanded(
                                     child: Text(
@@ -283,7 +289,7 @@ class GoalEditDialog {
                                     ),
                                   ),
                                   Text(
-                                    '%${link.pct.round()}',
+                                    fmtPercent(link.pct.round()),
                                     style: const TextStyle(fontWeight: FontWeight.bold),
                                   ),
                                   IconButton(
@@ -297,7 +303,7 @@ class GoalEditDialog {
                                 min: 5,
                                 max: 100,
                                 divisions: 19,
-                                label: '%${link.pct.round()}',
+                                label: fmtPercent(link.pct.round()),
                                 onChanged: (val) => setS(() => link.pct = val),
                               ),
                             ],

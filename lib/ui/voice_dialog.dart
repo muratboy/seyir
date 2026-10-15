@@ -3,6 +3,8 @@ import '../data/store.dart';
 import '../logic/l10n.dart';
 import '../services/nl_parser.dart';
 import '../services/voice_service.dart';
+import '../logic/format.dart';
+import 'app_font.dart';
 
 Future<void> showVoiceInputDialog(
   BuildContext context, {
@@ -31,13 +33,22 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
   NlParseResult? _parsedResult;
   late AnimationController _animController;
 
-  final List<String> _quickSamples = [
-    '2 kupa filtre kahve',
-    '1.5 litre su içtim',
-    'ders çalışma kronometre başlat',
-    'kitap okuma 25 dakika pomodoro',
-    '1 porsiyon meyve',
-  ];
+  // Dile göre örnek cümleler.
+  List<String> get _quickSamples => strings.value.isTr
+      ? const [
+          '2 kupa filtre kahve',
+          '1.5 litre su içtim',
+          'ders çalışma kronometre başlat',
+          'kitap okuma 25 dakika pomodoro',
+          '1 porsiyon meyve',
+        ]
+      : const [
+          '2 cups of coffee',
+          'reading 30 min',
+          'study stopwatch',
+          'pomodoro 25 min reading',
+          'countdown 10 min tea',
+        ];
 
   @override
   void initState() {
@@ -150,7 +161,7 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
               const SizedBox(width: 8),
               Text(
                 s.isTr ? 'Sesli / Akıllı Komut' : 'Voice / Smart Command',
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
               ),
               const Spacer(),
               IconButton(
@@ -221,7 +232,7 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
                   ? (s.isTr ? 'Dinleniyor... Şimdi konuşun' : 'Listening... Speak now')
                   : (s.isTr ? 'Mikrofona dokunup konuşun' : 'Tap mic to speak'),
               style: TextStyle(
-                fontSize: 14,
+                fontSize: AppFont.body,
                 color: _isListening ? scheme.primary : scheme.outline,
                 fontWeight: _isListening ? FontWeight.w600 : FontWeight.normal,
               ),
@@ -243,12 +254,12 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
                 children: [
                   Text(
                     s.isTr ? 'Algılanan Ses:' : 'Recognized Voice:',
-                    style: TextStyle(fontSize: 12, color: scheme.outline),
+                    style: TextStyle(fontSize: AppFont.caption, color: scheme.outline),
                   ),
                   const SizedBox(height: 4),
                   Text(
                     '"$_spokenText"',
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                    style: const TextStyle(fontSize: AppFont.subtitle, fontWeight: FontWeight.w600),
                   ),
                 ],
               ),
@@ -274,7 +285,7 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
                       Text(
                         s.isTr ? 'Akıllı Ayrıştırma Sonucu' : 'Smart Parse Result',
                         style: TextStyle(
-                          fontSize: 13,
+                          fontSize: AppFont.small,
                           fontWeight: FontWeight.bold,
                           color: scheme.primary,
                         ),
@@ -287,23 +298,23 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
                           borderRadius: BorderRadius.circular(10),
                         ),
                         child: Text(
-                          '%${(_parsedResult!.confidence * 100).round()} Eşleşme',
-                          style: TextStyle(fontSize: 11, color: scheme.primary, fontWeight: FontWeight.bold),
+                          '${fmtPercent((_parsedResult!.confidence * 100).round())} ${strings.value.isTr ? "Eşleşme" : "match"}',
+                          style: TextStyle(fontSize: AppFont.micro, color: scheme.primary, fontWeight: FontWeight.bold),
                         ),
                       ),
                     ],
                   ),
                   const SizedBox(height: 8),
                   Text(
-                    _parsedResult!.summary,
-                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
+                    _parsedResult!.summaryIn(isTr: strings.value.isTr),
+                    style: const TextStyle(fontSize: AppFont.subtitle, fontWeight: FontWeight.bold),
                   ),
                   if (_parsedResult!.matchedMeasure != null)
                     Padding(
                       padding: const EdgeInsets.only(top: 4),
                       child: Text(
-                        'Ölçü: ${_parsedResult!.matchedMeasure!.name} (${_parsedResult!.matchedMeasure!.amount} ${_parsedResult!.matchedMeasure!.unitId})',
-                        style: TextStyle(fontSize: 12, color: scheme.outline),
+                        '${strings.value.isTr ? "Ölçü" : "Measure"}: ${store.measureLabel(_parsedResult!.matchedMeasure!)}',
+                        style: TextStyle(fontSize: AppFont.caption, color: scheme.outline),
                       ),
                     ),
                 ],
@@ -328,7 +339,7 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
                     : _parsedResult!.actionType == NlActionType.startPomodoro
                         ? (s.isTr ? 'Pomodoro Başlat' : 'Start Pomodoro')
                         : (s.isTr ? 'Onayla ve Kaydet' : 'Confirm and Log'),
-                style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: AppFont.subtitle, fontWeight: FontWeight.bold),
               ),
             ),
           ],
@@ -337,7 +348,7 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
           const SizedBox(height: 16),
           Text(
             s.isTr ? 'Hızlı Komut Örnekleri (Dokun ve Dene):' : 'Quick Samples (Tap to Try):',
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: scheme.outline),
+            style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.w600, color: scheme.outline),
           ),
           const SizedBox(height: 8),
           SingleChildScrollView(
@@ -348,7 +359,7 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: ActionChip(
-                      label: Text(sample, style: const TextStyle(fontSize: 12)),
+                      label: Text(sample, style: const TextStyle(fontSize: AppFont.caption)),
                       onPressed: () => _selectSample(sample),
                     ),
                   ),

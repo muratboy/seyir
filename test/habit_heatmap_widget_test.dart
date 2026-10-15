@@ -102,7 +102,7 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('Henüz Bir Yol Haritası Yok'), findsOneWidget);
-    expect(find.textContaining('AI Kalıbı ile İçe Aktar'), findsOneWidget);
+    expect(find.textContaining('Yapay Zekâ Kalıbıyla İçe Aktar'), findsOneWidget);
   });
 
   test('habitStreakInfo timed activity calculates min 1 min, max >= 60 min levels and tooltips', () {

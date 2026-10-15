@@ -1022,14 +1022,9 @@ void main() {
       expect(trStrings.metricCount, equals('Kayıt'));
       expect(enStrings.metricCount, equals('Entries'));
 
-      expect(trStrings.metricTime, equals('Süre'));
-      expect(enStrings.metricTime, equals('Duration'));
-
-      expect(trStrings.metricVolume, equals('Hacim'));
-      expect(enStrings.metricVolume, equals('Volume'));
-
-      expect(trStrings.privacyCardTitle, contains('Çevrimdışı'));
-      expect(enStrings.privacyCardTitle, contains('Offline'));
+      expect(trStrings.privacyCardTitle, contains('Cihazında'));
+      expect(enStrings.privacyCardTitle, contains('Device'));
+      expect(trStrings.privacyCardSubtitle, contains('yol haritası eklendiğinde'), reason: 'says when the internet is used');
 
       expect(trStrings.timesSuffix, equals('kez'));
       expect(enStrings.timesSuffix, equals('times'));
@@ -1120,17 +1115,13 @@ void main() {
         expect(res.matchedMeasure, isNull);
       });
 
-      test('fmtDaysLeft and fmtRelative support both Turkish and English', () {
+      test('fmtDaysLeft supports both Turkish and English', () {
         expect(fmtDaysLeft(5, isTr: true), equals('5 gün kaldı'));
         expect(fmtDaysLeft(5, isTr: false), equals('5 days left'));
         expect(fmtDaysLeft(0, isTr: true), equals('Bugün son gün'));
         expect(fmtDaysLeft(0, isTr: false), equals('Last day today'));
         expect(fmtDaysLeft(-1, isTr: true), equals('Süre doldu'));
         expect(fmtDaysLeft(-1, isTr: false), equals('Expired'));
-
-        final nowMs = DateTime.now().millisecondsSinceEpoch;
-        expect(fmtRelative(nowMs, isTr: true), equals('az önce'));
-        expect(fmtRelative(nowMs, isTr: false), equals('just now'));
       });
 
       test('AppDb version is upgraded to version 3', () {
@@ -1145,10 +1136,6 @@ void main() {
         expect(en.tabRoadmaps, equals('Roadmaps'));
         expect(tr.roadmapsTitle, equals('Yol Haritaları'));
         expect(en.roadmapsTitle, equals('Roadmaps'));
-        expect(tr.startJourney, equals('Yolculuğu Başlat'));
-        expect(en.startJourney, equals('Start Journey'));
-        expect(tr.journeyActive, equals('Yolculukta'));
-        expect(en.journeyActive, equals('In Progress'));
       });
 
       test('Multiple roadmaps can be simultaneously active and activeRoadmaps returns all of them', () {
@@ -1159,7 +1146,6 @@ void main() {
 
         expect(store.activeRoadmaps.length, equals(2));
         expect(store.activeRoadmaps.map((r) => r.id).toList(), containsAll([1, 2]));
-        expect(store.activeRoadmap?.id, equals(1));
       });
     });
   });

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import '../../data/models.dart';
 import '../../data/store.dart';
 import '../../logic/l10n.dart';
+import '../../logic/format.dart';
+import '../app_font.dart';
 
 class StatsCategoryChart extends StatelessWidget {
   final List<Entry> entries;
@@ -36,12 +38,12 @@ class StatsCategoryChart extends StatelessWidget {
       final pct = (item.$2 / total) * 100;
       return PieChartSectionData(
         value: item.$2.toDouble(),
-        title: pct >= 12 ? '%${pct.round()}' : '',
+        title: pct >= 12 ? fmtPercent(pct.round()) : '',
         color: Color(item.$1.colorValue),
         radius: 34,
         titleStyle: const TextStyle(
           color: Colors.white,
-          fontSize: 11,
+          fontSize: AppFont.micro,
           fontWeight: FontWeight.bold,
         ),
       );
@@ -70,14 +72,18 @@ class StatsCategoryChart extends StatelessWidget {
                   child: Icon(Icons.pie_chart_rounded, size: 18, color: scheme.primary),
                 ),
                 const SizedBox(width: 10),
-                Text(
-                  s.isTr ? 'Kategori Dağılımı' : 'Category Distribution',
-                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                Expanded(
+                  child: Text(
+                    s.isTr ? 'Kategori Dağılımı' : 'Category Distribution',
+                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                  ),
                 ),
-                const Spacer(),
+                const SizedBox(width: 8),
                 Text(
                   '${sortedCats.length} ${s.isTr ? "Kategori" : "Categories"}',
-                  style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant),
+                  style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
                 ),
               ],
             ),
@@ -104,7 +110,7 @@ class StatsCategoryChart extends StatelessWidget {
                           Text(
                             '$total',
                             style: TextStyle(
-                              fontSize: 18,
+                              fontSize: AppFont.title,
                               fontWeight: FontWeight.bold,
                               color: scheme.onSurface,
                             ),
@@ -112,7 +118,7 @@ class StatsCategoryChart extends StatelessWidget {
                           Text(
                             s.metricCount,
                             style: TextStyle(
-                              fontSize: 10,
+                              fontSize: AppFont.micro,
                               color: scheme.onSurfaceVariant,
                             ),
                           ),
@@ -135,6 +141,8 @@ class StatsCategoryChart extends StatelessWidget {
                         child: Column(
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
+                            // Ad, grafiğin yanındaki sütunun bütün genişliğini kullanır; sayı çubuğun yanındadır.
+                            // Sayı adın yanındayken dar ekranda "Beslenme" kelimesi bile sığmayıp bölünüyordu.
                             Row(
                               children: [
                                 Container(
@@ -150,32 +158,40 @@ class StatsCategoryChart extends StatelessWidget {
                                   child: Text(
                                     '${item.$1.emoji} ${item.$1.name(s.isTr)}',
                                     style: const TextStyle(
-                                      fontSize: 12,
+                                      fontSize: AppFont.caption,
                                       fontWeight: FontWeight.w600,
                                     ),
+                                    maxLines: 2,
                                     overflow: TextOverflow.ellipsis,
-                                  ),
-                                ),
-                                Text(
-                                  '${item.$2} (%$pctStr)',
-                                  style: TextStyle(
-                                    fontSize: 11.5,
-                                    fontWeight: FontWeight.bold,
-                                    color: scheme.onSurfaceVariant,
                                   ),
                                 ),
                               ],
                             ),
                             const SizedBox(height: 3),
-                            ClipRRect(
-                              borderRadius: BorderRadius.circular(3),
-                              child: LinearProgressIndicator(
-                                value: ratio,
-                                minHeight: 4,
-                                backgroundColor:
-                                    scheme.surfaceContainerHighest.withValues(alpha: 0.4),
-                                valueColor: AlwaysStoppedAnimation<Color>(catColor),
-                              ),
+                            Row(
+                              children: [
+                                Expanded(
+                                  child: ClipRRect(
+                                    borderRadius: BorderRadius.circular(3),
+                                    child: LinearProgressIndicator(
+                                      value: ratio,
+                                      minHeight: 4,
+                                      backgroundColor:
+                                          scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                                      valueColor: AlwaysStoppedAnimation<Color>(catColor),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                Text(
+                                  '${item.$2} (${fmtPercent(pctStr)})',
+                                  style: TextStyle(
+                                    fontSize: AppFont.caption,
+                                    fontWeight: FontWeight.bold,
+                                    color: scheme.onSurfaceVariant,
+                                  ),
+                                ),
+                              ],
                             ),
                           ],
                         ),

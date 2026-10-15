@@ -9,6 +9,7 @@ import 'components/goal_edit_dialog.dart';
 import 'contribution_heatmap.dart';
 import 'tabs/habits_tab.dart';
 import 'tabs/roadmaps_tab.dart';
+import 'app_font.dart';
 
 enum GoalsPageTab { goals, habits, roadmaps }
 
@@ -67,35 +68,42 @@ class _GoalsPageState extends State<GoalsPage> {
                     segments: [
                       ButtonSegment(
                         value: GoalsPageTab.goals,
-                        label: Text(
-                          s.isTr ? 'Hedefler' : 'Goals',
-                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, letterSpacing: -0.2),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        // Dar ekranda kesilmek yerine sığacak kadar küçülür.
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            s.isTr ? 'Hedefler' : 'Goals',
+                            style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w600, letterSpacing: -0.2),
+                            maxLines: 1,
+                          ),
                         ),
                         icon: const Icon(Icons.flag_outlined, size: 14),
                       ),
                       ButtonSegment(
                         value: GoalsPageTab.habits,
-                        label: Text(
-                          totalHabitsCount == 0
-                              ? (s.isTr ? 'Zinciri Kırma' : 'Habits')
-                              : '${s.isTr ? "Zinciri Kırma" : "Habits"} ($totalHabitsCount)',
-                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, letterSpacing: -0.2),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            totalHabitsCount == 0
+                                ? (s.isTr ? 'Zinciri Kırma' : 'Habits')
+                                : '${s.isTr ? "Zinciri Kırma" : "Habits"} ($totalHabitsCount)',
+                            style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w600, letterSpacing: -0.2),
+                            maxLines: 1,
+                          ),
                         ),
                         icon: const Icon(Icons.local_fire_department_rounded, size: 14),
                       ),
                       ButtonSegment(
                         value: GoalsPageTab.roadmaps,
-                        label: Text(
-                          roadmapsCount == 0
-                              ? s.tabRoadmaps
-                              : '${s.tabRoadmaps} ($roadmapsCount)',
-                          style: const TextStyle(fontSize: 10.5, fontWeight: FontWeight.w600, letterSpacing: -0.2),
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
+                        label: FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(
+                            roadmapsCount == 0
+                                ? s.tabRoadmaps
+                                : '${s.tabRoadmaps} ($roadmapsCount)',
+                            style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w600, letterSpacing: -0.2),
+                            maxLines: 1,
+                          ),
                         ),
                         icon: const Icon(Icons.alt_route_rounded, size: 14),
                       ),
@@ -157,7 +165,7 @@ class _GoalsPageState extends State<GoalsPage> {
                               const SizedBox(height: 12),
                               Text(
                                 s.isTr ? 'Henüz hedef eklenmedi.' : 'No goals created yet.',
-                                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 16),
+                                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppFont.subtitle),
                               ),
                               const SizedBox(height: 12),
                               FilledButton.icon(
@@ -254,7 +262,7 @@ class _GoalsPageState extends State<GoalsPage> {
                             child: Text(
                               goal.name,
                               style: const TextStyle(
-                                fontSize: 17,
+                                fontSize: AppFont.subtitle,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
@@ -279,7 +287,7 @@ class _GoalsPageState extends State<GoalsPage> {
                                   Text(
                                     status.isExceeded ? s.limitExceeded : s.limitWithin,
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: AppFont.micro,
                                       fontWeight: FontWeight.bold,
                                       color: status.isExceeded ? Colors.red.shade900 : Colors.green.shade900,
                                     ),
@@ -303,7 +311,7 @@ class _GoalsPageState extends State<GoalsPage> {
                                   Text(
                                     s.isTr ? 'Tamamlandı' : 'Achieved',
                                     style: TextStyle(
-                                      fontSize: 11,
+                                      fontSize: AppFont.micro,
                                       fontWeight: FontWeight.bold,
                                       color: Colors.green.shade900,
                                     ),
@@ -326,9 +334,9 @@ class _GoalsPageState extends State<GoalsPage> {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              goal.isLimit ? '🛡️ Limit' : '🎯 Hedef',
+                              goal.isLimit ? '🛡️ Limit' : (strings.value.isTr ? '🎯 Hedef' : '🎯 Goal'),
                               style: TextStyle(
-                                fontSize: 11,
+                                fontSize: AppFont.micro,
                                 fontWeight: FontWeight.bold,
                                 color: goal.isLimit ? Colors.orange.shade900 : scheme.onSurfaceVariant,
                               ),
@@ -342,8 +350,8 @@ class _GoalsPageState extends State<GoalsPage> {
                               borderRadius: BorderRadius.circular(6),
                             ),
                             child: Text(
-                              periodNames[goal.period] ?? goal.period.name,
-                              style: TextStyle(fontSize: 11, color: scheme.onSurfaceVariant),
+                              periodName(goal.period, isTr: strings.value.isTr),
+                              style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
                             ),
                           ),
                           if (streak > 1) ...[
@@ -357,7 +365,7 @@ class _GoalsPageState extends State<GoalsPage> {
                               child: Text(
                                 '🔥 $streak ${s.isTr ? "seri" : "streak"}',
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: AppFont.micro,
                                   fontWeight: FontWeight.bold,
                                   color: Colors.orange.shade900,
                                 ),
@@ -410,21 +418,25 @@ class _GoalsPageState extends State<GoalsPage> {
             ),
             const SizedBox(height: 6),
             Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(
-                  goal.isLimit
-                      ? (status.isExceeded
-                          ? '${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym (+${fmtNum(status.exceededAmount)} ${s.exceededAmount})'
-                          : '${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym (${s.remainingLimit}: ${fmtNum(status.remaining)})')
-                      : '${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym',
-                  style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                // Limit hedefinde metin uzundur; dar ekranda ya da büyük yazıda ikinci satıra geçer.
+                Expanded(
+                  child: Text(
+                    goal.isLimit
+                        ? (status.isExceeded
+                            ? '${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym (+${fmtNum(status.exceededAmount)} ${s.exceededAmount})'
+                            : '${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym (${s.remainingLimit}: ${fmtNum(status.remaining)})')
+                        : '${fmtNum(status.value)} / ${fmtNum(goal.target)} $unitSym',
+                    style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppFont.small),
+                  ),
                 ),
+                const SizedBox(width: 8),
                 Text(
-                  '%${(status.ratio * 100).floor()}',
+                  fmtPercent((status.ratio * 100).floor()),
                   style: TextStyle(
                     fontWeight: FontWeight.bold,
-                    fontSize: 13,
+                    fontSize: AppFont.small,
                     color: goal.isLimit
                         ? (status.isExceeded
                             ? Colors.red.shade700
@@ -451,14 +463,14 @@ class _GoalsPageState extends State<GoalsPage> {
                     Expanded(
                       child: Text(
                         '${s.endDate}: ${fmtDate(DateTime.fromMillisecondsSinceEpoch(goal.endDate!), isTr: s.isTr)} (${fmtDaysLeft(status.daysLeft ?? 0, isTr: s.isTr)})',
-                        style: const TextStyle(fontSize: 12),
+                        style: const TextStyle(fontSize: AppFont.caption),
                       ),
                     ),
                     if (status.perDayNeeded != null && status.perDayNeeded! > 0)
                       Text(
                         '~${fmtNum1(status.perDayNeeded!)} $unitSym/${s.isTr ? "gün" : "day"}',
                         style: TextStyle(
-                          fontSize: 12,
+                          fontSize: AppFont.caption,
                           fontWeight: FontWeight.bold,
                           color: scheme.primary,
                         ),
@@ -474,7 +486,7 @@ class _GoalsPageState extends State<GoalsPage> {
               Text(
                 s.linkedActivities,
                 style: TextStyle(
-                  fontSize: 12,
+                  fontSize: AppFont.caption,
                   fontWeight: FontWeight.bold,
                   color: scheme.onSurfaceVariant,
                 ),
@@ -498,12 +510,12 @@ class _GoalsPageState extends State<GoalsPage> {
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            Text(act.emoji ?? '🔹', style: const TextStyle(fontSize: 12)),
+                            Text(act.emoji ?? '🔹', style: const TextStyle(fontSize: AppFont.caption)),
                             const SizedBox(width: 4),
                             Text(
                               act.name,
                               style: TextStyle(
-                                fontSize: 12,
+                                fontSize: AppFont.caption,
                                 fontWeight: FontWeight.w600,
                                 color: act.displayColor,
                               ),
@@ -511,8 +523,8 @@ class _GoalsPageState extends State<GoalsPage> {
                             if (link.pct != 100) ...[
                               const SizedBox(width: 2),
                               Text(
-                                ' (%${fmtNum(link.pct)})',
-                                style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant),
+                                ' (${fmtPercent(fmtNum(link.pct))})',
+                                style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
                               ),
                             ],
                             if (contribVal > 0) ...[
@@ -520,7 +532,7 @@ class _GoalsPageState extends State<GoalsPage> {
                               Text(
                                 '• ${fmtNum(contribVal)} $unitSym',
                                 style: TextStyle(
-                                  fontSize: 11,
+                                  fontSize: AppFont.micro,
                                   fontWeight: FontWeight.bold,
                                   color: scheme.primary,
                                 ),
@@ -565,7 +577,7 @@ class _GoalsPageState extends State<GoalsPage> {
                       child: Text(
                         s.timeSpreadView,
                         style: TextStyle(
-                          fontSize: 12.5,
+                          fontSize: AppFont.small,
                           fontWeight: FontWeight.w600,
                           color: scheme.onSurface,
                         ),
@@ -587,6 +599,12 @@ class _GoalsPageState extends State<GoalsPage> {
               Builder(
                 builder: (c) {
                   final streakInfo = store.goalStreakInfo(goal);
+                  // Seriler hedefin dönemini sayar: haftalık hedefte hafta, aylık hedefte ay.
+                  final (streakUnit, rateLabel) = switch (streakInfo.streakPeriod) {
+                    GoalPeriod.week => (s.isTr ? 'Hafta' : 'wk', s.isTr ? '12H Başarı' : '12 wk Rate'),
+                    GoalPeriod.month => (s.isTr ? 'Ay' : 'mo', s.isTr ? '12A Başarı' : '12 mo Rate'),
+                    _ => (s.isTr ? 'Gün' : 'd', s.isTr ? '30G Başarı' : '30d Rate'),
+                  };
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: [
@@ -595,7 +613,7 @@ class _GoalsPageState extends State<GoalsPage> {
                           Expanded(
                             child: _buildMiniStat(
                               '🔥 ${s.isTr ? "Seri" : "Streak"}',
-                              '${streakInfo.currentStreak} ${s.isTr ? "Gün" : "d"}',
+                              '${streakInfo.currentStreak} $streakUnit',
                               Colors.orange,
                             ),
                           ),
@@ -603,15 +621,15 @@ class _GoalsPageState extends State<GoalsPage> {
                           Expanded(
                             child: _buildMiniStat(
                               '🏆 ${s.longestStreak}',
-                              '${streakInfo.longestStreak} ${s.isTr ? "Gün" : "d"}',
+                              '${streakInfo.longestStreak} $streakUnit',
                               Colors.amber,
                             ),
                           ),
                           const SizedBox(width: 6),
                           Expanded(
                             child: _buildMiniStat(
-                              '📈 ${s.isTr ? "30G Başarı" : "30d Rate"}',
-                              '%${streakInfo.consistencyLast30.round()}',
+                              '📈 $rateLabel',
+                              fmtPercent(streakInfo.consistencyLast30.round()),
                               Colors.blue,
                             ),
                           ),
@@ -651,14 +669,14 @@ class _GoalsPageState extends State<GoalsPage> {
         children: [
           Text(
             title,
-            style: TextStyle(fontSize: 10, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w600),
+            style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w600),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
           const SizedBox(height: 2),
           Text(
             val,
-            style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: color.shade800),
+            style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold, color: color.shade800),
           ),
         ],
       ),

@@ -7,6 +7,8 @@ import 'package:timezone/data/latest_all.dart' as tz;
 import 'package:timezone/timezone.dart' as tz;
 import '../data/models.dart';
 import '../data/store.dart';
+import '../logic/l10n.dart';
+import 'store_sync.dart';
 
 /// Arka planda bildirim aksiyon butonuna basıldığında çağrılan sistem callback'i
 @pragma('vm:entry-point')
@@ -16,6 +18,9 @@ void notificationTapBackground(NotificationResponse notificationResponse) async 
 }
 
 class NotificationService {
+  // Bildirim metinleri arayüz diliyle yazılır (arka plan isolate'larında dil, store.refresh() ile gelir).
+  static bool get _tr => strings.value.isTr;
+
   static final FlutterLocalNotificationsPlugin _plugin = FlutterLocalNotificationsPlugin();
   static bool _initialized = false;
 
@@ -33,7 +38,9 @@ class NotificationService {
         debugPrint('Local timezone setup warning: $e');
       }
 
-      const androidSettings = AndroidInitializationSettings('@mipmap/ic_launcher');
+      // Bildirim simgesi tek renkli ayrı bir çizimdir (res/drawable/ic_stat_takip.xml). Uygulama simgesi
+      // burada kullanılamaz: Android yalnızca saydamlığına bakar ve renkli simgeyi beyaz kare yapar.
+      const androidSettings = AndroidInitializationSettings('ic_stat_takip');
       const initSettings = InitializationSettings(android: androidSettings);
 
       await _plugin.initialize(
@@ -47,10 +54,10 @@ class NotificationService {
       if (androidImpl != null) {
         // 1. Canlı Kronometre & Sayaçlar kanalı (Sessiz, bildirim çubuğunda sürekli)
         await androidImpl.createNotificationChannel(
-          const AndroidNotificationChannel(
+          AndroidNotificationChannel(
             'takip_timers_channel',
-            'Canlı Kronometre & Sayaçlar',
-            description: 'Devam eden kronometre ve geri sayımları gösterir',
+            (_tr ? 'Canlı Kronometre & Sayaçlar' : 'Live Stopwatch & Timers'),
+            description: (_tr ? 'Devam eden kronometre ve geri sayımları gösterir' : 'Shows running stopwatches and countdowns'),
             importance: Importance.low,
             playSound: false,
             enableVibration: false,
@@ -59,10 +66,10 @@ class NotificationService {
 
         // 2. Pomodoro & Sayaç Bitiş Alarmları (Yüksek öncelikli, sesli ve titreşimli)
         await androidImpl.createNotificationChannel(
-          const AndroidNotificationChannel(
+          AndroidNotificationChannel(
             'takip_alarms_channel',
-            'Sayaç ve Pomodoro Alarmları',
-            description: 'Pomodoro ve geri sayım süresi tamamlandığında çalar',
+            (_tr ? 'Sayaç ve Pomodoro Alarmları' : 'Timer and Pomodoro Alarms'),
+            description: (_tr ? 'Pomodoro ve geri sayım süresi tamamlandığında çalar' : 'Rings when a pomodoro or countdown finishes'),
             importance: Importance.max,
             playSound: true,
             enableVibration: true,
@@ -71,20 +78,20 @@ class NotificationService {
 
         // 3. Limit ve Hedef Uyarıları kanalı
         await androidImpl.createNotificationChannel(
-          const AndroidNotificationChannel(
+          AndroidNotificationChannel(
             'takip_alerts_channel',
-            'Limit ve Hedef Uyarıları',
-            description: 'Günlük limit aşımları ve hedef başarı bildirimleri',
+            (_tr ? 'Limit ve Hedef Uyarıları' : 'Limit and Goal Alerts'),
+            description: (_tr ? 'Günlük limit aşımları ve hedef başarı bildirimleri' : 'Daily limit overruns and reached goals'),
             importance: Importance.high,
           ),
         );
 
         // 4. Akıllı Hatırlatıcılar kanalı
         await androidImpl.createNotificationChannel(
-          const AndroidNotificationChannel(
+          AndroidNotificationChannel(
             'takip_reminders_channel',
-            'Akıllı Hatırlatıcılar',
-            description: 'Su ve aktivite hatırlatıcıları',
+            (_tr ? 'Akıllı Hatırlatıcılar' : 'Smart Reminders'),
+            description: (_tr ? 'Su ve aktivite hatırlatıcıları' : 'Water and activity reminders'),
             importance: Importance.defaultImportance,
           ),
         );
@@ -105,8 +112,12 @@ class NotificationService {
     final timerId = int.tryParse(payload ?? '');
     if (timerId == null && actionId != 'alarm_dismiss') return;
 
-    if (store.activities.isEmpty) {
-      await store.load();
+    // Arka plan isolate'ı süreç boyunca yaşar ve kendi AppStore kopyasını taşır. Uygulama bu arada
+    // sayaçları değiştirmiş olabileceği için her aksiyondan önce veriler yeniden okunur.
+    const storeActions = {'timer_pause', 'timer_resume', 'timer_finish', 'alarm_finish'};
+    final changesStore = timerId != null && storeActions.contains(actionId);
+    if (changesStore) {
+      await store.refresh();
     }
 
     if (actionId == 'timer_pause') {
@@ -123,6 +134,9 @@ class NotificationService {
         await cancelTimerAlarm(timerId);
       }
     }
+
+    // Açık duran uygulama, arka planda yapılan değişikliği böyle öğrenir.
+    if (changesStore) StoreSync.notifyChanged();
   }
 
   /// Android 13+ için bildirim izni ister
@@ -174,9 +188,9 @@ class NotificationService {
 
       final title = timers.length == 1
           ? (firstTimer.isRunning
-              ? '$firstAct (Çalışıyor)'
-              : '$firstAct (Duraklatıldı: ${firstTimer.displayDuration})')
-          : '$runningCount/${timers.length} Aktif Zamanlayıcı';
+              ? (_tr ? '$firstAct (Çalışıyor)' : '$firstAct (Running)')
+              : (_tr ? '$firstAct (Duraklatıldı: ${firstTimer.displayDuration})' : '$firstAct (Paused: ${firstTimer.displayDuration})'))
+          : (_tr ? '$runningCount/${timers.length} Aktif Zamanlayıcı' : '$runningCount/${timers.length} Active Timers');
 
       final body = timers.map((t) {
         final act = activities[t.activityId]?.name ?? 'Aktivite';
@@ -201,22 +215,22 @@ class NotificationService {
       // Bildirim aksiyonları (Durdur/Devam Et ve Bitir)
       final actions = <AndroidNotificationAction>[
         if (isRunning)
-          const AndroidNotificationAction(
+          AndroidNotificationAction(
             'timer_pause',
-            '⏸️ Duraklat',
+            (_tr ? '⏸️ Duraklat' : '⏸️ Pause'),
             showsUserInterface: false,
             cancelNotification: false,
           )
         else
-          const AndroidNotificationAction(
+          AndroidNotificationAction(
             'timer_resume',
-            '▶️ Devam Et',
+            (_tr ? '▶️ Devam Et' : '▶️ Resume'),
             showsUserInterface: false,
             cancelNotification: false,
           ),
-        const AndroidNotificationAction(
+        AndroidNotificationAction(
           'timer_finish',
-          '⏹️ Bitir',
+          (_tr ? '⏹️ Bitir' : '⏹️ Finish'),
           showsUserInterface: false,
           cancelNotification: true,
         ),
@@ -224,8 +238,8 @@ class NotificationService {
 
       final androidDetails = AndroidNotificationDetails(
         'takip_timers_channel',
-        'Canlı Kronometre & Sayaçlar',
-        channelDescription: 'Devam eden kronometre ve geri sayımları gösterir',
+        (_tr ? 'Canlı Kronometre & Sayaçlar' : 'Live Stopwatch & Timers'),
+        channelDescription: (_tr ? 'Devam eden kronometre ve geri sayımları gösterir' : 'Shows running stopwatches and countdowns'),
         importance: Importance.low,
         priority: Priority.low,
         ongoing: isRunning,
@@ -249,6 +263,52 @@ class NotificationService {
     }
   }
 
+  /// Sayaç ve Pomodoro alarmlarının kanalı ve ayarları: ses, titreşim, alarm önceliği.
+  static AndroidNotificationDetails _alarmDetails({
+    required bool soundEnabled,
+    List<AndroidNotificationAction>? actions,
+  }) =>
+      AndroidNotificationDetails(
+        'takip_alarms_channel',
+        (_tr ? 'Sayaç ve Pomodoro Alarmları' : 'Timer and Pomodoro Alarms'),
+        channelDescription: (_tr ? 'Pomodoro ve geri sayım süresi tamamlandığında çalar' : 'Rings when a pomodoro or countdown finishes'),
+        importance: Importance.max,
+        priority: Priority.high,
+        playSound: soundEnabled,
+        enableVibration: true,
+        vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]),
+        category: AndroidNotificationCategory.alarm,
+        actions: actions,
+      );
+
+  static const _testNotificationId = 9000;
+
+  /// Ayarlar'daki "Bildirimi Dene": birkaç saniye sonra, sayaç alarmıyla aynı kanaldan ve aynı yoldan (tam
+  /// zamanlı alarm, ses, titreşim) bir deneme bildirimi gönderir. Böylece bildirim izni, alarm izni ve ses tek
+  /// seferde sınanır. Sayaçla bağı olmadığı için üzerinde "Bitir & Kaydet" gibi düğmeler yoktur.
+  static Future<void> scheduleTestNotification({
+    bool soundEnabled = true,
+    Duration after = const Duration(seconds: 3),
+  }) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    await init();
+    try {
+      await _plugin.zonedSchedule(
+        _testNotificationId,
+        _tr ? '🔔 Deneme Bildirimi' : '🔔 Test Notification',
+        _tr
+            ? 'Bildirimler çalışıyor; bir sayaç bittiğinde de böyle haber verilir.'
+            : 'Notifications work; this is how you will hear that a timer has finished.',
+        tz.TZDateTime.now(tz.local).add(after),
+        NotificationDetails(android: _alarmDetails(soundEnabled: soundEnabled)),
+        androidScheduleMode: AndroidScheduleMode.exactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation: UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } catch (e) {
+      debugPrint('Error scheduling test notification: $e');
+    }
+  }
+
   /// Pomodoro veya Geri Sayım bittiğinde çalacak alarmı tam zamanına planlar
   static Future<void> scheduleTimerAlarm({
     required int timerId,
@@ -265,47 +325,36 @@ class NotificationService {
       final finishTime = tz.TZDateTime.now(tz.local).add(Duration(milliseconds: remainingMs));
       final alarmId = 10000 + timerId;
 
-      final title = isPomodoro ? '🍅 Pomodoro Tamamlandı!' : '⏱️ Süre Doldu!';
+      final title = isPomodoro ? (_tr ? '🍅 Pomodoro Tamamlandı!' : '🍅 Pomodoro Completed!') : (_tr ? '⏱️ Süre Doldu!' : '⏱️ Time is Up!');
       final body = autoSaveEnabled
-          ? '$activityName oturumu tamamlandı ve otomatik kaydedildi.'
-          : '$activityName için hedeflenen süre tamamlandı. Oturumu kaydetmek için dokun.';
+          ? (_tr ? '$activityName oturumu tamamlandı ve otomatik kaydedildi.' : 'The $activityName session is complete and was saved automatically.')
+          : (_tr ? '$activityName için hedeflenen süre tamamlandı. Oturumu kaydetmek için dokun.' : 'The target time for $activityName is over. Tap to save the session.');
 
       final actions = autoSaveEnabled
-          ? const [
+          ? [
               AndroidNotificationAction(
                 'alarm_dismiss',
-                'Tamam',
+                (_tr ? 'Tamam' : 'OK'),
                 showsUserInterface: false,
                 cancelNotification: true,
               ),
             ]
-          : const [
+          : [
               AndroidNotificationAction(
                 'alarm_finish',
-                '⏹️ Bitir & Kaydet',
+                (_tr ? '⏹️ Bitir & Kaydet' : '⏹️ Finish & Save'),
                 showsUserInterface: true,
                 cancelNotification: true,
               ),
               AndroidNotificationAction(
                 'alarm_dismiss',
-                'Kapat',
+                (_tr ? 'Kapat' : 'Dismiss'),
                 showsUserInterface: false,
                 cancelNotification: true,
               ),
             ];
 
-      final androidDetails = AndroidNotificationDetails(
-        'takip_alarms_channel',
-        'Sayaç ve Pomodoro Alarmları',
-        channelDescription: 'Pomodoro ve geri sayım süresi tamamlandığında çalar',
-        importance: Importance.max,
-        priority: Priority.high,
-        playSound: soundEnabled,
-        enableVibration: true,
-        vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]),
-        category: AndroidNotificationCategory.alarm,
-        actions: actions,
-      );
+      final androidDetails = _alarmDetails(soundEnabled: soundEnabled, actions: actions);
 
       await _plugin.zonedSchedule(
         alarmId,
@@ -334,23 +383,15 @@ class NotificationService {
     if (kIsWeb || !Platform.isAndroid) return;
     await init();
     try {
-      final title = isPomodoro ? '🍅 Pomodoro Tamamlandı!' : '⏱️ Süre Doldu!';
-      final body = '$activityName oturumu tamamlandı ve otomatik kaydedildi.';
+      final title = isPomodoro ? (_tr ? '🍅 Pomodoro Tamamlandı!' : '🍅 Pomodoro Completed!') : (_tr ? '⏱️ Süre Doldu!' : '⏱️ Time is Up!');
+      final body = (_tr ? '$activityName oturumu tamamlandı ve otomatik kaydedildi.' : 'The $activityName session is complete and was saved automatically.');
 
-      final androidDetails = AndroidNotificationDetails(
-        'takip_alarms_channel',
-        'Sayaç ve Pomodoro Alarmları',
-        channelDescription: 'Pomodoro ve geri sayım süresi tamamlandığında çalar',
-        importance: Importance.max,
-        priority: Priority.high,
-        playSound: soundEnabled,
-        enableVibration: true,
-        vibrationPattern: Int64List.fromList([0, 1000, 500, 1000]),
-        category: AndroidNotificationCategory.alarm,
-        actions: const [
+      final androidDetails = _alarmDetails(
+        soundEnabled: soundEnabled,
+        actions: [
           AndroidNotificationAction(
             'alarm_dismiss',
-            'Tamam',
+            (_tr ? 'Tamam' : 'OK'),
             showsUserInterface: false,
             cancelNotification: true,
           ),
@@ -398,20 +439,20 @@ class NotificationService {
           if (id > 3106) break;
           final scheduledDate = _nextInstanceOfTime(hour, 0);
 
-          const androidDetails = AndroidNotificationDetails(
+          final androidDetails = AndroidNotificationDetails(
             'takip_reminders_channel',
-            'Akıllı Hatırlatıcılar',
-            channelDescription: 'Su ve aktivite hatırlatıcıları',
+            (_tr ? 'Akıllı Hatırlatıcılar' : 'Smart Reminders'),
+            channelDescription: (_tr ? 'Su ve aktivite hatırlatıcıları' : 'Water and activity reminders'),
             importance: Importance.defaultImportance,
             priority: Priority.defaultPriority,
           );
 
           await _plugin.zonedSchedule(
             id,
-            '💧 Su İçme Vakti',
-            'Günün hedefine ulaşmak için bir bardak su içmeyi unutma!',
+            (_tr ? '💧 Su İçme Vakti' : '💧 Time for Water'),
+            (_tr ? 'Günün hedefine ulaşmak için bir bardak su içmeyi unutma!' : 'Remember a glass of water to reach your goal for today!'),
             scheduledDate,
-            const NotificationDetails(android: androidDetails),
+            NotificationDetails(android: androidDetails),
             androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
             uiLocalNotificationDateInterpretation:
                 UILocalNotificationDateInterpretation.absoluteTime,
@@ -429,20 +470,20 @@ class NotificationService {
         final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 30) : 30;
         final scheduledDate = _nextInstanceOfTime(hour, minute);
 
-        const androidDetails = AndroidNotificationDetails(
+        final androidDetails = AndroidNotificationDetails(
           'takip_reminders_channel',
-          'Akıllı Hatırlatıcılar',
-          channelDescription: 'Su ve aktivite hatırlatıcıları',
+          (_tr ? 'Akıllı Hatırlatıcılar' : 'Smart Reminders'),
+          channelDescription: (_tr ? 'Su ve aktivite hatırlatıcıları' : 'Water and activity reminders'),
           importance: Importance.defaultImportance,
           priority: Priority.defaultPriority,
         );
 
         await _plugin.zonedSchedule(
           3200,
-          '📋 Günlük Takip Özeti',
-          'Günün bitmeden aktivitelerini kaydettin mi? Bugün neler yaptığını kontrol et.',
+          (_tr ? '📋 Günlük Takip Özeti' : '📋 Daily Tracking Summary'),
+          (_tr ? 'Günün bitmeden aktivitelerini kaydettin mi? Bugün neler yaptığını kontrol et.' : 'Have you logged your activities before the day ends? Check what you did today.'),
           scheduledDate,
-          const NotificationDetails(android: androidDetails),
+          NotificationDetails(android: androidDetails),
           androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
           uiLocalNotificationDateInterpretation:
               UILocalNotificationDateInterpretation.absoluteTime,
@@ -468,10 +509,10 @@ class NotificationService {
     if (kIsWeb || !Platform.isAndroid) return;
     await init();
     try {
-      const androidDetails = AndroidNotificationDetails(
+      final androidDetails = AndroidNotificationDetails(
         'takip_alerts_channel',
-        'Limit ve Hedef Uyarıları',
-        channelDescription: 'Günlük limit aşımları ve hedef başarı bildirimleri',
+        (_tr ? 'Limit ve Hedef Uyarıları' : 'Limit and Goal Alerts'),
+        channelDescription: (_tr ? 'Günlük limit aşımları ve hedef başarı bildirimleri' : 'Daily limit overruns and reached goals'),
         importance: Importance.high,
         priority: Priority.high,
       );
@@ -479,7 +520,7 @@ class NotificationService {
         2001,
         title,
         body,
-        const NotificationDetails(android: androidDetails),
+        NotificationDetails(android: androidDetails),
       );
     } catch (e) {
       debugPrint('Error showing limit alert: $e');
@@ -490,10 +531,10 @@ class NotificationService {
     if (kIsWeb || !Platform.isAndroid) return;
     await init();
     try {
-      const androidDetails = AndroidNotificationDetails(
+      final androidDetails = AndroidNotificationDetails(
         'takip_reminders_channel',
-        'Akıllı Hatırlatıcılar',
-        channelDescription: 'Su ve aktivite hatırlatıcıları',
+        (_tr ? 'Akıllı Hatırlatıcılar' : 'Smart Reminders'),
+        channelDescription: (_tr ? 'Su ve aktivite hatırlatıcıları' : 'Water and activity reminders'),
         importance: Importance.defaultImportance,
         priority: Priority.defaultPriority,
       );
@@ -501,7 +542,7 @@ class NotificationService {
         3001,
         title,
         body,
-        const NotificationDetails(android: androidDetails),
+        NotificationDetails(android: androidDetails),
       );
     } catch (e) {
       debugPrint('Error showing reminder: $e');

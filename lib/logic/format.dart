@@ -1,12 +1,35 @@
 import 'package:intl/intl.dart';
 
 import '../data/models.dart';
+import 'l10n.dart';
 
-final _num = NumberFormat('#,##0.##', 'tr_TR');
-final _num1 = NumberFormat('#,##0.#', 'tr_TR');
+final _numTr = NumberFormat('#,##0.##', 'tr_TR');
+final _num1Tr = NumberFormat('#,##0.#', 'tr_TR');
+final _numEn = NumberFormat('#,##0.##', 'en_US');
+final _num1En = NumberFormat('#,##0.#', 'en_US');
 
-String fmtNum(double v) => _num.format(v);
-String fmtNum1(double v) => _num1.format(v);
+// Sayılar, yüzdeler ve birim kısaltmaları arayüz diline göre yazılır.
+bool get _isTr => strings.value.isTr;
+
+String fmtNum(double v) => (_isTr ? _numTr : _numEn).format(v);
+String fmtNum1(double v) => (_isTr ? _num1Tr : _num1En).format(v);
+
+/// Yüzde: Türkçede "%62", İngilizcede "62%".
+String fmtPercent(Object pct) => _isTr ? '%$pct' : '$pct%';
+
+/// Kaç kez yapıldığını söyleyen sayının birimi ("5 kez" / "5 times").
+String get timesWord => _isTr ? 'kez' : 'times';
+
+/// [n] sayısıyla birlikte yazılan hâli: İngilizcede tekil ve çoğul ayrılır ("1 time", "3 times").
+String timesUnit(num n) => _isTr ? 'kez' : (n == 1 ? 'time' : 'times');
+
+/// Kayıt sayısı, adıyla: "5 kayıt" / "1 entry", "5 entries".
+String entriesText(int n) =>
+    _isTr ? '${fmtNum(n.toDouble())} kayıt' : '${fmtNum(n.toDouble())} ${n == 1 ? 'entry' : 'entries'}';
+
+/// Saat ve dakika kısaltmaları ("sa"/"h", "dk"/"min").
+String get hourWord => _isTr ? 'sa' : 'h';
+String get minuteWord => _isTr ? 'dk' : 'min';
 
 DateTime dayStart(DateTime d) => DateTime(d.year, d.month, d.day);
 DateTime dayEnd(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59, 999);
@@ -20,6 +43,10 @@ bool sameDay(DateTime a, DateTime b) =>
     a.year == b.year && a.month == b.month && a.day == b.day;
 
 String dayKey(DateTime d) => DateFormat('yyyy-MM-dd').format(d);
+
+/// İki tarih arasındaki takvim günü sayısı (yaz saati geçişlerinden etkilenmez).
+int calendarDaysBetween(DateTime a, DateTime b) =>
+    DateTime.utc(b.year, b.month, b.day).difference(DateTime.utc(a.year, a.month, a.day)).inDays;
 
 String fmtTime(DateTime d) => DateFormat.Hm('tr_TR').format(d);
 String fmtDate(DateTime d, {bool isTr = true}) =>
@@ -37,19 +64,6 @@ String fmtDayTitle(DateTime d, {bool isTr = true}) {
   return DateFormat('d MMMM EEEE', isTr ? 'tr_TR' : 'en_US').format(d);
 }
 
-String fmtRelative(int ts, {bool isTr = true}) {
-  final d = DateTime.fromMillisecondsSinceEpoch(ts);
-  final now = DateTime.now();
-  final diff = now.difference(d);
-  if (diff.inMinutes < 1) return isTr ? 'az önce' : 'just now';
-  if (diff.inMinutes < 60) return isTr ? '${diff.inMinutes} dk önce' : '${diff.inMinutes} min ago';
-  if (sameDay(d, now)) return isTr ? 'bugün ${fmtTime(d)}' : 'today ${fmtTime(d)}';
-  final days = dayStart(now).difference(dayStart(d)).inDays;
-  if (days == 1) return isTr ? 'dün' : 'yesterday';
-  if (days < 7) return isTr ? '$days gün önce' : '$days days ago';
-  return fmtDateShort(d, isTr: isTr);
-}
-
 /// Temel birimdeki (L, g, dk, m, adet...) miktarı okunaklı biçimde yazar.
 String fmtAmount(double base, String dim, {Unit? customUnit}) {
   switch (dim) {
@@ -60,24 +74,23 @@ String fmtAmount(double base, String dim, {Unit? customUnit}) {
       if (base.abs() >= 1000) return '${fmtNum(base / 1000)} kg';
       return '${fmtNum1(base)} g';
     case 'time':
-      if (base.abs() < 1) return '${(base * 60).round()} sn';
-      if (base.abs() < 60) return '${fmtNum1(base)} dk';
+      final (sec, min, hour) = _isTr ? ('sn', 'dk', 'sa') : ('s', 'min', 'h');
+      if (base.abs() < 1) return '${(base * 60).round()} $sec';
+      if (base.abs() < 60) return '${fmtNum1(base)} $min';
       final h = base ~/ 60;
       final m = (base - h * 60).round();
-      return m == 0 ? '$h sa' : '$h sa $m dk';
+      return m == 0 ? '$h $hour' : '$h $hour $m $min';
     case 'distance':
       if (base.abs() >= 1000) return '${fmtNum(base / 1000)} km';
       return '${fmtNum1(base)} m';
     case 'count':
-      return '${fmtNum(base)} adet';
+      return '${fmtNum(base)} ${_isTr ? 'adet' : 'pcs'}';
     case 'energy':
       return '${fmtNum1(base)} kcal';
     default:
       return '${fmtNum(base)} ${customUnit?.symbol ?? ''}'.trim();
   }
 }
-
-String fmtInUnit(double v, Unit u) => '${fmtNum(v)} ${u.symbol}';
 
 String fmtDaysLeft(int days, {bool isTr = true}) {
   if (days < 0) return isTr ? 'Süre doldu' : 'Expired';

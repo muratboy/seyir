@@ -1,7 +1,12 @@
 import 'package:flutter/material.dart';
 import '../data/models.dart';
 import '../data/store.dart';
+import '../logic/format.dart';
 import '../logic/l10n.dart';
+import 'common.dart';
+import 'components/roadmap_share_sheet.dart';
+import 'components/roadmap_step_progress.dart';
+import 'app_font.dart';
 
 class RoadmapDetailPage extends StatefulWidget {
   final int roadmapId;
@@ -37,8 +42,13 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
 
         return Scaffold(
           appBar: AppBar(
-            title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 18)),
+            title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.title)),
             actions: [
+              IconButton(
+                tooltip: s.isTr ? 'Paylaş' : 'Share',
+                icon: const Icon(Icons.share_outlined),
+                onPressed: () => showRoadmapShareSheet(context, r),
+              ),
               PopupMenuButton<String>(
                 onSelected: (val) async {
                   if (val == 'reset') {
@@ -117,16 +127,18 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                               color: scheme.primary.withValues(alpha: 0.12),
                               borderRadius: BorderRadius.circular(16),
                             ),
-                            child: Text(r.emoji, style: const TextStyle(fontSize: 32)),
+                            child: Text(r.emoji, style: const TextStyle(fontSize: AppFont.hero)),
                           ),
                           const SizedBox(width: 14),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                Row(
+                                Wrap(
+                                  spacing: 6,
+                                  runSpacing: 4,
                                   children: [
-                                    if (r.category.isNotEmpty) ...[
+                                    if (r.category.isNotEmpty)
                                       Container(
                                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                                         decoration: BoxDecoration(
@@ -136,21 +148,19 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                                         child: Text(
                                           r.category,
                                           style: TextStyle(
-                                            fontSize: 11,
+                                            fontSize: AppFont.micro,
                                             fontWeight: FontWeight.w600,
                                             color: scheme.onSurfaceVariant,
                                           ),
                                         ),
                                       ),
-                                      const SizedBox(width: 6),
-                                    ],
                                     _buildStatusBadge(r, s.isTr),
                                   ],
                                 ),
                                 const SizedBox(height: 6),
                                 Text(
                                   r.title,
-                                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                  style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
                                 ),
                               ],
                             ),
@@ -161,7 +171,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                         const SizedBox(height: 12),
                         Text(
                           r.description,
-                          style: TextStyle(fontSize: 13, color: scheme.onSurfaceVariant, height: 1.4),
+                          style: TextStyle(fontSize: AppFont.small, color: scheme.onSurfaceVariant, height: 1.4),
                         ),
                       ],
                       const SizedBox(height: 16),
@@ -172,11 +182,11 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                         children: [
                           Text(
                             s.isTr ? 'Rota İlerlemesi' : 'Route Progress',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
                           ),
                           Text(
-                            '%${r.progressPercent} (${r.completedStepsCount}/${r.totalSteps})',
-                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: scheme.primary),
+                            '${fmtPercent(r.progressPercent)} (${r.completedStepsCount}/${r.totalSteps})',
+                            style: TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small, color: scheme.primary),
                           ),
                         ],
                       ),
@@ -206,9 +216,14 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  Text(
-                    s.isTr ? '🗺️ Rota Durakları & Hedefler' : '🗺️ Route Waypoints & Goals',
-                    style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                  // Dar ekranda ya da büyük yazıda düğmeyle yan yana sığmaz: taşmak yerine kısalır.
+                  Expanded(
+                    child: Text(
+                      s.isTr ? '🗺️ Rota Durakları & Hedefler' : '🗺️ Route Waypoints & Goals',
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                   ),
                   TextButton.icon(
                     icon: const Icon(Icons.add, size: 18),
@@ -234,7 +249,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                 ...List.generate(sortedSteps.length, (idx) {
                   final step = sortedSteps[idx];
                   final isLast = idx == sortedSteps.length - 1;
-                  return _buildStepTimelineItem(step, idx + 1, isLast, scheme, s.isTr);
+                  return _buildStepTimelineItem(r, step, idx + 1, isLast, scheme, s.isTr);
                 }),
             ],
           ),
@@ -253,7 +268,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
         ),
         child: Text(
           isTr ? '🏆 Tamamlandı' : '🏆 Completed',
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.green),
+          style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.bold, color: Colors.green),
         ),
       );
     }
@@ -266,7 +281,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
         ),
         child: Text(
           isTr ? '🚀 Yolculukta' : '🚀 In Journey',
-          style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.orange),
+          style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.bold, color: Colors.orange),
         ),
       );
     }
@@ -278,7 +293,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
       ),
       child: Text(
         isTr ? '⏳ Başlatılmadı' : '⏳ Not Started',
-        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.grey),
+        style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w600, color: Colors.grey),
       ),
     );
   }
@@ -350,6 +365,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
   }
 
   Widget _buildStepTimelineItem(
+    Roadmap roadmap,
     RoadmapStep step,
     int displayIndex,
     bool isLast,
@@ -357,6 +373,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
     bool isTr,
   ) {
     final isDone = step.isCompleted;
+    final linked = store.activities[step.linkedActivityId];
 
     return IntrinsicHeight(
       child: Row(
@@ -386,7 +403,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                           '$displayIndex',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 13,
+                            fontSize: AppFont.small,
                             color: scheme.onSurface,
                           ),
                         ),
@@ -428,7 +445,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                           step.title,
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
-                            fontSize: 14.5,
+                            fontSize: AppFont.body,
                             decoration: isDone ? TextDecoration.lineThrough : null,
                             color: isDone ? scheme.onSurface.withValues(alpha: 0.6) : scheme.onSurface,
                           ),
@@ -442,23 +459,47 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                         ),
                         child: Text(
                           step.isGoal
-                              ? (step.target != null ? '${step.target} ${step.unit ?? ""}' : (isTr ? "Hedef" : "Goal"))
+                              ? (step.target != null
+                                  ? '${fmtNum(step.target!)} ${step.unit ?? ""}'.trim()
+                                  : (isTr ? "Hedef" : "Goal"))
                               : (isTr ? '✓ Görev' : '✓ Task'),
                           style: TextStyle(
-                            fontSize: 10.5,
+                            fontSize: AppFont.micro,
                             fontWeight: FontWeight.bold,
                             color: step.isGoal ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
                           ),
                         ),
                       ),
+                      _buildStepMenu(step, linked, isTr),
                     ],
                   ),
+                  if (linked != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.link_rounded, size: 14, color: scheme.primary),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            store.activityLabel(linked.id),
+                            style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.w600, color: scheme.primary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    // Bağlı aktivitenin kayıtları bu adımı doldurur ve tamamlar.
+                    const SizedBox(height: 6),
+                    StepProgressLine(roadmap: roadmap, step: step),
+                  ],
                   if (step.description.isNotEmpty) ...[
                     const SizedBox(height: 6),
                     Text(
                       step.description,
                       style: TextStyle(
-                        fontSize: 12.5,
+                        fontSize: AppFont.small,
                         color: scheme.onSurfaceVariant,
                         height: 1.35,
                       ),
@@ -473,6 +514,49 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
     );
   }
 
+  /// Adımın menüsü: aktivite bağlama ve silme.
+  Widget _buildStepMenu(RoadmapStep step, Activity? linked, bool isTr) {
+    return PopupMenuButton<String>(
+      // Varsayılan 48 dp'lik düğme kartları gereksiz uzatır.
+      padding: EdgeInsets.zero,
+      tooltip: isTr ? 'Adım seçenekleri' : 'Step options',
+      child: const Padding(
+        padding: EdgeInsets.fromLTRB(8, 4, 0, 4),
+        child: Icon(Icons.more_vert, size: 20),
+      ),
+      onSelected: (value) async {
+        if (value == 'link') {
+          final act = await showActivityPicker(
+            context,
+            title: isTr ? 'Adıma Bağlanacak Aktivite' : 'Activity for This Step',
+          );
+          if (act != null) await store.setRoadmapStepActivity(step.id, act.id);
+        } else if (value == 'unlink') {
+          await store.setRoadmapStepActivity(step.id, null);
+        } else if (value == 'delete') {
+          final ok = await confirm(
+            context,
+            isTr ? 'Adımı Sil' : 'Delete Step',
+            isTr ? '"${step.title}" adımı silinsin mi?' : 'Delete the step "${step.title}"?',
+            ok: isTr ? 'Sil' : 'Delete',
+          );
+          if (ok) await store.deleteRoadmapStep(step.roadmapId, step.id);
+        }
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(
+          value: 'link',
+          child: Text(linked == null
+              ? (isTr ? 'Aktivite bağla' : 'Link an activity')
+              : (isTr ? 'Bağlı aktiviteyi değiştir' : 'Change linked activity')),
+        ),
+        if (linked != null)
+          PopupMenuItem(value: 'unlink', child: Text(isTr ? 'Bağlantıyı kaldır' : 'Remove link')),
+        PopupMenuItem(value: 'delete', child: Text(isTr ? 'Adımı sil' : 'Delete step')),
+      ],
+    );
+  }
+
   Future<void> _showAddStepDialog(BuildContext context, Roadmap r) async {
     final s = strings.value;
     final titleController = TextEditingController();
@@ -480,6 +564,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
     String type = 'task';
     final targetController = TextEditingController();
     final unitController = TextEditingController();
+    Activity? linkedActivity;
 
     await showDialog(
       context: context,
@@ -509,12 +594,49 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                     ),
                     const SizedBox(height: 12),
                     SegmentedButton<String>(
+                      // Onay işareti "Ölçüsüz Görev"i iki satıra bölüyordu; seçim dolgu rengiyle görünür.
+                      showSelectedIcon: false,
                       segments: [
                         ButtonSegment(value: 'task', label: Text(s.isTr ? 'Ölçüsüz Görev' : 'Task')),
                         ButtonSegment(value: 'goal', label: Text(s.isTr ? 'Ölçülü Hedef' : 'Goal')),
                       ],
                       selected: {type},
                       onSelectionChanged: (val) => setDialogState(() => type = val.first),
+                    ),
+                    const SizedBox(height: 8),
+                    // İsteğe bağlı: bağlanan aktivitenin kayıtları adımı doldurur ve tamamlar.
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.link_rounded, size: 18),
+                        label: Text(
+                          linkedActivity == null
+                              ? (s.isTr ? 'Aktivite bağla (isteğe bağlı)' : 'Link an activity (optional)')
+                              : store.activityLabel(linkedActivity!.id),
+                        ),
+                        onPressed: () async {
+                          final act = await showActivityPicker(
+                            context,
+                            title: s.isTr ? 'Adıma Bağlanacak Aktivite' : 'Activity for This Step',
+                          );
+                          if (act != null) setDialogState(() => linkedActivity = act);
+                        },
+                      ),
+                    ),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: Padding(
+                        padding: const EdgeInsets.only(left: 12),
+                        child: Text(
+                          s.isTr
+                              ? 'Bağlı aktivitenin kayıtları bu adımı kendiliğinden doldurur ve tamamlar.'
+                              : 'Entries of the linked activity fill and complete this step on their own.',
+                          style: TextStyle(
+                            fontSize: AppFont.micro,
+                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
                     ),
                     if (type == 'goal') ...[
                       const SizedBox(height: 12),
@@ -524,7 +646,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                             child: TextField(
                               controller: targetController,
                               keyboardType: TextInputType.number,
-                              decoration: InputDecoration(labelText: s.isTr ? 'Miktar' : 'Target'),
+                              decoration: InputDecoration(labelText: s.isTr ? 'Toplam Miktar' : 'Total Target'),
                             ),
                           ),
                           const SizedBox(width: 8),
@@ -559,6 +681,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                       target: targetVal,
                       unit: unitVal.isEmpty ? null : unitVal,
                       isCompleted: false,
+                      linkedActivityId: linkedActivity?.id,
                     );
 
                     await store.addRoadmapStep(r.id, newStep);

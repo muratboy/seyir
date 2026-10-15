@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../logic/format.dart';
 import '../logic/l10n.dart';
+import 'app_font.dart';
 
 /// GitHub stili katkı / alışkanlık ısı haritası (Contributions Heatmap)
 class ContributionHeatmap extends StatefulWidget {
@@ -143,14 +144,20 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                     return SizedBox(
                       height: rowHeight,
                       width: 24,
-                      child: Text(
-                        dayNames[r],
-                        style: TextStyle(
-                          fontSize: 9.5,
-                          fontWeight: FontWeight.w600,
-                          color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+                      // Büyük yazıda "Cum" bu dar sütuna sığmayınca iki satıra bölünüyordu; küçülerek sığar.
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        alignment: Alignment.topRight,
+                        child: Text(
+                          dayNames[r],
+                          maxLines: 1,
+                          style: TextStyle(
+                            fontSize: AppFont.micro,
+                            fontWeight: FontWeight.w600,
+                            color: scheme.onSurfaceVariant.withValues(alpha: 0.65),
+                          ),
+                          textAlign: TextAlign.end,
                         ),
-                        textAlign: TextAlign.end,
                       ),
                     );
                   }),
@@ -180,7 +187,7 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                                 child: Text(
                                   entry.value,
                                   style: TextStyle(
-                                    fontSize: 10.5,
+                                    fontSize: AppFont.micro,
                                     fontWeight: FontWeight.w600,
                                     color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                                   ),
@@ -325,7 +332,7 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                           child: Text(
                             '${fmtDateShort(_selectedDate!)}: ${_selectedTooltip ?? "$_selectedCount ${s.isTr ? "kayıt" : "logs"}"}',
                             style: TextStyle(
-                              fontSize: 11.5,
+                              fontSize: AppFont.caption,
                               fontWeight: FontWeight.bold,
                               color: scheme.onSurface,
                             ),
@@ -337,7 +344,7 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                   : Text(
                       '${widget.dailyCounts.length} ${s.totalActiveDays.toLowerCase()}',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: AppFont.micro,
                         color: scheme.onSurfaceVariant,
                       ),
                     ),
@@ -351,7 +358,7 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                   Text(
                     s.heatmapLess,
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: AppFont.micro,
                       color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                     ),
                   ),
@@ -379,7 +386,7 @@ class _ContributionHeatmapState extends State<ContributionHeatmap> {
                   Text(
                     s.heatmapMore,
                     style: TextStyle(
-                      fontSize: 10,
+                      fontSize: AppFont.micro,
                       color: scheme.onSurfaceVariant.withValues(alpha: 0.8),
                     ),
                   ),

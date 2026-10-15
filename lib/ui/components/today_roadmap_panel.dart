@@ -6,6 +6,8 @@ import '../../logic/format.dart';
 import '../../logic/l10n.dart';
 import '../common.dart';
 import '../roadmap_detail_page.dart';
+import 'roadmap_step_progress.dart';
+import '../app_font.dart';
 
 /// Günün Akışı (TodayPage) üzerinde yer alan, aktif yol haritalarının SADECE sıradaki
 /// hedef veya aktivitelerini gösteren dinamik panel. Sık Yapılanlar ile Günün Akışı arasında konumlanır.
@@ -25,6 +27,7 @@ class TodayRoadmapPanel extends StatelessWidget {
 
     final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
+    final collapsed = store.isSectionCollapsed('roadmap');
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
@@ -33,8 +36,11 @@ class TodayRoadmapPanel extends StatelessWidget {
         children: [
           SectionTitle(
             s.activeRoadmapTargets,
-            trailing: roadmapsWithStep.length > 1
-                ? Container(
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (roadmapsWithStep.length > 1 || collapsed)
+                  Container(
                     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
                     decoration: BoxDecoration(
                       color: scheme.primary.withValues(alpha: 0.12),
@@ -43,16 +49,19 @@ class TodayRoadmapPanel extends StatelessWidget {
                     child: Text(
                       '${roadmapsWithStep.length} ${s.isTr ? "Aktif Harita" : "Active"}',
                       style: TextStyle(
-                        fontSize: 11,
+                        fontSize: AppFont.micro,
                         fontWeight: FontWeight.bold,
                         color: scheme.primary,
                       ),
                     ),
-                  )
-                : null,
+                  ),
+                const SectionToggle('roadmap'),
+              ],
+            ),
           ),
-          for (final roadmap in roadmapsWithStep)
-            _buildActiveStepCard(context, roadmap, roadmap.currentPendingStep!),
+          if (!collapsed)
+            for (final roadmap in roadmapsWithStep)
+              _buildActiveStepCard(context, roadmap, roadmap.currentPendingStep!),
         ],
       ),
     );
@@ -61,6 +70,7 @@ class TodayRoadmapPanel extends StatelessWidget {
   Widget _buildActiveStepCard(BuildContext context, Roadmap roadmap, RoadmapStep step) {
     final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
+    final linked = store.activities.containsKey(step.linkedActivityId);
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
@@ -92,18 +102,18 @@ class TodayRoadmapPanel extends StatelessWidget {
                       color: scheme.primary.withValues(alpha: 0.1),
                       borderRadius: BorderRadius.circular(8),
                     ),
-                    child: Text(roadmap.emoji, style: const TextStyle(fontSize: 16)),
+                    child: Text(roadmap.emoji, style: const TextStyle(fontSize: AppFont.subtitle)),
                   ),
                   const SizedBox(width: 8),
                   Expanded(
                     child: Text(
                       roadmap.title,
                       style: TextStyle(
-                        fontSize: 13,
+                        fontSize: AppFont.small,
                         fontWeight: FontWeight.bold,
                         color: scheme.onSurface,
                       ),
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -116,7 +126,7 @@ class TodayRoadmapPanel extends StatelessWidget {
                     child: Text(
                       '${s.nextStep} ${step.order}/${roadmap.totalSteps}',
                       style: const TextStyle(
-                        fontSize: 10.5,
+                        fontSize: AppFont.micro,
                         fontWeight: FontWeight.bold,
                         color: Colors.orange,
                       ),
@@ -160,7 +170,7 @@ class TodayRoadmapPanel extends StatelessWidget {
                         Text(
                           step.title,
                           style: TextStyle(
-                            fontSize: 14,
+                            fontSize: AppFont.body,
                             fontWeight: FontWeight.w600,
                             decoration: step.isCompleted ? TextDecoration.lineThrough : null,
                           ),
@@ -171,10 +181,11 @@ class TodayRoadmapPanel extends StatelessWidget {
                             step.description,
                             maxLines: 2,
                             overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: 11.5, color: scheme.onSurfaceVariant),
+                            style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
                           ),
                         ],
-                        if (step.isGoal && step.target != null) ...[
+                        // Aktiviteye bağlı adımın hedefi aşağıdaki ilerleme satırında yazar.
+                        if (!linked && step.isGoal && step.target != null) ...[
                           const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -185,7 +196,7 @@ class TodayRoadmapPanel extends StatelessWidget {
                             child: Text(
                               '${s.isTr ? "🎯 Hedef:" : "🎯 Target:"} ${fmtNum(step.target!)} ${step.unit ?? ""}',
                               style: TextStyle(
-                                fontSize: 10.5,
+                                fontSize: AppFont.micro,
                                 fontWeight: FontWeight.w600,
                                 color: scheme.primary,
                               ),
@@ -195,12 +206,21 @@ class TodayRoadmapPanel extends StatelessWidget {
                       ],
                     ),
                   ),
-                  if (step.linkedActivityId != null) ...[
-                    const SizedBox(width: 6),
-                    _buildLinkedActivityAction(context, step),
-                  ],
                 ],
               ),
+              // Aktiviteye bağlı adım kayıtlarla ilerler: ne kadarının dolduğu ve aktiviteyi kaydetme kısayolu,
+              // başlığın hizasında ve kartın bütün genişliğinde gösterilir. Başlığın yanına konduklarında uzun
+              // bir aktivite adı başlığı birkaç harflik bir sütuna sıkıştırıyordu.
+              if (linked) ...[
+                Padding(
+                  padding: const EdgeInsets.only(left: 38, top: 8),
+                  child: StepProgressLine(roadmap: roadmap, step: step),
+                ),
+                Padding(
+                  padding: const EdgeInsets.only(left: 38, top: 6),
+                  child: _buildLinkedActivityAction(context, step),
+                ),
+              ],
             ],
           ),
         ),
@@ -213,24 +233,31 @@ class TodayRoadmapPanel extends StatelessWidget {
     final act = store.activity(step.linkedActivityId!);
 
     return Row(
-      mainAxisSize: MainAxisSize.min,
       children: [
-        ActionChip(
-          visualDensity: VisualDensity.compact,
-          avatar: Text(act.emoji ?? '⚡', style: const TextStyle(fontSize: 12)),
-          label: Text(act.name, style: const TextStyle(fontSize: 11)),
-          onPressed: () async {
-            await store.quickLogHabit(act.id);
-            if (context.mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(
-                  content: Text(s.isTr ? '✓ "${act.name}" kaydedildi!' : '✓ "${act.name}" logged!'),
-                  duration: const Duration(seconds: 2),
-                  behavior: SnackBarBehavior.floating,
-                ),
-              );
-            }
-          },
+        // Uzun bir aktivite adı kısaltılır; satırı taşırmaz.
+        Flexible(
+          child: ActionChip(
+            visualDensity: VisualDensity.compact,
+            avatar: Text(act.emoji ?? '⚡', style: const TextStyle(fontSize: AppFont.caption)),
+            label: Text(
+              act.name,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontSize: AppFont.micro),
+            ),
+            onPressed: () async {
+              await store.quickLogHabit(act.id);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(s.isTr ? '✓ "${act.name}" kaydedildi!' : '✓ "${act.name}" logged!'),
+                    duration: const Duration(seconds: 2),
+                    behavior: SnackBarBehavior.floating,
+                  ),
+                );
+              }
+            },
+          ),
         ),
         if (onStartTimer != null) ...[
           const SizedBox(width: 2),

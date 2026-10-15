@@ -3,6 +3,10 @@ import '../../data/models.dart';
 import '../../data/store.dart';
 import '../../logic/l10n.dart';
 import '../roadmap_detail_page.dart';
+import 'roadmap_share_sheet.dart';
+import 'roadmap_step_progress.dart';
+import '../../logic/format.dart';
+import '../app_font.dart';
 
 class RoadmapCard extends StatelessWidget {
   final Roadmap roadmap;
@@ -15,6 +19,7 @@ class RoadmapCard extends StatelessWidget {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
     final nextStep = roadmap.currentPendingStep;
+    final nextProgress = nextStep == null ? null : store.stepProgress(roadmap, nextStep);
 
     return Card(
       margin: const EdgeInsets.only(bottom: 12),
@@ -50,16 +55,19 @@ class RoadmapCard extends StatelessWidget {
                       color: scheme.primary.withValues(alpha: 0.12),
                       borderRadius: BorderRadius.circular(14),
                     ),
-                    child: Text(roadmap.emoji, style: const TextStyle(fontSize: 24)),
+                    child: Text(roadmap.emoji, style: const TextStyle(fontSize: AppFont.display)),
                   ),
                   const SizedBox(width: 12),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Row(
+                        // Dar ekranda ya da büyük yazıda iki etiket yan yana sığmazsa alt alta geçer.
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 4,
                           children: [
-                            if (roadmap.category.isNotEmpty) ...[
+                            if (roadmap.category.isNotEmpty)
                               Container(
                                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                                 decoration: BoxDecoration(
@@ -69,22 +77,20 @@ class RoadmapCard extends StatelessWidget {
                                 child: Text(
                                   roadmap.category,
                                   style: TextStyle(
-                                    fontSize: 10.5,
+                                    fontSize: AppFont.micro,
                                     fontWeight: FontWeight.w600,
                                     color: scheme.onSurfaceVariant,
                                   ),
                                 ),
                               ),
-                              const SizedBox(width: 6),
-                            ],
                             _buildBadge(roadmap, s.isTr),
                           ],
                         ),
                         const SizedBox(height: 4),
                         Text(
                           roadmap.title,
-                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                          maxLines: 1,
+                          style: const TextStyle(fontSize: AppFont.subtitle, fontWeight: FontWeight.bold),
+                          maxLines: 2,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ],
@@ -98,11 +104,10 @@ class RoadmapCard extends StatelessWidget {
                           context,
                           MaterialPageRoute(builder: (_) => RoadmapDetailPage(roadmapId: roadmap.id)),
                         );
+                      } else if (val == 'share') {
+                        await showRoadmapShareSheet(context, roadmap);
                       } else if (val == 'reset') {
-                        for (final st in roadmap.steps) {
-                          await store.toggleRoadmapStep(st.id, completed: false);
-                        }
-                        await store.setRoadmapStatus(roadmap.id, 'not_started');
+                        await store.resetRoadmapProgress(roadmap.id);
                       } else if (val == 'delete') {
                         final confirm = await showDialog<bool>(
                           context: context,
@@ -138,6 +143,16 @@ class RoadmapCard extends StatelessWidget {
                         ),
                       ),
                       PopupMenuItem(
+                        value: 'share',
+                        child: Row(
+                          children: [
+                            const Icon(Icons.share_outlined, size: 18),
+                            const SizedBox(width: 8),
+                            Text(s.isTr ? 'Paylaş' : 'Share'),
+                          ],
+                        ),
+                      ),
+                      PopupMenuItem(
                         value: 'reset',
                         child: Row(
                           children: [
@@ -169,12 +184,12 @@ class RoadmapCard extends StatelessWidget {
                 children: [
                   Text(
                     '${roadmap.completedStepsCount}/${roadmap.totalSteps} ${s.isTr ? "Adım Tamamlandı" : "Steps Done"}',
-                    style: TextStyle(fontSize: 12, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w500),
+                    style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant, fontWeight: FontWeight.w500),
                   ),
                   Text(
-                    '%${roadmap.progressPercent}',
+                    fmtPercent(roadmap.progressPercent),
                     style: TextStyle(
-                      fontSize: 12.5,
+                      fontSize: AppFont.small,
                       fontWeight: FontWeight.bold,
                       color: roadmap.isCompleted ? Colors.green : scheme.primary,
                     ),
@@ -214,11 +229,25 @@ class RoadmapCard extends StatelessWidget {
                       Expanded(
                         child: Text(
                           '${s.isTr ? "Sıradaki:" : "Next:"} ${nextStep.title}',
-                          style: TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: scheme.onSurface),
+                          style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.w600, color: scheme.onSurface),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                         ),
                       ),
+                      // Bağlı aktivitenin kayıtlarıyla ne kadarının dolduğu.
+                      if (nextProgress != null && (nextStep.target ?? 0) > 0) ...[
+                        const SizedBox(width: 8),
+                        // Uzun bir birim ya da büyük yazı satırı taşırmasın: sayıya ayrılan yer sınırlıdır.
+                        ConstrainedBox(
+                          constraints: const BoxConstraints(maxWidth: 150),
+                          child: Text(
+                            stepProgressText(nextProgress),
+                            style: TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w700, color: scheme.primary),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
                     ],
                   ),
                 ),
@@ -306,7 +335,7 @@ class RoadmapCard extends StatelessWidget {
         ),
         child: Text(
           isTr ? '🏆 Tamamlandı' : '🏆 Done',
-          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.green),
+          style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.bold, color: Colors.green),
         ),
       );
     }
@@ -319,7 +348,7 @@ class RoadmapCard extends StatelessWidget {
         ),
         child: Text(
           isTr ? '🚀 Yolculukta' : '🚀 In Journey',
-          style: const TextStyle(fontSize: 10, fontWeight: FontWeight.bold, color: Colors.orange),
+          style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.bold, color: Colors.orange),
         ),
       );
     }
@@ -331,7 +360,7 @@ class RoadmapCard extends StatelessWidget {
       ),
       child: Text(
         isTr ? '⏳ Başlatılmadı' : '⏳ Ready',
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600, color: Colors.grey),
+        style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w600, color: Colors.grey),
       ),
     );
   }

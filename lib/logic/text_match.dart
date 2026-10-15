@@ -83,6 +83,8 @@ double matchScore(String q, String n) {
     }
     for (final c in cands) {
       final dist = levenshtein(q, c);
+      // Yazım hatası sayılması için aday aynı harfle başlamalıdır; yoksa "kitap" yazınca "gitar" da önerilir.
+      if (q[0] != c[0]) continue;
       final sim = 1.0 - dist / max(q.length, c.length);
       if (sim > best) best = sim;
       if (dist <= 1 && best < 0.6) best = 0.6;

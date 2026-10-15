@@ -122,6 +122,14 @@ class AppDb {
     } catch (_) {}
   }
 
+  /// Adımın "kendiliğinden tamamlandı" ve "elle açık bırakıldı" işaretleri. Yalnızca eklenen sütunlardır ve
+  /// eski sürümler onları görmezden gelir; bu yüzden sürüm numarası yükseltilmeden, açılışta yoksa eklenirler.
+  /// Sürüm yükseltilseydi aynı veritabanını uygulamanın daha eski bir derlemesi artık açamazdı.
+  static Future<void> _ensureRoadmapStepColumns(DatabaseExecutor db) async {
+    await ensureColumn(db, 'roadmap_steps', 'auto_completed', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(db, 'roadmap_steps', 'kept_open', 'INTEGER NOT NULL DEFAULT 0');
+  }
+
   static Future<void> ensureUpToDate(DatabaseExecutor db) async {
     // onOpen yalnızca eksik temel tabloların varlığını teyit eder; log kirleten gereksiz ALTER çalıştırmaz
     await db.execute('''CREATE TABLE IF NOT EXISTS settings(
@@ -153,7 +161,10 @@ class AppDb {
       type TEXT NOT NULL DEFAULT 'task',
       target REAL,
       unit TEXT,
-      linked_activity_id INTEGER)''');
+      linked_activity_id INTEGER,
+      auto_completed INTEGER NOT NULL DEFAULT 0,
+      kept_open INTEGER NOT NULL DEFAULT 0)''');
+    await _ensureRoadmapStepColumns(db);
   }
 
   static Future<void> createSchema(DatabaseExecutor db) async {
@@ -219,7 +230,9 @@ class AppDb {
       type TEXT NOT NULL DEFAULT 'task',
       target REAL,
       unit TEXT,
-      linked_activity_id INTEGER)''');
+      linked_activity_id INTEGER,
+      auto_completed INTEGER NOT NULL DEFAULT 0,
+      kept_open INTEGER NOT NULL DEFAULT 0)''');
   }
 
   static Future<void> seed(DatabaseExecutor db) async {

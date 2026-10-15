@@ -48,6 +48,21 @@ const builtinUnits = <Unit>[
   Unit(id: 'kcal', name: 'Kalori', symbol: 'kcal', dim: 'energy', factor: 1, builtin: true),
 ];
 
+/// Hazır birimlerin İngilizce arayüzdeki adları ve kısaltmaları (kimlikler aynıdır).
+const builtinUnitsEn = <Unit>[
+  Unit(id: 'ml', name: 'Millilitre', symbol: 'ml', dim: 'volume', factor: 0.001, builtin: true),
+  Unit(id: 'l', name: 'Litre', symbol: 'L', dim: 'volume', factor: 1, builtin: true),
+  Unit(id: 'g', name: 'Gram', symbol: 'g', dim: 'mass', factor: 1, builtin: true),
+  Unit(id: 'kg', name: 'Kilogram', symbol: 'kg', dim: 'mass', factor: 1000, builtin: true),
+  Unit(id: 'sn', name: 'Second', symbol: 's', dim: 'time', factor: 1 / 60, builtin: true),
+  Unit(id: 'dk', name: 'Minute', symbol: 'min', dim: 'time', factor: 1, builtin: true),
+  Unit(id: 'sa', name: 'Hour', symbol: 'h', dim: 'time', factor: 60, builtin: true),
+  Unit(id: 'adet', name: 'Piece', symbol: 'pcs', dim: 'count', factor: 1, builtin: true),
+  Unit(id: 'm', name: 'Metre', symbol: 'm', dim: 'distance', factor: 1, builtin: true),
+  Unit(id: 'km', name: 'Kilometre', symbol: 'km', dim: 'distance', factor: 1000, builtin: true),
+  Unit(id: 'kcal', name: 'Calorie', symbol: 'kcal', dim: 'energy', factor: 1, builtin: true),
+];
+
 const dimNames = <String, String>{
   'volume': 'Hacim',
   'mass': 'Ağırlık',
@@ -55,6 +70,15 @@ const dimNames = <String, String>{
   'count': 'Adet',
   'distance': 'Mesafe',
   'energy': 'Enerji',
+};
+
+const dimNamesEn = <String, String>{
+  'volume': 'Volume',
+  'mass': 'Weight',
+  'time': 'Duration',
+  'count': 'Count',
+  'distance': 'Distance',
+  'energy': 'Energy',
 };
 
 /// Kullanıcının tanımladığı ölçü: "Demlik = 0,7 L", "Çay bardağı = 0,1 L".
@@ -274,6 +298,16 @@ const periodNames = <GoalPeriod, String>{
   GoalPeriod.total: 'Toplam',
 };
 
+const periodNamesEn = <GoalPeriod, String>{
+  GoalPeriod.day: 'Daily',
+  GoalPeriod.week: 'Weekly',
+  GoalPeriod.month: 'Monthly',
+  GoalPeriod.total: 'Total',
+};
+
+String periodName(GoalPeriod period, {required bool isTr}) =>
+    (isTr ? periodNames : periodNamesEn)[period] ?? period.name;
+
 class GoalLink {
   int activityId;
   double pct; // 100 = tam katkı, 50 = yarısı
@@ -476,7 +510,6 @@ class ActiveTimer {
   }
 
   double get elapsedSeconds => elapsedMs / 1000.0;
-  double get elapsedMinutes => elapsedMs / 60000.0;
 
   DateTime get startTime => DateTime.fromMillisecondsSinceEpoch(startTs);
 
@@ -557,6 +590,7 @@ class ActiveTimer {
     int? targetMs,
     bool? isCollapsed,
     bool clearLastResumeTs = false,
+    bool clearNote = false,
     List<TimerSegment>? segments,
   }) {
     return ActiveTimer(
@@ -566,7 +600,7 @@ class ActiveTimer {
       accumulatedMs: accumulatedMs ?? this.accumulatedMs,
       lastResumeTs: clearLastResumeTs ? null : (lastResumeTs ?? this.lastResumeTs),
       isRunning: isRunning ?? this.isRunning,
-      note: note ?? this.note,
+      note: clearNote ? null : (note ?? this.note),
       mode: mode ?? this.mode,
       targetMs: targetMs ?? this.targetMs,
       isCollapsed: isCollapsed ?? this.isCollapsed,
@@ -757,6 +791,15 @@ class RoadmapStep {
   String? unit;
   int? linkedActivityId;
 
+  /// Adımı, bağlı aktivitenin kayıtları hedefe ulaştığı için uygulama tamamladıysa true; kullanıcı elle
+  /// işaretlediyse false. Kayıt silinip hedefin altına düşülünce yalnızca böyle tamamlanmış adım yeniden
+  /// açılır.
+  bool autoCompleted;
+
+  /// Kullanıcı, hedefi dolmuş adımın işaretini elle kaldırdıysa true: adım yeniden elle işaretlenene kadar
+  /// uygulama onu kendiliğinden tamamlamaz. Yoksa kaldırılan işaret bir sonraki kayıtta geri gelirdi.
+  bool keptOpen;
+
   RoadmapStep({
     this.id = 0,
     this.roadmapId = 0,
@@ -769,6 +812,8 @@ class RoadmapStep {
     this.target,
     this.unit,
     this.linkedActivityId,
+    this.autoCompleted = false,
+    this.keptOpen = false,
   });
 
   bool get isTask => type == 'task';
@@ -786,6 +831,8 @@ class RoadmapStep {
         'target': target,
         'unit': unit,
         'linked_activity_id': linkedActivityId,
+        'auto_completed': autoCompleted ? 1 : 0,
+        'kept_open': keptOpen ? 1 : 0,
       };
 
   factory RoadmapStep.fromMap(Map<String, Object?> m) => RoadmapStep(
@@ -800,6 +847,8 @@ class RoadmapStep {
         target: (m['target'] as num?)?.toDouble(),
         unit: m['unit'] as String?,
         linkedActivityId: m['linked_activity_id'] as int?,
+        autoCompleted: ((m['auto_completed'] as int?) ?? 0) == 1,
+        keptOpen: ((m['kept_open'] as int?) ?? 0) == 1,
       );
 }
 

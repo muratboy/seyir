@@ -5,7 +5,9 @@ import '../../data/store.dart';
 import '../../logic/l10n.dart';
 import '../components/roadmap_card.dart';
 import '../components/roadmap_import_dialog.dart';
+import '../components/roadmap_link_dialog.dart';
 import '../roadmap_detail_page.dart';
+import '../app_font.dart';
 
 class RoadmapsTab extends StatelessWidget {
   const RoadmapsTab({super.key});
@@ -16,11 +18,14 @@ class RoadmapsTab extends StatelessWidget {
 
     showModalBottomSheet(
       context: context,
+      // Sayfa içeriği kadar uzar: küçük telefonda varsayılan yükseklik üç seçeneğe yetmiyordu.
+      isScrollControlled: true,
       shape: const RoundedRectangleBorder(
         borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
       ),
       builder: (ctx) => SafeArea(
-        child: Padding(
+        // Üç seçenek, küçük telefonda büyük yazıyla sayfanın yüksekliğine sığmayabilir.
+        child: SingleChildScrollView(
           padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -30,7 +35,7 @@ class RoadmapsTab extends StatelessWidget {
                 padding: const EdgeInsets.symmetric(horizontal: 12),
                 child: Text(
                   s.newRoadmap,
-                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                  style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
                 ),
               ),
               const SizedBox(height: 16),
@@ -44,18 +49,43 @@ class RoadmapsTab extends StatelessWidget {
                   child: Icon(Icons.auto_awesome_rounded, color: scheme.primary),
                 ),
                 title: Text(
-                  s.isTr ? 'AI Kalıbı ile İçe Aktar (Önerilen)' : 'Import with AI Prompt (Recommended)',
+                  s.isTr ? 'Yapay Zekâ Kalıbıyla İçe Aktar (Önerilen)' : 'Import with AI Prompt (Recommended)',
                   style: const TextStyle(fontWeight: FontWeight.w600),
                 ),
                 subtitle: Text(
                   s.isTr
-                      ? 'Kalıbı kopyala, ChatGPT veya Claude çıktısını yapıştırıp anında yükle.'
-                      : 'Copy template, paste LLM output and create in seconds.',
-                  style: const TextStyle(fontSize: 12),
+                      ? 'Kalıbı kopyala, yapay zekâ asistanının yanıtını yapıştırıp anında yükle.'
+                      : 'Copy the template, paste the AI assistant\'s answer and create in seconds.',
+                  style: const TextStyle(fontSize: AppFont.caption),
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
                   RoadmapImportDialog.show(context);
+                },
+              ),
+              const Divider(height: 20),
+              ListTile(
+                leading: Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Icon(Icons.link_rounded, color: scheme.onSurfaceVariant),
+                ),
+                title: Text(
+                  s.isTr ? 'Bağlantıdan Ekle' : 'Add from a Link',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(
+                  s.isTr
+                      ? 'Birinin internette paylaştığı yol haritasını bağlantısıyla ekle.'
+                      : 'Add a roadmap someone shared online by its link.',
+                  style: const TextStyle(fontSize: AppFont.caption),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  RoadmapLinkDialog.show(context);
                 },
               ),
               const Divider(height: 20),
@@ -76,7 +106,7 @@ class RoadmapsTab extends StatelessWidget {
                   s.isTr
                       ? 'Adımları ve hedefleri kendin tek tek belirle.'
                       : 'Define steps and goals completely on your own.',
-                  style: const TextStyle(fontSize: 12),
+                  style: const TextStyle(fontSize: AppFont.caption),
                 ),
                 onTap: () {
                   Navigator.pop(ctx);
@@ -119,7 +149,7 @@ class RoadmapsTab extends StatelessWidget {
                         color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: Text(emoji, style: const TextStyle(fontSize: 24)),
+                      child: Text(emoji, style: const TextStyle(fontSize: AppFont.display)),
                     ),
                   ),
                   const SizedBox(width: 12),
@@ -179,8 +209,13 @@ class RoadmapsTab extends StatelessWidget {
     }
   }
 
+  // Hedefler sayfası bu listeyi sabit (const) olarak gömer; sayfa yeniden çizilse de sabit bir bileşen
+  // yeniden çizilmez. Liste bu yüzden store'u kendisi dinler: yoksa eklenen ya da silinen öğe, sekmeden
+  // çıkıp geri gelinene kadar ekranda değişmiyordu.
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => AnimatedBuilder(animation: store, builder: (context, _) => _list(context));
+
+  Widget _list(BuildContext context) {
     final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
     final roadmaps = store.roadmaps;
@@ -203,22 +238,30 @@ class RoadmapsTab extends StatelessWidget {
               const SizedBox(height: 20),
               Text(
                 s.isTr ? 'Henüz Bir Yol Haritası Yok' : 'No Roadmaps Yet',
-                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                style: const TextStyle(fontSize: AppFont.headline, fontWeight: FontWeight.bold),
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: 10),
               Text(
                 s.isTr
-                    ? 'Büyük hedeflerine adım adım ulaşmak için yapay zeka ile veya kendin bir yolculuk planı oluşturabilirsin.'
-                    : 'Create a step-by-step roadmap to achieve your big goals, powered by AI or manually.',
+                    ? 'Büyük hedeflerine adım adım ulaşmak için yapay zekâ ile ya da kendin bir yolculuk planı oluşturabilir, '
+                        'birinin paylaştığı bir planı bağlantısından ekleyebilirsin.'
+                    : 'Create a step-by-step roadmap to reach your big goals with AI or on your own, or add one '
+                        'someone shared by its link.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: 14, height: 1.4),
+                style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppFont.body, height: 1.4),
               ),
               const SizedBox(height: 24),
               FilledButton.icon(
                 icon: const Icon(Icons.auto_awesome_rounded),
-                label: Text(s.isTr ? 'AI Kalıbı ile İçe Aktar' : 'Import with AI Prompt'),
+                label: Text(s.isTr ? 'Yapay Zekâ Kalıbıyla İçe Aktar' : 'Import with AI Prompt'),
                 onPressed: () => RoadmapImportDialog.show(context),
+              ),
+              const SizedBox(height: 10),
+              OutlinedButton.icon(
+                icon: const Icon(Icons.link_rounded),
+                label: Text(s.isTr ? 'Bağlantıdan Ekle' : 'Add from a Link'),
+                onPressed: () => RoadmapLinkDialog.show(context),
               ),
               const SizedBox(height: 10),
               OutlinedButton.icon(

@@ -6,6 +6,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'data/store.dart';
+import 'services/store_sync.dart';
 
 const widgetProviderName = 'dev.takip.takip.TakipWidgetProvider';
 
@@ -52,10 +53,13 @@ class WidgetSync {
 Future<void> widgetBackgroundCallback(Uri? uri) async {
   if (uri == null) return;
   await initializeDateFormatting('tr_TR');
-  await store.load();
+  await store.refresh();
   if (uri.host == 'tap') {
     final id = int.tryParse(uri.queryParameters['id'] ?? '');
-    if (id != null) await store.tapQuickItem(id);
+    if (id != null) {
+      await store.tapQuickItem(id);
+      StoreSync.notifyChanged();
+    }
   }
   await WidgetSync.push();
 }
