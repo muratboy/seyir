@@ -1,9 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
-import 'package:takip/data/models.dart';
 import 'package:takip/data/store.dart';
-import 'package:takip/logic/time_suggestions.dart';
 
 import 'support/real_db.dart';
 

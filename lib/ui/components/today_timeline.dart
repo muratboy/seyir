@@ -6,6 +6,7 @@ import '../../logic/format.dart';
 import '../../logic/l10n.dart';
 import '../common.dart';
 import '../app_font.dart';
+import '../activity_page.dart';
 
 /// Günün akışı (Timeline) - Liste ve Kompakt Şerit görünümleri ve kayıt düzenleme
 class TodayTimeline extends StatelessWidget {
@@ -417,7 +418,9 @@ class TodayTimeline extends StatelessWidget {
     );
   }
 
-  void _showEntryEditSheet(BuildContext context, Entry e) {
+  void _showEntryEditSheet(BuildContext context, Entry e) => showEntryEditSheet(context, e, onStartTimer: onStartTimer);
+
+  static void showEntryEditSheet(BuildContext context, Entry e, {Future<void> Function(Activity)? onStartTimer}) {
     final s = strings.value;
     final act = store.activity(e.activityId);
     var measureId = e.measureId;
@@ -519,6 +522,20 @@ class TodayTimeline extends StatelessWidget {
                                 visualDensity: VisualDensity.compact,
                                 padding: const EdgeInsets.all(4),
                                 constraints: const BoxConstraints(),
+                                icon: const Icon(Icons.insights_rounded, size: 18),
+                                tooltip: s.isTr ? 'Aktivite Sayfasını Aç' : 'View Activity Page',
+                                onPressed: () {
+                                  Navigator.pop(c);
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(builder: (_) => ActivityPage(activity: act)),
+                                  );
+                                },
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
                                 icon: const Icon(Icons.edit_outlined, size: 18),
                                 tooltip: s.isTr ? 'Aktiviteyi Düzenle (İsim, Kategori, İkon)' : 'Edit Activity',
                                 onPressed: () async {
@@ -550,7 +567,11 @@ class TodayTimeline extends StatelessWidget {
                       tooltip: s.startStopwatch,
                       onPressed: () async {
                         Navigator.pop(c);
-                        await onStartTimer(act);
+                        if (onStartTimer != null) {
+                          await onStartTimer(act);
+                        } else {
+                          await store.startTimer(act.id);
+                        }
                       },
                     ),
                     IconButton(

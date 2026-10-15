@@ -2,15 +2,18 @@ import 'package:flutter/material.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
+import '../logic/activity_format_analysis.dart';
 import '../logic/activity_rhythm.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/period_stats.dart';
 import '../logic/trend_insights.dart';
 import '../services/export_service.dart';
+import 'activity_page.dart';
 import 'app_font.dart';
 import 'common.dart';
 import 'components/activity_dot_strip.dart';
+import 'components/activity_format_views.dart';
 import 'components/stats_category_chart.dart';
 import 'components/stats_common.dart';
 import 'components/stats_insights_card.dart';
@@ -23,7 +26,9 @@ import 'contribution_heatmap.dart';
 /// Sayfa yalnızca gösterir; hesaplar [PeriodStats] içindedir. Bir aktivite seçilince aynı bölümler o
 /// aktivitenin kendi miktarıyla (süre, hacim, mesafe...) konuşur.
 class StatsPage extends StatefulWidget {
-  const StatsPage({super.key});
+  final int? initialActivityId;
+
+  const StatsPage({super.key, this.initialActivityId});
 
   @override
   State<StatsPage> createState() => _StatsPageState();
@@ -33,6 +38,13 @@ class _StatsPageState extends State<StatsPage> {
   StatRange _range = StatRange.week;
   DateTime _anchor = DateTime.now();
   int? _activityId; // null = tüm aktiviteler
+  final Map<int, ActivityFormat> _activityFormatOverrides = {};
+
+  @override
+  void initState() {
+    super.initState();
+    _activityId = widget.initialActivityId;
+  }
 
   // Grafiğin ölçütü (null = kayıt sayısı). Kullanıcı seçene kadar veriye göre belirlenir: tek aktivitede o
   // aktivitenin asıl miktarı, hepsi birlikteyken kayıt sayısı.
@@ -132,12 +144,30 @@ class _StatsPageState extends State<StatsPage> {
                 if (stats.total.count == 0)
                   _emptyPeriod(activityId)
                 else ...[
-                  StatsOverviewCard(
-                    stats: stats,
-                    singleActivity: activityId != null,
-                    metric: metric,
-                    activityCount: byActivity.length,
-                  ),
+                  if (activityId != null) ...[
+                    ActivityFormatView(
+                      activity: store.activity(activityId),
+                      analysis: ActivityFormatAnalysis.compute(
+                        activity: store.activity(activityId),
+                        entries: store.entriesIn(period.from, period.to).where(wanted),
+                        unitOf: store.unit,
+                        measureNameOf: (id) => store.measureById(id)?.name,
+                        now: now,
+                        elapsedDays: stats.elapsedDays,
+                        isTr: s.isTr,
+                        overrideFormat: _activityFormatOverrides[activityId],
+                      ),
+                      isTr: s.isTr,
+                      onFormatChanged: (format) => setState(() => _activityFormatOverrides[activityId] = format),
+                    ),
+                  ] else ...[
+                    StatsOverviewCard(
+                      stats: stats,
+                      singleActivity: false,
+                      metric: metric,
+                      activityCount: byActivity.length,
+                    ),
+                  ],
                   StatsTrendChart(
                     stats: stats,
                     metric: metric,
@@ -151,7 +181,22 @@ class _StatsPageState extends State<StatsPage> {
                 ],
                 if (activityId != null) ...[
                   _calendarCard(store.activity(activityId)),
-                  _measureBreakdown(store.entriesIn(period.from, period.to).where(wanted)),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: OutlinedButton.icon(
+                      icon: const Icon(Icons.open_in_new_rounded, size: 16),
+                      label: Text(s.isTr ? 'Aktivite Sayfasını Aç' : 'Open Activity Page'),
+                      onPressed: () => Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => ActivityPage(
+                            activity: store.activity(activityId),
+                            initialRange: _range,
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
                   const SizedBox(height: 4),
                   Center(
                     child: TextButton.icon(
@@ -588,100 +633,6 @@ class _StatsPageState extends State<StatsPage> {
           ],
         ),
       ),
-    );
-  }
-
-  /// Aktivitenin dönemde hangi ölçülerle kaydedildiği. Tek bir ölçü kullanıldıysa özetteki toplamı
-  /// yinelemekten başka bir şey söylemez, o zaman gösterilmez.
-  Widget _measureBreakdown(Iterable<Entry> entries) {
-    final s = strings.value;
-    final scheme = Theme.of(context).colorScheme;
-
-    // Ölçüsü olmayan kayıtlar (sayaçtan gelenler, adım sayısı) birimlerine göre ayrılır.
-    final groups = <(int?, String?), (int, double)>{};
-    for (final e in entries) {
-      final key = (e.measureId, e.unitId);
-      final (count, base) = groups[key] ?? (0, 0.0);
-      final amount = e.value == null || e.unitId == null ? 0.0 : e.value! * store.unit(e.unitId!).factor;
-      groups[key] = (count + 1, base + amount);
-    }
-    if (groups.length < 2) return const SizedBox.shrink();
-
-    final rows = groups.entries.toList()..sort((a, b) => b.value.$1.compareTo(a.value.$1));
-    final maxCount = rows.first.value.$1;
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        SectionTitle(s.isTr ? 'Ölçülere Göre' : 'By Measure'),
-        Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16),
-          elevation: 0,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(18),
-            side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-          ),
-          child: Column(
-            children: [
-              for (var i = 0; i < rows.length; i++) ...[
-                if (i > 0) Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.25)),
-                Builder(builder: (context) {
-                  final (measureId, unitId) = rows[i].key;
-                  final (count, base) = rows[i].value;
-                  final unit = unitId == null ? null : store.unit(unitId);
-                  final name = store.measureById(measureId)?.name ??
-                      unit?.name ??
-                      (s.isTr ? 'Ölçüsüz' : 'No measure');
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(14, 10, 14, 10),
-                    child: Row(
-                      children: [
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                name,
-                                style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppFont.body),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                              const SizedBox(height: 6),
-                              ClipRRect(
-                                borderRadius: BorderRadius.circular(3),
-                                child: LinearProgressIndicator(
-                                  value: count / maxCount,
-                                  minHeight: 4,
-                                  backgroundColor: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                                ),
-                              ),
-                            ],
-                          ),
-                        ),
-                        const SizedBox(width: 12),
-                        Column(
-                          crossAxisAlignment: CrossAxisAlignment.end,
-                          children: [
-                            if (unit != null && base > 0)
-                              Text(
-                                store.fmtBase(base, unit.dim),
-                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.body),
-                              ),
-                            Text(
-                              entriesText(count),
-                              style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
-                  );
-                }),
-              ],
-            ],
-          ),
-        ),
-      ],
     );
   }
 }

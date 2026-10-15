@@ -8,6 +8,7 @@ import '../widget_sync.dart';
 import 'common.dart';
 import 'settings_pages.dart';
 import 'app_font.dart';
+import 'activity_page.dart';
 
 class ManagePage extends StatefulWidget {
   const ManagePage({super.key});
@@ -346,7 +347,10 @@ class _ManagePageState extends State<ManagePage> {
                   final count = store.stats[act.id]?.count ?? 0;
                   final linked = store.goalsForActivity(act.id);
                   return ListTile(
-                    onTap: () => showActivityEditDialog(c, act),
+                    onTap: () => Navigator.push(
+                      c,
+                      MaterialPageRoute(builder: (_) => ActivityPage(activity: act)),
+                    ),
                     leading: ActivityAvatar(act.id, size: 40),
                     title: Row(
                       children: [
