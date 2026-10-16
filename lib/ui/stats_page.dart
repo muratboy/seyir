@@ -10,6 +10,7 @@ import '../logic/period_stats.dart';
 import '../logic/trend_insights.dart';
 import '../services/export_service.dart';
 import 'activity_page.dart';
+import 'components/export_filter_sheet.dart';
 import 'app_font.dart';
 import 'common.dart';
 import 'components/activity_dot_strip.dart';
@@ -224,30 +225,46 @@ class _StatsPageState extends State<StatsPage> {
 
   // ---------------------------------------------------------------- dışa aktarma
 
-  /// Dışa aktarma seçilen döneme değil tüm kayıtlara bakar; menü bunu söyler.
+  /// Dışa aktarma menüsü: Hızlı tüm kayıtlar veya filtreleme seçenekleri
   Widget _exportMenu() {
     final s = strings.value;
     return PopupMenuButton<String>(
       icon: const Icon(Icons.ios_share_rounded),
       tooltip: s.isTr ? 'Dışa aktar' : 'Export',
-      onSelected: (kind) =>
-          kind == 'pdf' ? ExportService.exportPdf(context, store) : ExportService.exportCsv(context, store),
+      onSelected: (kind) {
+        if (kind == 'filter') {
+          ExportFilterSheet.show(context, store, initialActivityId: _activityId);
+        } else if (kind == 'pdf') {
+          ExportService.exportPdf(context, store, activityId: _activityId);
+        } else if (kind == 'csv') {
+          ExportService.exportCsv(context, store, activityId: _activityId);
+        }
+      },
       itemBuilder: (context) => [
         PopupMenuItem(
-          enabled: false,
-          height: 32,
-          child: Text(
-            s.isTr ? 'Tüm kayıtlar dışa aktarılır' : 'All entries are exported',
-            style: const TextStyle(fontSize: AppFont.caption),
+          value: 'filter',
+          child: Row(
+            children: [
+              const Icon(Icons.tune_rounded, size: 20),
+              const SizedBox(width: 12),
+              Flexible(child: Text(s.isTr ? 'Filtreleyerek Dışa Aktar...' : 'Export with Filters...')),
+            ],
           ),
         ),
+        const PopupMenuDivider(),
         PopupMenuItem(
           value: 'pdf',
           child: Row(
             children: [
               const Icon(Icons.picture_as_pdf_outlined, size: 20),
               const SizedBox(width: 12),
-              Flexible(child: Text(s.isTr ? 'PDF raporu' : 'PDF report')),
+              Flexible(
+                child: Text(
+                  _activityId != null
+                      ? (s.isTr ? 'Seçili Aktiviteyi PDF Yap' : 'Export Activity as PDF')
+                      : (s.isTr ? 'Tüm Kayıtları PDF Yap' : 'Export All as PDF'),
+                ),
+              ),
             ],
           ),
         ),
@@ -257,7 +274,13 @@ class _StatsPageState extends State<StatsPage> {
             children: [
               const Icon(Icons.table_chart_outlined, size: 20),
               const SizedBox(width: 12),
-              Flexible(child: Text(s.isTr ? 'Excel tablosu (CSV)' : 'Spreadsheet (CSV)')),
+              Flexible(
+                child: Text(
+                  _activityId != null
+                      ? (s.isTr ? 'Seçili Aktiviteyi CSV Yap' : 'Export Activity as CSV')
+                      : (s.isTr ? 'Tüm Kayıtları CSV Yap' : 'Export All as CSV'),
+                ),
+              ),
             ],
           ),
         ),

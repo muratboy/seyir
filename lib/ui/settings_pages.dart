@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -9,10 +10,10 @@ import '../data/store.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../services/backup_service.dart';
-import '../services/export_service.dart';
 import '../services/notification_service.dart';
 import 'app_font.dart';
 import 'common.dart';
+import 'components/export_filter_sheet.dart';
 
 // Ayarlar'ın alt sayfaları. Bildirimler, sağlık takibi ve yedekleme eskiden Ayarlar'ın tek uzun sayfasındaydı.
 
@@ -137,6 +138,19 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                         await store.setPersistentQuickLogEnabled(val);
                         setState(() {});
                       },
+                    ),
+                    const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.dashboard_customize_outlined, color: Colors.indigo),
+                      title: Text(s.isTr ? 'Hızlı Ayarlar Kutucuğu' : 'Quick Settings Tile'),
+                      subtitle: Text(
+                        s.isTr
+                            ? 'Kilit ekranından hızlı kayıt paneli'
+                            : 'Quick log panel from lock screen',
+                        style: const TextStyle(fontSize: AppFont.caption),
+                      ),
+                      trailing: const Icon(Icons.chevron_right_rounded),
+                      onTap: () => _showQuickSettingsTileDialog(context, s.isTr),
                     ),
                     const Divider(height: 1),
                     SwitchListTile(
@@ -289,6 +303,67 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
         s.isTr ? '3 saniye içinde bir deneme bildirimi gelecek.' : 'A test notification arrives in 3 seconds.',
       );
     }
+  }
+
+  Future<void> _showQuickSettingsTileDialog(BuildContext context, bool isTr) async {
+    try {
+      final added = await const MethodChannel('dev.takip.takip/permissions')
+          .invokeMethod<bool>('requestAddQuickSettingsTile');
+      if (added == true && context.mounted) {
+        showSnack(
+          context,
+          isTr
+              ? 'Hızlı Ayarlar kutucuğu eklendi!'
+              : 'Quick Settings tile added!',
+        );
+        return;
+      }
+    } catch (_) {}
+
+    if (!context.mounted) return;
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Row(
+          children: [
+            const Icon(Icons.dashboard_customize_rounded, color: Colors.indigo),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(
+                isTr ? 'Hızlı Ayarlar Kutucuğu' : 'Quick Settings Tile',
+                style: const TextStyle(fontSize: 17),
+              ),
+            ),
+          ],
+        ),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              isTr
+                  ? 'Telefonunuzun kilit ekranından ve herhangi bir uygulamanın içinden tek dokunuşla kayıt yapabilirsiniz:\n\n'
+                    '1. Bildirim panelini en üstten iki kez aşağı çekin.\n'
+                    '2. Kalem (Düzenle) simgesine dokunun.\n'
+                    '3. "Hızlı Kayıt" kutucuğunu aktif alana sürükleyin.\n\n'
+                    'Artık telefon kilitliyken bile kutucuğa dokunarak sesle veya yazıyla anında kayıt ekleyebilirsiniz.'
+                  : 'Log activities in 1 second from lock screen or anywhere:\n\n'
+                    '1. Swipe down twice from the top of the screen.\n'
+                    '2. Tap the Pencil (Edit) icon.\n'
+                    '3. Drag "Quick Log" into your active tiles.\n\n'
+                    'You can then tap the tile to record by voice or text even while locked.',
+              style: const TextStyle(fontSize: 14, height: 1.4),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: Text(isTr ? 'Anladım' : 'Got it'),
+          ),
+        ],
+      ),
+    );
   }
 }
 
@@ -681,7 +756,7 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
                         style: const TextStyle(fontSize: AppFont.caption),
                       ),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => ExportService.exportPdf(context, store),
+                      onTap: () => ExportFilterSheet.show(context, store, initialFormat: 'pdf'),
                     ),
                     const Divider(height: 1),
                     ListTile(
@@ -694,7 +769,7 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
                         style: const TextStyle(fontSize: AppFont.caption),
                       ),
                       trailing: const Icon(Icons.chevron_right),
-                      onTap: () => ExportService.exportCsv(context, store),
+                      onTap: () => ExportFilterSheet.show(context, store, initialFormat: 'csv'),
                     ),
                     const Divider(height: 1),
                     ListTile(

@@ -1579,4 +1579,65 @@ void main() {
       expect(app.goals, isEmpty);
     });
   });
+
+  group('Data integrity fixes for measurements, habits and dates', () {
+    test('500 ml su matches ml measure and multiplies properly to 500 ml', () async {
+      final s = await openStore();
+      final act = await s.addActivity('Su', emoji: '💧');
+      final res = NaturalLanguageParser.parse(
+        '500 ml su',
+        activities: [act],
+        measures: s.measures,
+      );
+      expect(res.matchedActivity?.id, act.id);
+      expect(res.quantity, 500.0);
+      expect(res.matchedMeasure?.unitId, 'ml');
+      expect(res.matchedMeasure?.amount, 1.0);
+
+      // Adding entry with ml measure computes value: 500 * 1.0 = 500
+      final entryRes = await s.addEntry(act.id, measureId: res.matchedMeasure?.id, qty: res.quantity);
+      expect(entryRes.entry.qty, 500.0);
+      expect(entryRes.entry.value, 500.0);
+      expect(entryRes.entry.unitId, 'ml');
+    });
+
+    test('quickLogHabit preserves previous entry quantity, measure and unit', () async {
+      final s = await openStore();
+      final act = await s.addActivity('Su', emoji: '💧');
+      act.isHabit = true;
+      await s.updateActivity(act);
+
+      final mlMeasure = s.measures.firstWhere((m) => m.unitId == 'ml');
+      // User previously logged 350 ml
+      await s.addEntry(act.id, measureId: mlMeasure.id, qty: 350.0);
+
+      // Now user quick logs habit today
+      final res = await s.quickLogHabit(act.id);
+      expect(res, isNotNull);
+      final logged = res.entry;
+      expect(logged.qty, 350.0);
+      expect(logged.measureId, mlMeasure.id);
+      expect(logged.unitId, mlMeasure.unitId);
+      expect(logged.value, 350.0);
+    });
+
+    test('tapQuickItem with past date logs entry at the specified past date', () async {
+      final s = await openStore();
+      final act = await s.addActivity('Kitap', emoji: '📖');
+      final qi = QuickItem(
+        id: 0,
+        activityId: act.id,
+        kind: 'log',
+        createdAt: DateTime.now().millisecondsSinceEpoch,
+      );
+      await s.saveQuickItem(qi);
+
+      final pastDate = DateTime(2026, 10, 10, 14, 30);
+      await s.tapQuickItem(qi.id, at: pastDate);
+
+      expect(s.entries, hasLength(1));
+      expect(s.entries.first.activityId, act.id);
+      expect(s.entries.first.ts, DateTime(2026, 10, 10, 12, 0).millisecondsSinceEpoch);
+    });
+  });
 }

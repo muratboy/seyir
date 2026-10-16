@@ -16,6 +16,7 @@ class NlParseResult {
   final Activity? matchedActivity;
   final Measure? matchedMeasure;
   final double quantity;
+  final bool hasExplicitQuantity;
   final NlActionType actionType;
   final int? targetMinutes;
   final double confidence; // 0.0 - 1.0
@@ -26,6 +27,7 @@ class NlParseResult {
     this.matchedActivity,
     this.matchedMeasure,
     required this.quantity,
+    this.hasExplicitQuantity = false,
     required this.actionType,
     this.targetMinutes,
     required this.confidence,
@@ -369,6 +371,7 @@ class NaturalLanguageParser {
       matchedActivity: matchedActivity,
       matchedMeasure: matchedMeasure,
       quantity: foundExplicitQty ? quantity : 1.0,
+      hasExplicitQuantity: foundExplicitQty,
       actionType: actionType,
       targetMinutes: targetMinutes,
       confidence: confidence,

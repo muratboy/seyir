@@ -67,6 +67,34 @@
             </intent-filter>
         </receiver>
 
+        <!-- Quick Settings Tile Service -->
+        <service
+            android:name=".TakipTileService"
+            android:icon="@drawable/ic_stat_takip"
+            android:label="@string/tile_quick_add"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Quick Record Native Activity (Displays over Lockscreen) -->
+        <activity
+            android:name=".QuickRecordActivity"
+            android:theme="@style/Theme.Takip.QuickRecord"
+            android:showWhenLocked="true"
+            android:turnScreenOn="true"
+            android:excludeFromRecents="true"
+            android:exported="true"
+            android:windowSoftInputMode="stateVisible|adjustResize">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="takip" android:host="quick_record" />
+            </intent-filter>
+        </activity>
+
         <!-- Scheduled notifications receivers for alarms & reminders -->
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />
         <receiver android:exported="false" android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationBootReceiver">

@@ -208,7 +208,9 @@ class SectionToggle extends StatelessWidget {
           final collapsed = store.isSectionCollapsed(sectionId);
           return IconButton(
             visualDensity: VisualDensity.compact,
-            icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less),
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+            icon: Icon(collapsed ? Icons.expand_more : Icons.expand_less, size: 20),
             tooltip: collapsed ? (s.isTr ? 'Göster' : 'Show') : (s.isTr ? 'Gizle' : 'Hide'),
             onPressed: () => store.toggleSection(sectionId),
           );
@@ -224,7 +226,7 @@ class SectionTitle extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 16, 12, 6),
+      padding: const EdgeInsets.fromLTRB(16, 10, 12, 4),
       child: Row(
         children: [
           Expanded(
@@ -998,9 +1000,13 @@ class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
 
   @override
   Widget build(BuildContext context) {
+    final s = strings.value;
+    final isTr = s.isTr;
     final q = _c.text.trim();
     final items = _items;
     final canCreate = widget.allowCreate && q.isNotEmpty && store.exactMatch(q) == null;
+    final scheme = Theme.of(context).colorScheme;
+
     return Padding(
       padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
       child: SizedBox(
@@ -1017,9 +1023,43 @@ class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
                 controller: _c,
                 autofocus: true,
                 textCapitalization: TextCapitalization.sentences,
+                textInputAction: TextInputAction.search,
                 decoration: InputDecoration(
                   prefixIcon: const Icon(Icons.search),
-                  hintText: strings.value.isTr ? 'Ara ya da yeni yaz' : 'Search or type a new one',
+                  hintText: isTr ? 'Ara ya da yeni yaz' : 'Search or type a new one',
+                  suffixIcon: canCreate
+                      ? Padding(
+                          padding: const EdgeInsets.only(right: 6),
+                          child: TextButton.icon(
+                            key: const Key('picker-quick-create-btn'),
+                            style: TextButton.styleFrom(
+                              backgroundColor: scheme.primaryContainer,
+                              foregroundColor: scheme.onPrimaryContainer,
+                              visualDensity: VisualDensity.compact,
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                            ),
+                            icon: const Icon(Icons.add_rounded, size: 18),
+                            label: Text(
+                              isTr ? 'Oluştur' : 'Create',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
+                            ),
+                            onPressed: () async {
+                              final a = await store.addActivity(q);
+                              if (context.mounted) Navigator.pop(context, a);
+                            },
+                          ),
+                        )
+                      : (q.isNotEmpty
+                          ? IconButton(
+                              icon: const Icon(Icons.clear, size: 18),
+                              tooltip: isTr ? 'Temizle' : 'Clear',
+                              onPressed: () {
+                                _c.clear();
+                                setState(() {});
+                              },
+                            )
+                          : null),
                 ),
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (_) async {
@@ -1037,26 +1077,49 @@ class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
               child: ListView(
                 children: [
                   if (canCreate)
-                    ListTile(
-                      leading: const CircleAvatar(child: Icon(Icons.add)),
-                      title: Text(strings.value.isTr ? '"${trCapitalize(q)}" oluştur' : 'Create "${trCapitalize(q)}"'),
-                      onTap: () async {
-                        final a = await store.addActivity(q);
-                        if (context.mounted) Navigator.pop(context, a);
-                      },
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 4, 16, 8),
+                      child: Material(
+                        color: scheme.primaryContainer.withValues(alpha: 0.45),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(14),
+                          side: BorderSide(color: scheme.primary.withValues(alpha: 0.25)),
+                        ),
+                        clipBehavior: Clip.antiAlias,
+                        child: ListTile(
+                          leading: CircleAvatar(
+                            backgroundColor: scheme.primary,
+                            foregroundColor: scheme.onPrimary,
+                            child: const Icon(Icons.add_rounded, size: 20),
+                          ),
+                          title: Text(
+                            isTr ? '"${trCapitalize(q)}" oluştur' : 'Create "${trCapitalize(q)}"',
+                            style: TextStyle(fontWeight: FontWeight.bold, color: scheme.primary),
+                          ),
+                          subtitle: Text(
+                            isTr ? 'Yeni aktivite olarak ekle ve seç' : 'Add as new activity and select',
+                            style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                          ),
+                          trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: scheme.primary),
+                          onTap: () async {
+                            final a = await store.addActivity(q);
+                            if (context.mounted) Navigator.pop(context, a);
+                          },
+                        ),
+                      ),
                     ),
                   for (final a in items)
                     ListTile(
                       leading: ActivityAvatar(a.id),
                       title: Text(a.name),
-                      subtitle: Text('${store.stats[a.id]?.count ?? 0} ${strings.value.entriesCountSuffix}'),
+                      subtitle: Text('${store.stats[a.id]?.count ?? 0} ${s.entriesCountSuffix}'),
                       onTap: () => Navigator.pop(context, a),
                     ),
                   if (items.isEmpty && !canCreate)
                     Padding(
                       padding: const EdgeInsets.all(24),
                       child: Text(
-                        strings.value.isTr ? 'Henüz kayıt yok.' : 'Nothing here yet.',
+                        isTr ? 'Henüz kayıt yok.' : 'Nothing here yet.',
                         textAlign: TextAlign.center,
                       ),
                     ),
@@ -1264,10 +1327,12 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
   var curCategory = activity.category;
   var curIsHabit = activity.isHabit;
   final goalPcts = <int, double>{};
+  final goalProps = <int, int?>{};
   for (final g in store.goals) {
     for (final l in g.links) {
       if (l.activityId == activity.id) {
         goalPcts[g.id] = l.pct;
+        goalProps[g.id] = l.propertyId;
         break;
       }
     }
@@ -1491,6 +1556,53 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                                   ),
                                 ],
                               ),
+                              Builder(builder: (c) {
+                                final props = store.activityProperties(activity.id);
+                                if (props.isEmpty) return const SizedBox.shrink();
+                                return Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      s.isTr ? 'Ölçü Alınacak Özellik:' : 'Property to Measure:',
+                                      style: TextStyle(
+                                        fontSize: AppFont.micro,
+                                        fontWeight: FontWeight.bold,
+                                        color: Theme.of(c).colorScheme.primary,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    DropdownButtonFormField<int?>(
+                                      initialValue: props.any((p) => p.id == goalProps[g.id]) ? goalProps[g.id] : null,
+                                      isExpanded: true,
+                                      decoration: InputDecoration(
+                                        isDense: true,
+                                        contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                      ),
+                                      items: [
+                                        DropdownMenuItem<int?>(
+                                          value: null,
+                                          child: Text(
+                                            s.isTr ? 'Otomatik / Doğrudan Değer' : 'Automatic / Direct Value',
+                                            style: const TextStyle(fontSize: AppFont.small),
+                                          ),
+                                        ),
+                                        for (final p in props)
+                                          DropdownMenuItem<int?>(
+                                            value: p.id,
+                                            child: Text(
+                                              '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol}',
+                                              style: const TextStyle(fontSize: AppFont.small),
+                                              overflow: TextOverflow.ellipsis,
+                                            ),
+                                          ),
+                                      ],
+                                      onChanged: (val) => setS(() => goalProps[g.id] = val),
+                                    ),
+                                  ],
+                                );
+                              }),
                             ],
                           ],
                         ),
@@ -1526,7 +1638,7 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
               activity.color = curCategory != null ? getCategoryDef(curCategory).colorValue : null;
               activity.isHabit = curIsHabit;
               await store.updateActivity(activity);
-              await store.setActivityGoals(activity.id, goalPcts);
+              await store.setActivityGoals(activity.id, goalPcts, goalProperties: goalProps);
               if (c.mounted) Navigator.pop(c);
             },
             child: Text(s.save),

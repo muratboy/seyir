@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import '../../data/models.dart';
 import '../../data/store.dart';
 import '../../logic/format.dart';
-import '../../logic/l10n.dart';
 import '../app_font.dart';
 
 class TodayDaySummary extends StatelessWidget {
@@ -13,92 +12,20 @@ class TodayDaySummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
-    final summary = store.getDaySummary(currentDay);
     final dailyGoals = store.goals.where((g) => g.period == GoalPeriod.day).toList();
-
-    if (summary.count == 0 && dailyGoals.isEmpty) {
+    // Bugünün Özeti açıkken günlük hedefler zaten orada detaylı gösterildiği için
+    // üstte aynı hedefleri ikinci kez sıralamayız; yalnızca özet kartı kapalıysa mini halkalar görünür.
+    final summaryCollapsed = store.isSectionCollapsed('summary');
+    if (!summaryCollapsed || dailyGoals.isEmpty) {
       return const SizedBox.shrink();
     }
 
     return SingleChildScrollView(
       scrollDirection: Axis.horizontal,
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      padding: const EdgeInsets.only(top: 6, right: 4),
       child: Row(
         children: [
-          // Süre özeti
-          if (summary.totalTimeMinutes > 0) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.schedule_rounded, size: 15, color: scheme.primary),
-                  const SizedBox(width: 5),
-                  Text(
-                    fmtAmount(summary.totalTimeMinutes, 'time'),
-                    style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold, color: scheme.onSurface),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          // Sıvı / Hacim özeti
-          if (summary.totalVolumeLiters > 0) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: Colors.blue.withValues(alpha: 0.1),
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.blue.withValues(alpha: 0.25)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  const Icon(Icons.water_drop_rounded, size: 15, color: Colors.blue),
-                  const SizedBox(width: 5),
-                  Text(
-                    fmtAmount(summary.totalVolumeLiters, 'volume'),
-                    style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold, color: Colors.blue),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
-          // Kayıt sayısı
-          if (summary.count > 0) ...[
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-              margin: const EdgeInsets.only(right: 8),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerLow,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.3)),
-              ),
-              child: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  Icon(Icons.list_alt_rounded, size: 15, color: scheme.secondary),
-                  const SizedBox(width: 5),
-                  Text(
-                    '${summary.count} ${s.entriesCountSuffix}',
-                    style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold, color: scheme.onSurface),
-                  ),
-                ],
-              ),
-            ),
-          ],
-
           // Günlük hedefler için canlı mini ilerleme halkaları
           for (final g in dailyGoals) ...[
             Builder(builder: (context) {
@@ -112,7 +39,7 @@ class TodayDaySummary extends StatelessWidget {
                   : (isDone ? Colors.green : scheme.primary);
 
               return Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                 margin: const EdgeInsets.only(right: 8),
                 decoration: BoxDecoration(
                   color: badgeColor.withValues(alpha: 0.1),

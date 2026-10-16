@@ -7,4 +7,6 @@
     <string name="shortcut_repeat_long">Son kaydı tekrarla</string>
     <string name="shortcut_add_short">Hızlı Kayıt</string>
     <string name="shortcut_add_long">Yeni kayıt ekle</string>
+    <string name="tile_quick_add">Hızlı Kayıt</string>
+    <string name="tile_quick_add_label">Takip • Hızlı Kayıt</string>
 </resources>

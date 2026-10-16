@@ -8,6 +8,7 @@ import 'package:timezone/timezone.dart' as tz;
 import '../data/models.dart';
 import '../data/store.dart';
 import '../logic/l10n.dart';
+import '../widget_sync.dart';
 import 'store_sync.dart';
 
 /// Arka planda bildirim aksiyon butonuna basıldığında çağrılan sistem callback'i
@@ -178,8 +179,11 @@ class NotificationService {
       }
     }
 
-    // Açık duran uygulama, arka planda yapılan değişikliği böyle öğrenir.
-    if (changesStore) StoreSync.notifyChanged();
+    // Açık duran uygulama ve ana ekran widget'ları, arka planda yapılan değişikliği böyle öğrenir.
+    if (changesStore) {
+      StoreSync.notifyChanged();
+      await WidgetSync.push();
+    }
   }
 
   /// Android 13+ için bildirim izni ister

@@ -9,6 +9,7 @@ import '../logic/activity_rhythm.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/period_stats.dart';
+import '../logic/text_match.dart';
 import 'app_font.dart';
 import 'common.dart';
 import 'components/activity_dot_strip.dart';
@@ -244,11 +245,14 @@ class _ActivityPageState extends State<ActivityPage> {
                 // 5. Takvim & Zincir (Streak) Kartı
                 _buildCalendarCard(context, act, streakInfo, isTr),
 
-                // 6. Bağlı Hedefler ve Limitler (varsa)
+                // 6. Özellikler & Metrikler (Kalori, Sıvı/Hacim, Protein vb.)
+                _buildPropertiesCard(context, act, isTr),
+
+                // 7. Bağlı Hedefler ve Limitler (varsa)
                 if (linkedGoals.isNotEmpty)
                   _buildLinkedGoalsCard(context, linkedGoals, isTr),
 
-                // 7. Bu Dönemdeki Kayıtlar Listesi
+                // 8. Bu Dönemdeki Kayıtlar Listesi
                 _buildEntriesSection(context, periodEntries, isTr),
               ],
             ),
@@ -503,6 +507,305 @@ class _ActivityPageState extends State<ActivityPage> {
     );
   }
 
+  Widget _buildPropertiesCard(BuildContext context, Activity act, bool isTr) {
+    final scheme = Theme.of(context).colorScheme;
+    final props = store.activityProperties(act.id);
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(20, 10, 16, 4),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  isTr ? 'Özellikler & Metrikler' : 'Properties & Metrics',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
+                ),
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                icon: const Icon(Icons.add, size: 18),
+                label: Text(isTr ? 'Özellik Ekle' : 'Add Property'),
+                onPressed: () => _showPropertyDialog(context, act, isTr: isTr),
+              ),
+            ],
+          ),
+        ),
+        Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          elevation: 0,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(18),
+            side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
+          ),
+          child: props.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.tune_rounded, color: scheme.onSurfaceVariant, size: 28),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          isTr
+                              ? 'Kalori, sıvı/hacim, protein gibi özellikler ekleyerek farklı hedeflere bağlayabilirsiniz (örn: 1 bardak Ayran = 200 ml, 76 kcal).'
+                              : 'Add properties like calories, volume, or protein to link with goals (e.g. 1 glass = 200 ml, 76 kcal).',
+                          style: TextStyle(
+                            fontSize: AppFont.small,
+                            color: scheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
+                  children: [
+                    for (var i = 0; i < props.length; i++) ...[
+                      if (i > 0) Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.25)),
+                      Builder(builder: (context) {
+                        final p = props[i];
+                        final u = store.unit(p.unitId);
+                        IconData icon;
+                        Color iconColor;
+                        switch (u.dim) {
+                          case 'energy':
+                            icon = Icons.bolt_rounded;
+                            iconColor = Colors.amber.shade700;
+                            break;
+                          case 'volume':
+                            icon = Icons.water_drop_outlined;
+                            iconColor = Colors.blue.shade600;
+                            break;
+                          case 'mass':
+                            icon = Icons.scale_outlined;
+                            iconColor = Colors.green.shade700;
+                            break;
+                          case 'distance':
+                            icon = Icons.straighten_outlined;
+                            iconColor = Colors.purple.shade600;
+                            break;
+                          case 'time':
+                            icon = Icons.timer_outlined;
+                            iconColor = Colors.teal.shade600;
+                            break;
+                          default:
+                            icon = Icons.label_outline_rounded;
+                            iconColor = scheme.primary;
+                        }
+                        final perText = p.perQty == 1.0
+                            ? (isTr ? '1 adet / porsiyon' : '1 piece / serving')
+                            : '${fmtNum(p.perQty)} ${isTr ? "adet için" : "pcs"}';
+
+                        return ListTile(
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
+                          leading: CircleAvatar(
+                            radius: 18,
+                            backgroundColor: iconColor.withValues(alpha: 0.15),
+                            child: Icon(icon, color: iconColor, size: 20),
+                          ),
+                          title: Text(p.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text(
+                            '${fmtNum(p.value)} ${u.symbol} · $perText',
+                            style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: const Icon(Icons.edit_outlined, size: 20),
+                                tooltip: isTr ? 'Düzenle' : 'Edit',
+                                onPressed: () => _showPropertyDialog(context, act, existing: p, isTr: isTr),
+                              ),
+                              IconButton(
+                                icon: Icon(Icons.delete_outline, size: 20, color: scheme.error),
+                                tooltip: isTr ? 'Sil' : 'Delete',
+                                onPressed: () async {
+                                  final ok = await confirm(
+                                    context,
+                                    isTr ? 'Özelliği Sil' : 'Delete Property',
+                                    isTr
+                                        ? '"${p.name}" özelliğini silmek istediğinize emin misiniz? Bu özelliğe bağlı hedefler doğrudan kayıt değerini kullanacaktır.'
+                                        : 'Are you sure you want to delete "${p.name}"? Linked goals will fall back to direct entry value.',
+                                  );
+                                  if (ok) {
+                                    await store.deleteActivityProperty(p.id);
+                                  }
+                                },
+                              ),
+                            ],
+                          ),
+                        );
+                      }),
+                    ],
+                  ],
+                ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _showPropertyDialog(
+    BuildContext context,
+    Activity act, {
+    ActivityProperty? existing,
+    required bool isTr,
+  }) async {
+    final s = strings.value;
+    final nameCtrl = TextEditingController(text: existing?.name ?? '');
+    final valCtrl = TextEditingController(text: existing != null ? fmtNum(existing.value) : '');
+    final perQtyCtrl = TextEditingController(text: existing != null ? fmtNum(existing.perQty) : '1');
+    var selectedUnitId = existing?.unitId ?? 'kcal';
+
+    final presets = [
+      (isTr ? 'Kalori' : 'Calories', 'kcal', Icons.bolt_rounded),
+      (isTr ? 'Sıvı / Hacim' : 'Liquid / Volume', 'ml', Icons.water_drop_outlined),
+      (isTr ? 'Protein' : 'Protein', 'g', Icons.fitness_center_rounded),
+      (isTr ? 'Kafein' : 'Caffeine', 'g', Icons.coffee_rounded),
+      (isTr ? 'Karbonhidrat' : 'Carbs', 'g', Icons.grain_rounded),
+      (isTr ? 'Yağ' : 'Fat', 'g', Icons.opacity_rounded),
+    ];
+
+    await showDialog<void>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, setS) => AlertDialog(
+          title: Text(existing == null
+              ? (isTr ? 'Yeni Özellik Ekle' : 'Add New Property')
+              : (isTr ? 'Özelliği Düzenle' : 'Edit Property')),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                if (existing == null) ...[
+                  Text(
+                    isTr ? 'Hızlı Şablonlar:' : 'Quick Presets:',
+                    style: TextStyle(
+                      fontSize: AppFont.caption,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(c).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Wrap(
+                    spacing: 6,
+                    runSpacing: 4,
+                    children: presets.map((pre) {
+                      return ActionChip(
+                        avatar: Icon(pre.$3, size: 16),
+                        label: Text(pre.$1, style: const TextStyle(fontSize: AppFont.caption)),
+                        onPressed: () {
+                          setS(() {
+                            nameCtrl.text = pre.$1;
+                            selectedUnitId = pre.$2;
+                          });
+                        },
+                      );
+                    }).toList(),
+                  ),
+                  const SizedBox(height: 12),
+                ],
+                TextField(
+                  controller: nameCtrl,
+                  autofocus: existing == null && nameCtrl.text.isEmpty,
+                  textCapitalization: TextCapitalization.sentences,
+                  decoration: InputDecoration(
+                    labelText: isTr ? 'Özellik Adı' : 'Property Name',
+                    hintText: isTr ? 'örn: Kalori, Sıvı Hacmi, Kafein' : 'e.g. Calories, Volume, Caffeine',
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: valCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: isTr ? 'Değer' : 'Value',
+                          hintText: '76',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 3,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: selectedUnitId,
+                        isExpanded: true,
+                        decoration: InputDecoration(labelText: s.unit),
+                        items: store.allUnits.map((u) {
+                          return DropdownMenuItem(
+                            value: u.id,
+                            child: Text('${u.symbol} (${u.name})', overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
+                        onChanged: (v) {
+                          if (v != null) setS(() => selectedUnitId = v);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: perQtyCtrl,
+                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                  decoration: InputDecoration(
+                    labelText: isTr ? 'Geçerli Olduğu Miktar' : 'For Base Quantity',
+                    hintText: '1',
+                    helperText: isTr
+                        ? 'Genellikle 1 adet/porsiyon için değer girilir.'
+                        : 'Usually the value per 1 item or serving.',
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(c),
+              child: Text(s.cancel),
+            ),
+            FilledButton(
+              onPressed: () async {
+                final name = nameCtrl.text.trim();
+                final val = parseNum(valCtrl.text);
+                final perQty = parseNum(perQtyCtrl.text) ?? 1.0;
+                if (name.isEmpty || val == null || val <= 0) return;
+
+                final prop = existing ??
+                    ActivityProperty(
+                      activityId: act.id,
+                      name: name,
+                      value: val,
+                      unitId: selectedUnitId,
+                      perQty: perQty > 0 ? perQty : 1.0,
+                    );
+                prop.name = name;
+                prop.value = val;
+                prop.unitId = selectedUnitId;
+                prop.perQty = perQty > 0 ? perQty : 1.0;
+
+                await store.saveActivityProperty(prop);
+                if (c.mounted) Navigator.pop(c);
+              },
+              child: Text(s.save),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _buildLinkedGoalsCard(BuildContext context, List<(Goal, GoalLink)> linkedGoals, bool isTr) {
     final scheme = Theme.of(context).colorScheme;
 
@@ -530,6 +833,10 @@ class _ActivityPageState extends State<ActivityPage> {
                 Builder(builder: (context) {
                   final (goal, link) = linkedGoals[i];
                   final isLimit = goal.isLimit;
+                  final prop = store.findActivityProperty(link.propertyId);
+                  final propText = prop != null
+                      ? (isTr ? ' · Ölçü: ${prop.name}' : ' · Measure: ${prop.name}')
+                      : '';
                   return ListTile(
                     leading: Icon(
                       isLimit ? Icons.shield_outlined : Icons.track_changes,
@@ -538,8 +845,8 @@ class _ActivityPageState extends State<ActivityPage> {
                     title: Text(goal.name, style: const TextStyle(fontWeight: FontWeight.w600)),
                     subtitle: Text(
                       isTr
-                          ? '${periodNames[goal.period]} ${isLimit ? "Limit" : "Hedef"} · Katkı payı: %${link.pct}'
-                          : '${periodNamesEn[goal.period]} ${isLimit ? "Limit" : "Goal"} · Contribution: %${link.pct}',
+                          ? '${periodNames[goal.period]} ${isLimit ? "Limit" : "Hedef"} · Katkı: %${fmtNum(link.pct)}$propText'
+                          : '${periodNamesEn[goal.period]} ${isLimit ? "Limit" : "Goal"} · Contribution: %${fmtNum(link.pct)}$propText',
                       style: const TextStyle(fontSize: AppFont.caption),
                     ),
                   );

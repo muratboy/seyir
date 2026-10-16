@@ -195,12 +195,17 @@ void main() {
     seed([ders], [today(1, 1, 1)]);
     await pumpStats(tester);
 
-    expect(find.byIcon(Icons.picture_as_pdf_outlined), findsNothing);
     await tester.tap(find.byIcon(Icons.ios_share_rounded));
     await tester.pumpAndSettle();
 
-    expect(find.text('Tüm kayıtlar dışa aktarılır'), findsOneWidget);
-    expect(find.text('PDF raporu'), findsOneWidget);
-    expect(find.text('Excel tablosu (CSV)'), findsOneWidget);
+    expect(find.text('Filtreleyerek Dışa Aktar...'), findsOneWidget);
+    expect(find.text('Tüm Kayıtları PDF Yap'), findsOneWidget);
+    expect(find.text('Tüm Kayıtları CSV Yap'), findsOneWidget);
+
+    await tester.tap(find.text('Filtreleyerek Dışa Aktar...'));
+    await tester.pumpAndSettle();
+
+    expect(find.text('Dışa Aktarma & Raporlama'), findsOneWidget);
+    expect(find.text('1 kayıt dışa aktarılacak'), findsOneWidget);
   });
 }

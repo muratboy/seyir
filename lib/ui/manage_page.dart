@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
@@ -189,6 +190,39 @@ class _ManagePageState extends State<ManagePage> {
                                           s.isTr
                                               ? 'Ana ekrana basılı tutup Widgetlar > Takip seçebilirsiniz.'
                                               : 'Long press home screen -> Widgets -> Takip to add.',
+                                        );
+                                      }
+                                    },
+                                  ),
+                                  ListTile(
+                                    leading: const Icon(Icons.dashboard_customize_rounded),
+                                    title: Text(s.isTr ? 'Hızlı Ayarlar Kutucuğu' : 'Quick Settings Tile'),
+                                    subtitle: Text(
+                                      s.isTr
+                                          ? 'Bildirim çubuğu ve kilit ekranından kayıt paneli'
+                                          : 'Log panel from notification shade & lock screen',
+                                    ),
+                                    onTap: () async {
+                                      Navigator.pop(ctx);
+                                      try {
+                                        final added = await const MethodChannel('dev.takip.takip/permissions')
+                                            .invokeMethod<bool>('requestAddQuickSettingsTile');
+                                        if (added == true && context.mounted) {
+                                          showSnack(
+                                            context,
+                                            s.isTr
+                                                ? 'Hızlı Ayarlar kutucuğu eklendi!'
+                                                : 'Quick Settings tile added!',
+                                          );
+                                          return;
+                                        }
+                                      } catch (_) {}
+                                      if (context.mounted) {
+                                        showSnack(
+                                          context,
+                                          s.isTr
+                                              ? 'Bildirim panelini aşağı çekip Düzenle (kalem) ile Hızlı Kayıt kutucuğunu ekleyebilirsiniz.'
+                                              : 'Pull down notification shade and tap Edit (pencil) to add Quick Log tile.',
                                         );
                                       }
                                     },

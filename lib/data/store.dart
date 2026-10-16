@@ -144,6 +144,18 @@ class AppStore extends ChangeNotifier {
   Map<int, Activity> activities = {};
   List<Entry> entries = []; // ts'ye göre artan sıralı
   List<Goal> goals = [];
+  final Map<int, List<ActivityProperty>> _activityProperties = {};
+  List<ActivityProperty> activityProperties(int activityId) =>
+      List.unmodifiable(_activityProperties[activityId] ?? const []);
+  ActivityProperty? findActivityProperty(int? id) {
+    if (id == null) return null;
+    for (final list in _activityProperties.values) {
+      for (final p in list) {
+        if (p.id == id) return p;
+      }
+    }
+    return null;
+  }
   List<QuickItem> quickItems = [];
   Map<int, ActivityStats> stats = {};
   ThemeMode themeMode = ThemeMode.system;
@@ -315,11 +327,30 @@ class AppStore extends ChangeNotifier {
     sleepDailyGoalHours = double.tryParse(settingsMap['sleep_daily_goal_hours'] ?? '8.0') ?? 8.0;
     sleepSessionStartTs = int.tryParse(settingsMap['sleep_session_start_ts'] ?? '');
 
+    _habitTargetDays.clear();
+    for (final e in settingsMap.entries) {
+      if (e.key.startsWith('habit_days_')) {
+        final actId = int.tryParse(e.key.substring('habit_days_'.length));
+        if (actId != null) {
+          final days = e.value.split(',').map(int.tryParse).whereType<int>().toSet();
+          if (days.isNotEmpty && days.length < 7) {
+            _habitTargetDays[actId] = days;
+          }
+        }
+      }
+    }
+
     customUnits = (await d.query('units')).map(Unit.fromMap).toList();
     measures = (await d.query('measures', orderBy: 'sort, id')).map(Measure.fromMap).toList();
     activities = {
       for (final m in await d.query('activities')) m['id'] as int: Activity.fromMap(m),
     };
+    final propRows = await d.query('activity_properties');
+    _activityProperties.clear();
+    for (final row in propRows) {
+      final p = ActivityProperty.fromMap(row);
+      (_activityProperties[p.activityId] ??= []).add(p);
+    }
     entries = await _readEntries(d);
     final links = await d.query('goal_links');
     goals = (await d.query('goals', orderBy: 'sort, id')).map((m) {
@@ -587,6 +618,10 @@ class AppStore extends ChangeNotifier {
 
   Future<void> _putSetting(String key, Object value) async {
     await (await db).insert('settings', {'key': key, 'value': '$value'}, conflictAlgorithm: ConflictAlgorithm.replace);
+  }
+
+  Future<void> _deleteSetting(String key) async {
+    await (await db).delete('settings', where: 'key = ?', whereArgs: [key]);
   }
 
   /// Adım durumunu [now] gününe taşır. Gün uygulama açıkken değiştiyse son sensör okuması yeni günün
@@ -1029,11 +1064,12 @@ class AppStore extends ChangeNotifier {
   }
 
   /// Bir aktivitenin son kaydını aynı ölçü, miktar, birim ve notla aynen tekrar kaydeder.
-  Future<String?> repeatLastEntry(int activityId) async {
+  Future<String?> repeatLastEntry(int activityId, {DateTime? at}) async {
     final act = activities[activityId];
     if (act == null) return null;
 
     final last = entries.where((e) => e.activityId == activityId).lastOrNull;
+    final targetTime = at ?? DateTime.now();
     final added = last != null
         ? (await addEntry(
             activityId,
@@ -1042,8 +1078,9 @@ class AppStore extends ChangeNotifier {
             value: last.value,
             unitId: last.unitId,
             note: last.note,
+            at: targetTime,
           )).entry
-        : (await addEntry(activityId)).entry;
+        : (await addEntry(activityId, at: targetTime)).entry;
 
     final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
     final isTr = strings.value.isTr;
@@ -1056,7 +1093,7 @@ class AppStore extends ChangeNotifier {
       msg = isTr ? '$emoji${act.name} tekrarlandı' : '$emoji${act.name} repeated';
     }
 
-    if (persistentQuickLogEnabled) {
+    if (persistentQuickLogEnabled && sameDay(targetTime, DateTime.now())) {
       await NotificationService.updatePersistentQuickLogNotification(this, lastLogMessage: msg);
     }
     return msg;
@@ -1119,10 +1156,12 @@ class AppStore extends ChangeNotifier {
       await tx.delete('entries', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('goal_links', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('quick_items', where: 'activity_id=?', whereArgs: [id]);
+      await tx.delete('activity_properties', where: 'activity_id=?', whereArgs: [id]);
       await tx.update('roadmap_steps', {'linked_activity_id': null}, where: 'linked_activity_id=?', whereArgs: [id]);
       await tx.delete('activities', where: 'id=?', whereArgs: [id]);
     });
     entries.removeWhere((e) => e.activityId == id);
+    _activityProperties.remove(id);
     for (final r in roadmaps) {
       for (final step in r.steps) {
         if (step.linkedActivityId == id) step.linkedActivityId = null;
@@ -1151,6 +1190,8 @@ class AppStore extends ChangeNotifier {
       await tx.update('entries', {'activity_id': intoId}, where: 'activity_id=?', whereArgs: [fromId]);
       await tx.update('quick_items', {'activity_id': intoId},
           where: 'activity_id=?', whereArgs: [fromId]);
+      await tx.update('activity_properties', {'activity_id': intoId},
+          where: 'activity_id=?', whereArgs: [fromId]);
       for (final g in goals) {
         final hasFrom = g.links.any((l) => l.activityId == fromId);
         final hasInto = g.links.any((l) => l.activityId == intoId);
@@ -1165,6 +1206,41 @@ class AppStore extends ChangeNotifier {
       await tx.delete('activities', where: 'id=?', whereArgs: [fromId]);
     });
     await load();
+  }
+
+  /// Aktiviteye ait ek bir özellik (örn: kalori, sıvı hacmi, kafein vb.) kaydeder veya günceller.
+  Future<ActivityProperty> saveActivityProperty(ActivityProperty prop) async {
+    final d = await db;
+    if (prop.id == 0) {
+      prop.id = await d.insert('activity_properties', prop.toMap());
+    } else {
+      await d.update('activity_properties', prop.toMap(), where: 'id = ?', whereArgs: [prop.id]);
+    }
+    final list = _activityProperties[prop.activityId] ??= [];
+    final idx = list.indexWhere((p) => p.id == prop.id);
+    if (idx >= 0) {
+      list[idx] = prop;
+    } else {
+      list.add(prop);
+    }
+    _changed();
+    return prop;
+  }
+
+  /// Aktivite özelliğini siler ve hedeflerdeki bu özelliğe bağlı linkleri temizler.
+  Future<void> deleteActivityProperty(int id) async {
+    final d = await db;
+    await d.delete('activity_properties', where: 'id = ?', whereArgs: [id]);
+    await d.update('goal_links', {'property_id': null}, where: 'property_id = ?', whereArgs: [id]);
+    for (final g in goals) {
+      for (final l in g.links) {
+        if (l.propertyId == id) l.propertyId = null;
+      }
+    }
+    for (final list in _activityProperties.values) {
+      list.removeWhere((p) => p.id == id);
+    }
+    _changed();
   }
 
   // ---------------------------------------------------------------- kayıtlar
@@ -1951,28 +2027,88 @@ class AppStore extends ChangeNotifier {
   }
 
   /// Bir kaydın hedefe katkısı (hedef biriminde). null = birim uyumsuz.
-  double? contribution(Goal g, Entry e, double pct) {
+  double? contribution(Goal g, Entry e, double pct, {GoalLink? link}) {
     final f = pct / 100;
     if (g.isCount) return f;
+
     final gu = unit(g.unitId ?? 'adet');
+
+    // 1. Hedef bağlantısında özel seçilmiş özellik (propertyId) var mı?
+    ActivityProperty? targetProp;
+    if (link?.propertyId != null) {
+      targetProp = findActivityProperty(link!.propertyId);
+    }
+
+    // Özellik bağlantıda seçilmemişse bile, aktivitenin hedefin boyutuna uyan bir özelliği var mı?
+    if (targetProp == null) {
+      final props = activityProperties(e.activityId);
+      for (final p in props) {
+        if (unit(p.unitId).dim == gu.dim) {
+          targetProp = p;
+          break;
+        }
+      }
+    }
+
+    // 2. Eğer hedef için bir özellik belirlenmişse:
+    if (targetProp != null) {
+      final pu = unit(targetProp.unitId);
+      final propFactor = pu.factor / gu.factor;
+      final perQty = targetProp.perQty > 0 ? targetProp.perQty : 1.0;
+      final baseVal = targetProp.value / perQty;
+
+      // Kaydın miktar/değer ölçeklemesi:
+      double scale = e.qty;
+
+      if (e.value != null && e.unitId != null) {
+        final eu = unit(e.unitId!);
+        if (eu.dim == pu.dim) {
+          // Kayıt doğrudan özelliğin boyutuyla girilmiş
+          return e.value! * (eu.factor / gu.factor) * f * (link?.customRate ?? 1.0);
+        } else {
+          // Kaydın boyutu farklı (örn: ml girilmiş ama hedef kalori):
+          // Aktivitenin kaydın boyutunda başka bir özelliği var mı?
+          final props = activityProperties(e.activityId);
+          ActivityProperty? dimProp;
+          for (final p in props) {
+            if (p.id != targetProp.id && unit(p.unitId).dim == eu.dim) {
+              dimProp = p;
+              break;
+            }
+          }
+          if (dimProp != null && dimProp.value > 0) {
+            final du = unit(dimProp.unitId);
+            final dimPerQty = dimProp.perQty > 0 ? dimProp.perQty : 1.0;
+            final baseDimVal = (dimProp.value / dimPerQty) * du.factor;
+            final entryDimVal = e.value! * eu.factor;
+            scale = entryDimVal / baseDimVal;
+          }
+        }
+      }
+
+      final result = scale * baseVal * propFactor * f * (link?.customRate ?? 1.0);
+      return result;
+    }
+
+    // 3. Klasik doğrudan birim/değer eşleşmesi
     if (e.unitId == null || e.value == null) {
       if (gu.dim == 'count') return e.qty * f / gu.factor;
       return null;
     }
     final eu = unit(e.unitId!);
     if (eu.dim != gu.dim) return null;
-    return e.value! * eu.factor / gu.factor * f;
+    return e.value! * eu.factor / gu.factor * f * (link?.customRate ?? 1.0);
   }
 
   (double, int) goalValue(Goal g, DateTime from, DateTime? to, {Map<int, double>? byActivity}) {
-    final pcts = {for (final l in g.links) l.activityId: l.pct};
+    final linkMap = {for (final l in g.links) l.activityId: l};
     var v = 0.0;
     var ignored = 0;
     if (to != null && !to.isAfter(from)) return (0, 0);
     for (final e in entriesIn(from, to)) {
-      final pct = pcts[e.activityId];
-      if (pct == null) continue;
-      final c = contribution(g, e, pct);
+      final link = linkMap[e.activityId];
+      if (link == null) continue;
+      final c = contribution(g, e, link.pct, link: link);
       if (c == null) {
         ignored++;
       } else {
@@ -2083,15 +2219,32 @@ class AppStore extends ChangeNotifier {
   }
 
   /// Bir aktivitenin hedeflerle olan bağlantılarını günceller (ekler, siler veya % değiştirir).
-  Future<void> setActivityGoals(int activityId, Map<int, double?> goalPcts) async {
+  Future<void> setActivityGoals(
+    int activityId,
+    Map<int, double?> goalPcts, {
+    Map<int, int?>? goalProperties,
+    Map<int, double?>? goalCustomRates,
+  }) async {
     for (final entry in goalPcts.entries) {
       final goalId = entry.key;
       final pct = entry.value;
       final g = goals.where((x) => x.id == goalId).firstOrNull;
       if (g == null) continue;
+      final existingLink = g.links.where((l) => l.activityId == activityId).firstOrNull;
       g.links.removeWhere((l) => l.activityId == activityId);
       if (pct != null && pct > 0) {
-        g.links.add(GoalLink(activityId: activityId, pct: pct));
+        final propId = goalProperties != null && goalProperties.containsKey(goalId)
+            ? goalProperties[goalId]
+            : existingLink?.propertyId;
+        final customRate = goalCustomRates != null && goalCustomRates.containsKey(goalId)
+            ? goalCustomRates[goalId]
+            : existingLink?.customRate;
+        g.links.add(GoalLink(
+          activityId: activityId,
+          pct: pct,
+          propertyId: propId,
+          customRate: customRate,
+        ));
       }
       await saveGoal(g);
     }
@@ -2099,6 +2252,56 @@ class AppStore extends ChangeNotifier {
   }
 
   // ---------------------------------------------------------------- zinciri kırma (habit tracker)
+
+  final Map<int, Set<int>> _habitTargetDays = {};
+
+  /// Alışkanlığın planlandığı haftalık günler (1 = Pazartesi .. 7 = Pazar).
+  /// Boş veya null ise "her gün" geçerlidir.
+  Set<int>? habitTargetDays(int activityId) => _habitTargetDays[activityId];
+
+  /// Belirtilen [date] gününün bu alışkanlık için planlı olup olmadığını döner.
+  bool isHabitScheduledFor(int activityId, DateTime date) {
+    final days = _habitTargetDays[activityId];
+    if (days == null || days.isEmpty || days.length == 7) return true;
+    return days.contains(date.weekday);
+  }
+
+  /// Alışkanlığın planlanan günlerini kaydeder.
+  Future<void> setHabitTargetDays(int activityId, Set<int>? days) async {
+    if (days == null || days.isEmpty || days.length == 7) {
+      _habitTargetDays.remove(activityId);
+      await _deleteSetting('habit_days_$activityId');
+    } else {
+      _habitTargetDays[activityId] = Set<int>.from(days);
+      final sorted = days.toList()..sort();
+      await _putSetting('habit_days_$activityId', sorted.join(','));
+    }
+    _changed();
+  }
+
+  /// Alışkanlık sıklığının kullanıcı dostu metin karşılığı ("Her gün", "Hafta içi", "Hafta sonu", "Pzt, Çar, Cum").
+  String habitScheduleText(int activityId, {required bool isTr}) {
+    final days = _habitTargetDays[activityId];
+    if (days == null || days.isEmpty || days.length == 7) {
+      return isTr ? 'Her gün' : 'Every day';
+    }
+    if (days.length == 5 &&
+        days.contains(1) &&
+        days.contains(2) &&
+        days.contains(3) &&
+        days.contains(4) &&
+        days.contains(5)) {
+      return isTr ? 'Hafta içi' : 'Weekdays';
+    }
+    if (days.length == 2 && days.contains(6) && days.contains(7)) {
+      return isTr ? 'Hafta sonu' : 'Weekends';
+    }
+    final trNames = {1: 'Pzt', 2: 'Sal', 3: 'Çar', 4: 'Per', 5: 'Cum', 6: 'Cmt', 7: 'Paz'};
+    final enNames = {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'};
+    final names = isTr ? trNames : enNames;
+    final sorted = days.toList()..sort();
+    return sorted.map((d) => names[d] ?? '$d').join(', ');
+  }
 
   List<Activity> get habitActivities => activities.values.where((a) => a.isHabit).toList();
 
@@ -2136,11 +2339,21 @@ class AppStore extends ChangeNotifier {
     final isDoneToday = todayCount > 0;
     final totalActiveDays = dailyCounts.length;
 
-    // Current streak (bugün yapıldıysa bugünden geriye, yapılmadıysa dünden geriye)
+    // Current streak (bugün yapıldıysa 1'den başlar; planlanmamış günler seriyi bozmaz, atlanır)
     int currentStreak = 0;
-    DateTime checkDate = isDoneToday ? today : DateTime(today.year, today.month, today.day - 1);
-    while (dailyCounts.containsKey(checkDate)) {
-      currentStreak++;
+    if (isDoneToday) {
+      currentStreak = 1;
+    }
+    DateTime checkDate = DateTime(today.year, today.month, today.day - 1);
+    final earliestDay = dailyCounts.isEmpty ? today : (dailyCounts.keys.toList()..sort()).first;
+    while (!checkDate.isBefore(earliestDay)) {
+      if (dailyCounts.containsKey(checkDate)) {
+        currentStreak++;
+      } else if (isHabitScheduledFor(activityId, checkDate)) {
+        // Planlanmış gündü ama kayıt yok: seri kırılır.
+        break;
+      }
+      // Planlanmamış günde kayıt yoksa zincir kırılmaz, önceki güne geçer.
       checkDate = DateTime(checkDate.year, checkDate.month, checkDate.day - 1);
     }
 
@@ -2154,8 +2367,17 @@ class AppStore extends ChangeNotifier {
         if (prevDay == null) {
           tempStreak = 1;
         } else {
-          final diff = daysBetween(prevDay, day);
-          if (diff == 1) {
+          // prevDay ile day arasında yapılmamış planlı gün var mı?
+          bool missedScheduledDay = false;
+          var cur = DateTime(prevDay.year, prevDay.month, prevDay.day + 1);
+          while (cur.isBefore(day)) {
+            if (isHabitScheduledFor(activityId, cur) && !dailyCounts.containsKey(cur)) {
+              missedScheduledDay = true;
+              break;
+            }
+            cur = DateTime(cur.year, cur.month, cur.day + 1);
+          }
+          if (!missedScheduledDay) {
             tempStreak++;
           } else {
             tempStreak = 1;
@@ -2171,13 +2393,21 @@ class AppStore extends ChangeNotifier {
       longestStreak = currentStreak;
     }
 
-    // Consistency in last 30 days
+    // Consistency in last 30 days (yalnızca planlanan gün sayısına bölünür)
     int activeIn30 = 0;
+    int scheduledIn30 = 0;
     for (int i = 0; i < 30; i++) {
       final d = DateTime(today.year, today.month, today.day - i);
-      if (dailyCounts.containsKey(d)) activeIn30++;
+      final isScheduled = isHabitScheduledFor(activityId, d);
+      if (isScheduled) {
+        scheduledIn30++;
+        if (dailyCounts.containsKey(d)) activeIn30++;
+      } else {
+        if (dailyCounts.containsKey(d)) activeIn30++;
+      }
     }
-    final consistencyLast30 = (activeIn30 / 30.0) * 100.0;
+    final denom = scheduledIn30 > 0 ? scheduledIn30 : 30;
+    final consistencyLast30 = ((activeIn30 / denom) * 100.0).clamp(0.0, 100.0);
 
     // --- Heatmap Renk Seviyeleri ve Tooltip Hesaplamaları ---
     final relatedGoals = goals.where((g) => g.links.any((l) => l.activityId == activityId)).toList();
@@ -2200,12 +2430,12 @@ class AppStore extends ChangeNotifier {
       if (limitGoal != null) {
         // 1. Limiti belli olan hedeflerde: limit aşılmamışsa full boyalı (4),
         // limiti geçtiyse limit üstü miktar arttıkça boyanma azalsın (3 -> 2 -> 1 -> 0).
-        final pcts = {for (final l in limitGoal.links) l.activityId: l.pct};
+        final linkMap = {for (final l in limitGoal.links) l.activityId: l};
         var val = 0.0;
         for (final e in dayEntries) {
-          final pct = pcts[e.activityId];
-          if (pct == null) continue;
-          final c = contribution(limitGoal, e, pct);
+          final link = linkMap[e.activityId];
+          if (link == null) continue;
+          final c = contribution(limitGoal, e, link.pct, link: link);
           if (c != null) val += c;
         }
         final target = limitGoal.target;
@@ -2237,12 +2467,12 @@ class AppStore extends ChangeNotifier {
       } else if (targetGoal != null) {
         // 2. Sayılı/ölçülü hedeflerde: hedefe ulaşınca full boyanacak şekilde olsun (4),
         // altında kaldığında orana göre derecelensin.
-        final pcts = {for (final l in targetGoal.links) l.activityId: l.pct};
+        final linkMap = {for (final l in targetGoal.links) l.activityId: l};
         var val = 0.0;
         for (final e in dayEntries) {
-          final pct = pcts[e.activityId];
-          if (pct == null) continue;
-          final c = contribution(targetGoal, e, pct);
+          final link = linkMap[e.activityId];
+          if (link == null) continue;
+          final c = contribution(targetGoal, e, link.pct, link: link);
           if (c != null) val += c;
         }
         final target = targetGoal.target;
@@ -2388,7 +2618,7 @@ class AppStore extends ChangeNotifier {
     final unitSym = goalUnitSymbol(g);
     final isDaily = g.period == GoalPeriod.day;
 
-    final pcts = {for (final l in g.links) l.activityId: l.pct};
+    final linkMap = {for (final l in g.links) l.activityId: l};
     final dayValues = <DateTime, double>{};
     final dayCounts = <DateTime, int>{};
 
@@ -2396,9 +2626,9 @@ class AppStore extends ChangeNotifier {
     for (final e in entries) {
       final d = dayStart(DateTime.fromMillisecondsSinceEpoch(e.ts));
       allActiveDays.add(d);
-      final pct = pcts[e.activityId];
-      if (pct == null) continue;
-      final c = contribution(g, e, pct);
+      final link = linkMap[e.activityId];
+      if (link == null) continue;
+      final c = contribution(g, e, link.pct, link: link);
       if (c == null) continue;
       dayValues[d] = (dayValues[d] ?? 0.0) + c;
       dayCounts[d] = (dayCounts[d] ?? 0) + 1;
@@ -2567,12 +2797,25 @@ class AppStore extends ChangeNotifier {
   }
 
   Future<AddResult> quickLogHabit(int activityId, {DateTime? date}) async {
+    final targetTime = date ?? DateTime.now();
+    final last = entries.where((e) => e.activityId == activityId).lastOrNull;
+    if (last != null) {
+      return addEntry(
+        activityId,
+        measureId: last.measureId,
+        qty: last.qty,
+        value: last.value,
+        unitId: last.unitId,
+        note: last.note,
+        at: targetTime,
+      );
+    }
     final lastMeasureId = stats[activityId]?.lastMeasureId;
     return addEntry(
       activityId,
       measureId: lastMeasureId,
       qty: 1,
-      at: date ?? DateTime.now(),
+      at: targetTime,
     );
   }
 
@@ -2581,29 +2824,35 @@ class AppStore extends ChangeNotifier {
   int todayCount(int activityId) =>
       entriesOfDay(DateTime.now()).where((e) => e.activityId == activityId).length;
 
-  Entry? quickDoneEntry(QuickItem q) {
+  Entry? quickDoneEntry(QuickItem q, {DateTime? at}) {
     if (!q.isTodo) return null;
+    final targetDay = at ?? DateTime.now();
     final from = q.daily
-        ? dayStart(DateTime.now())
+        ? dayStart(targetDay)
         : DateTime.fromMillisecondsSinceEpoch(q.createdAt);
+    final to = q.daily ? addDays(from, 1) : null;
     Entry? last;
-    for (final e in entriesIn(from, null)) {
+    for (final e in entriesIn(from, to)) {
       if (e.activityId == q.activityId) last = e;
     }
     return last;
   }
 
-  bool quickDone(QuickItem q) => quickDoneEntry(q) != null;
+  bool quickDone(QuickItem q, {DateTime? at}) => quickDoneEntry(q, at: at) != null;
 
-  Future<QuickTapResult> tapQuickItem(int id) async {
+  Future<QuickTapResult> tapQuickItem(int id, {DateTime? at}) async {
     final q = quickItems.where((x) => x.id == id).firstOrNull;
     if (q == null) return QuickTapResult();
-    final done = quickDoneEntry(q);
+    final done = quickDoneEntry(q, at: at);
     if (done != null) {
       await deleteEntry(done);
       return QuickTapResult(removed: done);
     }
-    final r = await addEntry(q.activityId, measureId: q.measureId, qty: q.qty);
+    final targetDay = at ?? DateTime.now();
+    final entryTime = sameDay(targetDay, DateTime.now())
+        ? DateTime.now()
+        : DateTime(targetDay.year, targetDay.month, targetDay.day, 12, 0);
+    final r = await addEntry(q.activityId, measureId: q.measureId, qty: q.qty, at: entryTime);
     return QuickTapResult(added: r.entry, achieved: r.achieved, exceeded: r.exceeded);
   }
 
@@ -2769,6 +3018,7 @@ class AppStore extends ChangeNotifier {
     'active_timers': ActiveTimer.fromMap,
     'roadmaps': Roadmap.fromMap,
     'roadmap_steps': RoadmapStep.fromMap,
+    'activity_properties': ActivityProperty.fromMap,
   };
 
   /// Yedeği veritabanına dokunmadan önce doğrular ve tablo başına satırları döner. load()'un okuyamayacağı
@@ -2982,7 +3232,26 @@ class AppStore extends ChangeNotifier {
       if (e.activityId != step.linkedActivityId) continue;
       final u = e.unitId == null ? null : unit(e.unitId!);
       if (measured) {
-        if (u != null && e.value != null && u.dim == goalUnit.dim) done += e.value! * u.factor / goalUnit.factor;
+        if (u != null && e.value != null && u.dim == goalUnit.dim) {
+          done += e.value! * u.factor / goalUnit.factor;
+        } else {
+          final props = activityProperties(step.linkedActivityId!);
+          final targetProp = props.where((p) => unit(p.unitId).dim == goalUnit.dim).firstOrNull;
+          if (targetProp != null) {
+            final pu = unit(targetProp.unitId);
+            final perQty = targetProp.perQty > 0 ? targetProp.perQty : 1.0;
+            double scale = e.qty;
+            if (e.value != null && u != null) {
+              final dimProp = props.where((p) => p.id != targetProp.id && unit(p.unitId).dim == u.dim).firstOrNull;
+              if (dimProp != null && dimProp.value > 0) {
+                final du = unit(dimProp.unitId);
+                final dimPerQty = dimProp.perQty > 0 ? dimProp.perQty : 1.0;
+                scale = (e.value! * u.factor) / ((dimProp.value / dimPerQty) * du.factor);
+              }
+            }
+            done += scale * (targetProp.value / perQty) * (pu.factor / goalUnit.factor);
+          }
+        }
       } else if (u == null) {
         done += e.qty;
       } else if (u.dim == 'count') {

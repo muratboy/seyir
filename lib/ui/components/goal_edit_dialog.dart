@@ -23,7 +23,12 @@ class GoalEditDialog {
         : DateTime.now().add(const Duration(days: 30));
 
     final links = existing != null
-        ? List<GoalLink>.from(existing.links.map((l) => GoalLink(activityId: l.activityId, pct: l.pct)))
+        ? List<GoalLink>.from(existing.links.map((l) => GoalLink(
+            activityId: l.activityId,
+            pct: l.pct,
+            propertyId: l.propertyId,
+            customRate: l.customRate,
+          )))
         : <GoalLink>[];
 
     await showDialog<void>(
@@ -249,7 +254,16 @@ class GoalEditDialog {
                           exclude: {for (final l in links) l.activityId},
                         );
                         if (act != null) {
-                          setS(() => links.add(GoalLink(activityId: act.id, pct: 100)));
+                          final props = store.activityProperties(act.id);
+                          int? matchedPropId;
+                          if (mode == 'amount') {
+                            final gu = store.unit(unitId);
+                            final matchingProp = props.where((p) => store.unit(p.unitId).dim == gu.dim).firstOrNull;
+                            if (matchingProp != null) {
+                              matchedPropId = matchingProp.id;
+                            }
+                          }
+                          setS(() => links.add(GoalLink(activityId: act.id, pct: 100, propertyId: matchedPropId)));
                         }
                       },
                     ),
@@ -271,12 +285,14 @@ class GoalEditDialog {
                     Builder(builder: (c) {
                       final link = links[i];
                       final act = store.activity(link.activityId);
+                      final props = store.activityProperties(link.activityId);
                       return Card(
                         margin: const EdgeInsets.symmetric(vertical: 4),
                         color: Theme.of(c).colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
                           child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Row(
                                 children: [
@@ -306,6 +322,46 @@ class GoalEditDialog {
                                 label: fmtPercent(link.pct.round()),
                                 onChanged: (val) => setS(() => link.pct = val),
                               ),
+                              if (props.isNotEmpty) ...[
+                                const SizedBox(height: 2),
+                                Text(
+                                  s.isTr ? 'Ölçü Alınacak Özellik:' : 'Property to Measure:',
+                                  style: TextStyle(
+                                    fontSize: AppFont.micro,
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(c).colorScheme.primary,
+                                  ),
+                                ),
+                                const SizedBox(height: 4),
+                                DropdownButtonFormField<int?>(
+                                  initialValue: props.any((p) => p.id == link.propertyId) ? link.propertyId : null,
+                                  isExpanded: true,
+                                  decoration: InputDecoration(
+                                    isDense: true,
+                                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                                  ),
+                                  items: [
+                                    DropdownMenuItem<int?>(
+                                      value: null,
+                                      child: Text(
+                                        s.isTr ? 'Otomatik / Doğrudan Değer' : 'Automatic / Direct Value',
+                                        style: const TextStyle(fontSize: AppFont.small),
+                                      ),
+                                    ),
+                                    for (final p in props)
+                                      DropdownMenuItem<int?>(
+                                        value: p.id,
+                                        child: Text(
+                                          '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (${fmtNum(p.perQty)} adet)',
+                                          style: const TextStyle(fontSize: AppFont.small),
+                                          overflow: TextOverflow.ellipsis,
+                                        ),
+                                      ),
+                                  ],
+                                  onChanged: (val) => setS(() => link.propertyId = val),
+                                ),
+                              ],
                             ],
                           ),
                         ),

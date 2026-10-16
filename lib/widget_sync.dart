@@ -6,6 +6,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
 import 'data/store.dart';
+import 'services/notification_service.dart';
 import 'services/store_sync.dart';
 
 const widgetProviderName = 'dev.takip.takip.TakipWidgetProvider';
@@ -94,6 +95,15 @@ Future<void> widgetBackgroundCallback(Uri? uri) async {
     final actId = int.tryParse(uri.queryParameters['actId'] ?? '');
     if (actId != null && actId > 0) {
       await store.repeatLastEntry(actId);
+      StoreSync.notifyChanged();
+    }
+  } else if (uri.host == 'quick_text') {
+    final text = uri.queryParameters['text'] ?? '';
+    if (text.trim().isNotEmpty) {
+      final msg = await store.logFromQuickText(text.trim());
+      if (store.persistentQuickLogEnabled && msg != null) {
+        await NotificationService.updatePersistentQuickLogNotification(store, lastLogMessage: msg);
+      }
       StoreSync.notifyChanged();
     }
   }

@@ -17,6 +17,7 @@ void seed({
   store.entries = [...entries]..sort((a, b) => a.ts.compareTo(b.ts));
   store.goals = [...goals];
   store.roadmaps = [...roadmaps];
+  store.collapsedSections.clear();
   store.clearHabitStreakCache();
 }
 
@@ -123,5 +124,48 @@ void main() {
 
     expect(find.text('Bugünün Özeti'), findsOneWidget);
     expect(find.textContaining('Harika!'), findsOneWidget);
+  });
+
+  testWidgets('TodaySummaryCard switches between detailed goals and compact mini rings when collapsed', (tester) async {
+    final now = DateTime.now();
+    final water = Activity(id: 1, name: 'Su', emoji: '💧', createdAt: 1000);
+    final goal = Goal(
+      id: 1,
+      name: 'Günlük Su',
+      mode: 'amount',
+      period: GoalPeriod.day,
+      target: 2.0,
+      unitId: 'l',
+      startDate: 1000,
+      links: [GoalLink(activityId: 1, pct: 100)],
+      createdAt: 1000,
+    );
+
+    seed(activities: [water], goals: [goal]);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: AnimatedBuilder(
+            animation: store,
+            builder: (context, _) => TodaySummaryCard(currentDay: now),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // When expanded, 'Günlük Su' is rendered once with detailed progress
+    expect(find.text('Günlük Su'), findsOneWidget);
+    expect(find.textContaining('Kalan:'), findsOneWidget);
+
+    // Collapse TodaySummaryCard
+    store.collapsedSections.add('summary');
+    store.notifyListeners();
+    await tester.pumpAndSettle();
+
+    // When collapsed, 'Günlük Su' is rendered once inside the embedded mini ring
+    expect(find.text('Günlük Su'), findsOneWidget);
+    expect(find.textContaining('Kalan:'), findsNothing);
   });
 }

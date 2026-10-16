@@ -165,6 +165,44 @@ class AppDb {
       auto_completed INTEGER NOT NULL DEFAULT 0,
       kept_open INTEGER NOT NULL DEFAULT 0)''');
     await _ensureRoadmapStepColumns(db);
+    await db.execute('''CREATE TABLE IF NOT EXISTS activity_properties(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      value REAL NOT NULL,
+      unit_id TEXT NOT NULL,
+      per_qty REAL NOT NULL DEFAULT 1.0)''');
+    await ensureColumn(db, 'goal_links', 'property_id', 'INTEGER');
+    await ensureColumn(db, 'goal_links', 'custom_rate', 'REAL');
+    await _ensureDefaultMeasures(db);
+  }
+
+  /// Doğal dilde yazılan birimlerin ("500 ml", "2 kg", "45 sn", "500 m") doğru ölçüye bağlanabilmesi için
+  /// 1 birimlik temel ölçülerin veritabanında bulunmasını sağlar.
+  static Future<void> _ensureDefaultMeasures(DatabaseExecutor db) async {
+    const essentialMeasures = [
+      ['Mililitre', 'ml', 1.0],
+      ['Kilogram', 'kg', 1.0],
+      ['Saniye', 'sn', 1.0],
+      ['Metre', 'm', 1.0],
+      ['Kalori', 'kcal', 1.0],
+    ];
+    for (final m in essentialMeasures) {
+      final existing = await db.query(
+        'measures',
+        where: 'unit_id = ? AND amount = 1.0',
+        whereArgs: [m[1]],
+        limit: 1,
+      );
+      if (existing.isEmpty) {
+        await db.insert('measures', {
+          'name': m[0],
+          'unit_id': m[1],
+          'amount': m[2],
+          'sort': 50,
+        });
+      }
+    }
   }
 
   static Future<void> createSchema(DatabaseExecutor db) async {
@@ -195,7 +233,17 @@ class AppDb {
       sort INTEGER NOT NULL DEFAULT 0)''');
     await db.execute('''CREATE TABLE goal_links(
       goal_id INTEGER NOT NULL, activity_id INTEGER NOT NULL,
-      pct REAL NOT NULL DEFAULT 100, PRIMARY KEY(goal_id, activity_id))''');
+      pct REAL NOT NULL DEFAULT 100,
+      property_id INTEGER,
+      custom_rate REAL,
+      PRIMARY KEY(goal_id, activity_id))''');
+    await db.execute('''CREATE TABLE activity_properties(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_id INTEGER NOT NULL,
+      name TEXT NOT NULL,
+      value REAL NOT NULL,
+      unit_id TEXT NOT NULL,
+      per_qty REAL NOT NULL DEFAULT 1.0)''');
     await db.execute('''CREATE TABLE quick_items(
       id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER NOT NULL,
       kind TEXT NOT NULL, daily INTEGER NOT NULL DEFAULT 1, measure_id INTEGER,
@@ -244,11 +292,16 @@ class AppDb {
       ['Şişe', 'l', 0.5],
       ['Kase', 'l', 0.25],
       ['Litre', 'l', 1.0],
+      ['Mililitre', 'ml', 1.0],
       ['Dakika', 'dk', 1.0],
       ['Saat', 'sa', 1.0],
+      ['Saniye', 'sn', 1.0],
       ['Adet', 'adet', 1.0],
       ['Gram', 'g', 1.0],
+      ['Kilogram', 'kg', 1.0],
+      ['Metre', 'm', 1.0],
       ['Kilometre', 'km', 1.0],
+      ['Kalori', 'kcal', 1.0],
     ];
     for (var i = 0; i < measures.length; i++) {
       final m = measures[i];
@@ -268,5 +321,6 @@ class AppDb {
     'active_timers',
     'roadmaps',
     'roadmap_steps',
+    'activity_properties',
   ];
 }

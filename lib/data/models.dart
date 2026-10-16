@@ -235,6 +235,43 @@ class Activity {
       );
 }
 
+/// Aktiviteye ait ek özellik/metrik (örn: Ayran için 200 ml hacim, 76 kcal kalori, 4 g protein vb.)
+class ActivityProperty {
+  int id;
+  int activityId;
+  String name;
+  double value;
+  String unitId;
+  double perQty; // Kaç adet/birim temel miktar için geçerli olduğu (varsayılan 1.0)
+
+  ActivityProperty({
+    this.id = 0,
+    required this.activityId,
+    required this.name,
+    required this.value,
+    required this.unitId,
+    this.perQty = 1.0,
+  });
+
+  Map<String, Object?> toMap() => {
+        if (id != 0) 'id': id,
+        'activity_id': activityId,
+        'name': name,
+        'value': value,
+        'unit_id': unitId,
+        'per_qty': perQty,
+      };
+
+  factory ActivityProperty.fromMap(Map<String, Object?> m) => ActivityProperty(
+        id: (m['id'] as int?) ?? 0,
+        activityId: m['activity_id'] as int,
+        name: m['name'] as String,
+        value: (m['value'] as num).toDouble(),
+        unitId: m['unit_id'] as String,
+        perQty: ((m['per_qty'] as num?) ?? 1.0).toDouble(),
+      );
+}
+
 /// Zaman damgalı tek bir kayıt. value/unitId, kayıt anındaki ölçünün
 /// anlık görüntüsüdür (ölçü sonradan değişse de geçmiş bozulmaz).
 class Entry {
@@ -311,15 +348,29 @@ String periodName(GoalPeriod period, {required bool isTr}) =>
 class GoalLink {
   int activityId;
   double pct; // 100 = tam katkı, 50 = yarısı
+  int? propertyId; // Belirli bir aktivite özelliğine bağlanmışsa id'si (null ise otomatik / doğrudan)
+  double? customRate; // İsteğe bağlı özel çarpan / oran
 
-  GoalLink({required this.activityId, this.pct = 100});
+  GoalLink({
+    required this.activityId,
+    this.pct = 100,
+    this.propertyId,
+    this.customRate,
+  });
 
-  Map<String, Object?> toMap(int goalId) =>
-      {'goal_id': goalId, 'activity_id': activityId, 'pct': pct};
+  Map<String, Object?> toMap(int goalId) => {
+        'goal_id': goalId,
+        'activity_id': activityId,
+        'pct': pct,
+        'property_id': propertyId,
+        'custom_rate': customRate,
+      };
 
   factory GoalLink.fromMap(Map<String, Object?> m) => GoalLink(
         activityId: m['activity_id'] as int,
         pct: (m['pct'] as num).toDouble(),
+        propertyId: m['property_id'] as int?,
+        customRate: (m['custom_rate'] as num?)?.toDouble(),
       );
 }
 

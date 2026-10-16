@@ -85,7 +85,7 @@ void main() {
     expect(tester.widget<IconButton>(submitButton).tooltip, 'Kaydet');
     expect(find.textContaining('Yeni Olarak Ekle'), findsNothing, reason: 'the text names the activity "Su"');
 
-    await tester.tap(submitButton); // opens the options
+    await tester.tap(find.byTooltip('Ayrıntılar')); // opens the options
     await tester.pump();
     final selectedMeasure = find.byWidgetPredicate((w) => w is ChoiceChip && w.selected);
     expect(
@@ -108,6 +108,26 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('when amount or measure is explicit, tapping submit logs entry in one tap without double confirmation', (tester) async {
+    await tester.runAsync(() async {
+      await store.load();
+      await store.addActivity('Kahve', emoji: '☕');
+    });
+    await pumpToday(tester);
+
+    await tester.enterText(composerField, '2 kahve');
+    await tester.pump();
+    expect(previewOf(tester), '☕ Kahve: 2 kez eklenecek');
+
+    // One single tap logs it immediately!
+    await tester.tap(submitButton);
+    await settleStore(tester);
+
+    expect(store.entries, hasLength(1));
+    expect(store.entries.single.qty, 2.0);
+    await finish(tester);
+  });
+
   testWidgets('an amount changed in the options wins over the one in the text', (tester) async {
     await tester.runAsync(() async {
       await store.load();
@@ -117,7 +137,7 @@ void main() {
 
     await tester.enterText(composerField, '2 bardak su');
     await tester.pump();
-    await tester.tap(submitButton);
+    await tester.tap(find.byTooltip('Ayrıntılar')); // opens the options
     await tester.pump();
     await tester.tap(find.byIcon(Icons.remove));
     await tester.pump();

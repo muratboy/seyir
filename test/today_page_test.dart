@@ -17,7 +17,7 @@ void main() {
     store.clearHabitStreakCache();
   });
 
-  testWidgets('TodayPage renders without overflow when navigating to future dates like 12 Ekim Pazartesi', (tester) async {
+  testWidgets('TodayPage renders without overflow when navigating dates and prevents future navigation', (tester) async {
     // Set a compact screen size (e.g., standard 360x640) to strictly verify overflow safety
     tester.view.physicalSize = const Size(360, 640);
     tester.view.devicePixelRatio = 1.0;
@@ -36,14 +36,20 @@ void main() {
     // Verify initial "Bugün" is rendered
     expect(find.text('Bugün'), findsOneWidget);
 
-    // Tap next day button twice to reach 2 days in the future
-    final nextBtn = find.byTooltip('Sonraki gün');
-    expect(nextBtn, findsOneWidget);
+    // Verify next day button is disabled on today
+    final nextBtnFinder = find.widgetWithIcon(IconButton, Icons.chevron_right);
+    expect(nextBtnFinder, findsOneWidget);
+    final nextBtnWidget = tester.widget<IconButton>(nextBtnFinder);
+    expect(nextBtnWidget.onPressed, isNull);
 
-    await tester.tap(nextBtn);
+    // Tap previous day button twice to reach 2 days in the past
+    final prevBtn = find.widgetWithIcon(IconButton, Icons.chevron_left);
+    expect(prevBtn, findsOneWidget);
+
+    await tester.tap(prevBtn);
     await tester.pumpAndSettle();
 
-    await tester.tap(nextBtn);
+    await tester.tap(prevBtn);
     await tester.pumpAndSettle();
 
     // No RenderFlex overflow exception should be thrown
@@ -52,6 +58,10 @@ void main() {
     // Verify "Bugüne dön" button appears
     final todayBtn = find.byTooltip('Bugüne dön');
     expect(todayBtn, findsOneWidget);
+
+    // Now next day button should be enabled
+    final enabledNextBtnWidget = tester.widget<IconButton>(nextBtnFinder);
+    expect(enabledNextBtnWidget.onPressed, isNotNull);
 
     // Tap "Bugüne dön"
     await tester.tap(todayBtn);

@@ -1,6 +1,6 @@
 import 'dart:io';
 import 'package:csv/csv.dart';
-import 'package:flutter/material.dart' show BuildContext, ScaffoldMessenger, SnackBar, Text;
+import 'package:flutter/material.dart' show BuildContext, DateTimeRange, ScaffoldMessenger, SnackBar, Text;
 import 'package:flutter/services.dart' show rootBundle;
 import 'package:intl/intl.dart';
 import 'package:path_provider/path_provider.dart';
@@ -15,9 +15,34 @@ import '../logic/l10n.dart';
 
 class ExportService {
   /// CSV formatında dışa aktarır ve sistem paylaşım penceresini açar.
-  static Future<void> exportCsv(BuildContext context, AppStore store) async {
+  static Future<void> exportCsv(
+    BuildContext context,
+    AppStore store, {
+    DateTimeRange? dateRange,
+    int? activityId,
+  }) async {
     try {
       final isTr = store.language == AppLanguage.tr;
+
+      var entries = store.entries;
+      if (activityId != null) {
+        entries = entries.where((e) => e.activityId == activityId).toList();
+      }
+      if (dateRange != null) {
+        final startMs = dateRange.start.millisecondsSinceEpoch;
+        final endMs = DateTime(dateRange.end.year, dateRange.end.month, dateRange.end.day, 23, 59, 59, 999).millisecondsSinceEpoch;
+        entries = entries.where((e) => e.ts >= startMs && e.ts <= endMs).toList();
+      }
+
+      if (entries.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(isTr ? 'Dışa aktarılacak kayıt bulunamadı.' : 'No entries found to export.')),
+          );
+        }
+        return;
+      }
+
       final rows = <List<dynamic>>[];
       // Başlık satırı
       rows.add(isTr
@@ -27,7 +52,7 @@ class ExportService {
       final dateFmt = DateFormat('yyyy-MM-dd');
       final timeFmt = DateFormat('HH:mm:ss');
 
-      for (final e in store.entries) {
+      for (final e in entries) {
         final act = store.activities[e.activityId];
         final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
         final dateStr = dateFmt.format(dt);
@@ -80,9 +105,33 @@ class ExportService {
   }
 
   /// PDF Raporu oluşturur ve paylaşır.
-  static Future<void> exportPdf(BuildContext context, AppStore store) async {
+  static Future<void> exportPdf(
+    BuildContext context,
+    AppStore store, {
+    DateTimeRange? dateRange,
+    int? activityId,
+  }) async {
     try {
       final isTr = store.language == AppLanguage.tr;
+
+      var entries = store.entries;
+      if (activityId != null) {
+        entries = entries.where((e) => e.activityId == activityId).toList();
+      }
+      if (dateRange != null) {
+        final startMs = dateRange.start.millisecondsSinceEpoch;
+        final endMs = DateTime(dateRange.end.year, dateRange.end.month, dateRange.end.day, 23, 59, 59, 999).millisecondsSinceEpoch;
+        entries = entries.where((e) => e.ts >= startMs && e.ts <= endMs).toList();
+      }
+
+      if (entries.isEmpty) {
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text(isTr ? 'Raporlanacak kayıt bulunamadı.' : 'No entries found to report.')),
+          );
+        }
+        return;
+      }
 
       // Türkçe karakter desteği için NotoSans fontlarını yükle
       final regularData = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
@@ -102,20 +151,27 @@ class ExportService {
       final now = DateTime.now();
 
       // İstatistik özetleri
-      final totalEntries = store.entries.length;
-      final uniqueActivities = store.activities.length;
+      final totalEntries = entries.length;
+      final uniqueActivities = entries.map((e) => e.activityId).toSet().length;
       final activeGoals = store.goals.length;
 
       // Kategori dağılımı
       final categoryCounts = <String, int>{};
-      for (final e in store.entries) {
+      for (final e in entries) {
         final act = store.activities[e.activityId];
         final cat = act?.categoryDef.name(isTr) ?? (isTr ? 'Genel' : 'General');
         categoryCounts[cat] = (categoryCounts[cat] ?? 0) + 1;
       }
 
-      // Son 40 kayıt
-      final recentEntries = store.entries.reversed.take(40).toList();
+      // Filtrelenmiş veya son kayıtlar
+      final recentEntries = entries.reversed.take(60).toList();
+
+      final filterInfo = [
+        if (activityId != null && store.activities.containsKey(activityId))
+          '${isTr ? "Aktivite" : "Activity"}: ${store.activities[activityId]!.name}',
+        if (dateRange != null)
+          '${isTr ? "Tarih" : "Date"}: ${dateFmt.format(dateRange.start)} - ${dateFmt.format(dateRange.end)}',
+      ].join('  ·  ');
 
       pdf.addPage(
         pw.MultiPage(
@@ -129,13 +185,25 @@ class ExportService {
                 child: pw.Row(
                   mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
                   children: [
-                    pw.Text(
-                      isTr ? 'TAKIP - RAPOR' : 'TAKIP - REPORT',
-                      style: pw.TextStyle(
-                        fontSize: 24,
-                        fontWeight: pw.FontWeight.bold,
-                        color: PdfColors.blueGrey800,
-                      ),
+                    pw.Column(
+                      crossAxisAlignment: pw.CrossAxisAlignment.start,
+                      children: [
+                        pw.Text(
+                          isTr ? 'TAKIP - RAPOR' : 'TAKIP - REPORT',
+                          style: pw.TextStyle(
+                            fontSize: 24,
+                            fontWeight: pw.FontWeight.bold,
+                            color: PdfColors.blueGrey800,
+                          ),
+                        ),
+                        if (filterInfo.isNotEmpty) ...[
+                          pw.SizedBox(height: 4),
+                          pw.Text(
+                            filterInfo,
+                            style: const pw.TextStyle(fontSize: 10, color: PdfColors.blueGrey600),
+                          ),
+                        ],
+                      ],
                     ),
                     pw.Text(
                       dateFmt.format(now),

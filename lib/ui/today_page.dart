@@ -12,12 +12,12 @@ import '../logic/text_match.dart';
 import '../services/nl_parser.dart';
 import 'common.dart';
 import 'components/active_timer_card.dart';
-import 'components/today_day_summary.dart';
 import 'components/today_summary_card.dart';
 import 'components/today_health_panel.dart';
 import 'components/today_quick_shortcuts.dart';
 import 'components/today_roadmap_panel.dart';
 import 'components/today_timeline.dart';
+import 'search_page.dart';
 import 'voice_dialog.dart';
 import 'app_font.dart';
 
@@ -66,17 +66,22 @@ class _ComposerPreview extends StatelessWidget {
   final String text;
   final String? otherLabel;
   final VoidCallback onOther;
+  final VoidCallback? onToggleOptions;
+  final bool optionsOpen;
 
   const _ComposerPreview({
     required this.startsTimer,
     required this.text,
     required this.otherLabel,
     required this.onOther,
+    this.onToggleOptions,
+    this.optionsOpen = false,
   });
 
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final isTr = strings.value.isTr;
     return Padding(
       padding: const EdgeInsets.only(left: 4),
       child: Row(
@@ -88,15 +93,32 @@ class _ComposerPreview extends StatelessWidget {
           ),
           const SizedBox(width: 6),
           Expanded(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(vertical: 6),
-              child: Text(
-                text,
-                key: const Key('composer-preview'),
-                style: TextStyle(fontSize: AppFont.small, color: scheme.onSurfaceVariant),
+            child: InkWell(
+              onTap: onToggleOptions,
+              borderRadius: BorderRadius.circular(6),
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 2),
+                child: Text(
+                  text,
+                  key: const Key('composer-preview'),
+                  style: TextStyle(fontSize: AppFont.small, color: scheme.onSurfaceVariant),
+                ),
               ),
             ),
           ),
+          if (onToggleOptions != null && !startsTimer)
+            IconButton(
+              icon: Icon(
+                optionsOpen ? Icons.expand_less : Icons.tune_rounded,
+                size: 18,
+                color: optionsOpen ? scheme.primary : scheme.onSurfaceVariant,
+              ),
+              tooltip: isTr ? 'Ayrıntılar' : 'Details',
+              visualDensity: VisualDensity.compact,
+              padding: EdgeInsets.zero,
+              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+              onPressed: onToggleOptions,
+            ),
           if (otherLabel != null)
             TextButton(
               style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
@@ -282,11 +304,15 @@ class _TodayViewState extends State<_TodayView> {
     await store.updateActivity(act);
   }
 
-  /// Gönder düğmesi ve klavyenin "bitti" tuşu. Yazılan bir kayıtsa önce ölçü ve miktar seçenekleri açılır;
-  /// sayaç komutunda seçilecek bir şey yoktur, önizleme ne olacağını zaten söylemiştir.
+  /// Gönder düğmesi ve klavyenin "bitti" tuşu.
+  /// Metinde miktar/ölçü zaten varsa ("2 kahve", "500 ml su", "30 dk koşu") veya sayaç komutuysa
+  /// ya da seçenekler paneli açıksa, çift onay istenmeden tek dokunuşla doğrudan kaydedilir.
+  /// Miktar/ölçü belirtilmemişse önce seçenekler paneli açılarak kullanıcının seçmesi sağlanır.
   void _onSubmitPressed() {
     final plan = _plan();
-    if (!_showOptions && plan != null && plan.timer == null) {
+    final hasExplicitAmount = plan != null &&
+        (plan.parsed.hasExplicitQuantity || plan.parsed.matchedMeasure != null);
+    if (!_showOptions && plan != null && plan.timer == null && !hasExplicitAmount) {
       setState(() => _showOptions = true);
     } else {
       _submitEntry();
@@ -634,6 +660,8 @@ class _TodayViewState extends State<_TodayView> {
                   text: _planText(plan),
                   otherLabel: plan.canBeCommand ? (startsTimer ? s.previewAsEntry : s.previewAsTimer) : null,
                   onOther: () => setState(() => _asEntry = !_asEntry),
+                  onToggleOptions: () => setState(() => _showOptions = !_showOptions),
+                  optionsOpen: _showOptions,
                 ),
 
               Row(
@@ -643,6 +671,7 @@ class _TodayViewState extends State<_TodayView> {
                       controller: _textController,
                       focusNode: _inputFocus,
                       textCapitalization: TextCapitalization.sentences,
+                      textInputAction: TextInputAction.done,
                       decoration: InputDecoration(
                         hintText: s.composerHint,
                         border: InputBorder.none,
@@ -711,6 +740,12 @@ class _TodayViewState extends State<_TodayView> {
       builder: (context, _) {
         final s = strings.value;
         final isToday = sameDay(_currentDay, DateTime.now());
+        final daySummary = store.getDaySummary(_currentDay);
+        final subtitleParts = <String>[
+          fmtDateShort(_currentDay, isTr: s.isTr),
+          if (daySummary.count > 0) '${daySummary.count} ${s.entriesCountSuffix}',
+          if (daySummary.totalTimeMinutes > 0) fmtAmount(daySummary.totalTimeMinutes, 'time'),
+        ];
         return LayoutBuilder(
           builder: (context, constraints) => Scaffold(
             appBar: AppBar(
@@ -735,7 +770,7 @@ class _TodayViewState extends State<_TodayView> {
                           context: context,
                           initialDate: _currentDay,
                           firstDate: DateTime(2020),
-                          lastDate: addDays(DateTime.now(), 365),
+                          lastDate: DateTime.now(),
                         );
                         if (picked != null) setState(() => _currentDay = dayStart(picked));
                       },
@@ -761,7 +796,7 @@ class _TodayViewState extends State<_TodayView> {
                               ],
                             ),
                             Text(
-                              fmtDateShort(_currentDay, isTr: s.isTr),
+                              subtitleParts.join(' · '),
                               style: TextStyle(
                                 fontSize: AppFont.micro,
                                 color: Theme.of(context).colorScheme.onSurfaceVariant,
@@ -781,7 +816,7 @@ class _TodayViewState extends State<_TodayView> {
                     padding: EdgeInsets.zero,
                     visualDensity: VisualDensity.compact,
                     constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
-                    onPressed: () => setState(() => _currentDay = addDays(_currentDay, 1)),
+                    onPressed: isToday ? null : () => setState(() => _currentDay = addDays(_currentDay, 1)),
                   ),
                 ],
               ),
@@ -797,13 +832,21 @@ class _TodayViewState extends State<_TodayView> {
                   ),
                 IconButton(
                   icon: const Icon(Icons.search),
-                  tooltip: s.isTr ? 'Aktivite Ara' : 'Search Activity',
+                  tooltip: s.isTr ? 'Kayıt & Not Ara' : 'Search Entries & Notes',
                   padding: EdgeInsets.zero,
                   visualDensity: VisualDensity.compact,
                   constraints: const BoxConstraints(minWidth: 36, minHeight: 36),
                   onPressed: () async {
-                    final a = await showActivityPicker(context);
-                    if (a != null) _selectActivity(a);
+                    final res = await showSearch(
+                      context: context,
+                      delegate: TakipSearchDelegate(store: store),
+                    );
+                    if (!context.mounted) return;
+                    if (res is DateTime) {
+                      setState(() => _currentDay = dayStart(res));
+                    } else if (res is Activity) {
+                      _selectActivity(res);
+                    }
                   },
                 ),
                 const SizedBox(width: 4),
@@ -816,7 +859,6 @@ class _TodayViewState extends State<_TodayView> {
                 children: [
                   if (store.activeTimers.isNotEmpty)
                     ActiveTimersSection(timers: store.activeTimers),
-                  TodayDaySummary(currentDay: _currentDay),
                   TodaySummaryCard(
                     currentDay: _currentDay,
                     onStartTimer: _startTimerForActivity,
@@ -825,9 +867,15 @@ class _TodayViewState extends State<_TodayView> {
                     currentDay: _currentDay,
                     onRefresh: () => setState(() {}),
                   ),
-                  TodayQuickShortcuts(onStartTimer: _startTimerForActivity),
+                  TodayQuickShortcuts(
+                    currentDay: _currentDay,
+                    onStartTimer: _startTimerForActivity,
+                  ),
                   if (store.activeRoadmaps.isNotEmpty)
-                    TodayRoadmapPanel(onStartTimer: _startTimerForActivity),
+                    TodayRoadmapPanel(
+                      currentDay: _currentDay,
+                      onStartTimer: _startTimerForActivity,
+                    ),
                   TodayTimeline(
                     currentDay: _currentDay,
                     onStartTimer: _startTimerForActivity,

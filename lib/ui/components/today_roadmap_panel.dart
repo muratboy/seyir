@@ -12,10 +12,12 @@ import '../app_font.dart';
 /// Günün Akışı (TodayPage) üzerinde yer alan, aktif yol haritalarının SADECE sıradaki
 /// hedef veya aktivitelerini gösteren dinamik panel. Sık Yapılanlar ile Günün Akışı arasında konumlanır.
 class TodayRoadmapPanel extends StatelessWidget {
+  final DateTime? currentDay;
   final Future<void> Function(Activity)? onStartTimer;
 
   const TodayRoadmapPanel({
     super.key,
+    this.currentDay,
     this.onStartTimer,
   });
 
@@ -73,15 +75,15 @@ class TodayRoadmapPanel extends StatelessWidget {
     final linked = store.activities.containsKey(step.linkedActivityId);
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 5),
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
       elevation: 0,
       shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.45)),
       ),
       color: scheme.surfaceContainerHighest.withValues(alpha: 0.25),
       child: InkWell(
-        borderRadius: BorderRadius.circular(18),
+        borderRadius: BorderRadius.circular(14),
         onTap: () {
           Navigator.push(
             context,
@@ -89,7 +91,7 @@ class TodayRoadmapPanel extends StatelessWidget {
           );
         },
         child: Padding(
-          padding: const EdgeInsets.all(14),
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
@@ -97,14 +99,14 @@ class TodayRoadmapPanel extends StatelessWidget {
               Row(
                 children: [
                   Container(
-                    padding: const EdgeInsets.all(6),
+                    padding: const EdgeInsets.all(4),
                     decoration: BoxDecoration(
                       color: scheme.primary.withValues(alpha: 0.1),
-                      borderRadius: BorderRadius.circular(8),
+                      borderRadius: BorderRadius.circular(7),
                     ),
-                    child: Text(roadmap.emoji, style: const TextStyle(fontSize: AppFont.subtitle)),
+                    child: Text(roadmap.emoji, style: const TextStyle(fontSize: AppFont.small)),
                   ),
-                  const SizedBox(width: 8),
+                  const SizedBox(width: 7),
                   Expanded(
                     child: Text(
                       roadmap.title,
@@ -113,7 +115,7 @@ class TodayRoadmapPanel extends StatelessWidget {
                         fontWeight: FontWeight.bold,
                         color: scheme.onSurface,
                       ),
-                      maxLines: 2,
+                      maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
                   ),
@@ -136,15 +138,15 @@ class TodayRoadmapPanel extends StatelessWidget {
                   Icon(Icons.chevron_right_rounded, size: 18, color: scheme.onSurfaceVariant),
                 ],
               ),
-              const SizedBox(height: 10),
+              const SizedBox(height: 4),
 
-              // Sıradaki Tek Adım Satırı: Checkbox, Başlık, Açıklama / Hedef ve Aktivite Kısayolu
+              // Sıradaki Tek Adım Satırı: Checkbox, Başlık ve Hedef Rozeti
               Row(
-                crossAxisAlignment: CrossAxisAlignment.start,
+                crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
                   SizedBox(
-                    width: 28,
-                    height: 28,
+                    width: 24,
+                    height: 24,
                     child: Checkbox(
                       value: step.isCompleted,
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
@@ -162,7 +164,7 @@ class TodayRoadmapPanel extends StatelessWidget {
                       },
                     ),
                   ),
-                  const SizedBox(width: 10),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
@@ -170,20 +172,11 @@ class TodayRoadmapPanel extends StatelessWidget {
                         Text(
                           step.title,
                           style: TextStyle(
-                            fontSize: AppFont.body,
+                            fontSize: AppFont.small,
                             fontWeight: FontWeight.w600,
                             decoration: step.isCompleted ? TextDecoration.lineThrough : null,
                           ),
                         ),
-                        if (step.description.isNotEmpty) ...[
-                          const SizedBox(height: 3),
-                          Text(
-                            step.description,
-                            maxLines: 2,
-                            overflow: TextOverflow.ellipsis,
-                            style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
-                          ),
-                        ],
                         // Aktiviteye bağlı adımın hedefi aşağıdaki ilerleme satırında yazar.
                         if (!linked && step.isGoal && step.target != null) ...[
                           const SizedBox(height: 4),
@@ -246,7 +239,12 @@ class TodayRoadmapPanel extends StatelessWidget {
               style: const TextStyle(fontSize: AppFont.micro),
             ),
             onPressed: () async {
-              await store.quickLogHabit(act.id);
+              final targetTime = currentDay != null
+                  ? (sameDay(currentDay!, DateTime.now())
+                      ? DateTime.now()
+                      : DateTime(currentDay!.year, currentDay!.month, currentDay!.day, 12, 0))
+                  : null;
+              await store.quickLogHabit(act.id, date: targetTime);
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
                   SnackBar(

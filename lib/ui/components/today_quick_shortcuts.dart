@@ -9,10 +9,12 @@ import '../app_font.dart';
 
 /// Hızlı kısayollar ve günlük yapılacaklar şeridi (Shortcuts & To-Dos)
 class TodayQuickShortcuts extends StatelessWidget {
+  final DateTime currentDay;
   final Future<void> Function(Activity) onStartTimer;
 
   const TodayQuickShortcuts({
     super.key,
+    required this.currentDay,
     required this.onStartTimer,
   });
 
@@ -28,13 +30,16 @@ class TodayQuickShortcuts extends StatelessWidget {
         SectionTitle(
           s.quickListTitle,
           trailing: IconButton(
-            icon: const Icon(Icons.add_circle_outline, size: 22),
+            icon: const Icon(Icons.add_circle_outline, size: 20),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
             onPressed: () => _showAddQuickItemDialog(context),
           ),
         ),
         if (items.isEmpty)
           Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+            padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 6),
             child: Text(
               s.quickListEmpty,
               style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppFont.small),
@@ -42,7 +47,7 @@ class TodayQuickShortcuts extends StatelessWidget {
           )
         else
           SizedBox(
-            height: 52,
+            height: 46,
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               scrollDirection: Axis.horizontal,
@@ -51,13 +56,13 @@ class TodayQuickShortcuts extends StatelessWidget {
               itemBuilder: (itemCtx, i) {
                 final item = items[i];
                 final act = store.activity(item.activityId);
-                final done = store.quickDone(item);
+                final done = store.quickDone(item, at: currentDay);
                 final isTodo = item.isTodo;
 
                 return InkWell(
                   borderRadius: BorderRadius.circular(16),
                   onTap: () async {
-                    final res = await store.tapQuickItem(item.id);
+                    final res = await store.tapQuickItem(item.id, at: currentDay);
                     if (context.mounted) {
                       if (res.added != null) {
                         showSnack(

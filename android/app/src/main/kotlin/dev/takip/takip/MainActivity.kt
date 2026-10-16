@@ -33,9 +33,32 @@ class MainActivity : FlutterActivity() {
                 when (call.method) {
                     "hasActivityRecognition" -> result.success(hasActivityRecognition())
                     "requestActivityRecognition" -> requestActivityRecognition(result)
+                    "requestAddQuickSettingsTile" -> requestAddQuickSettingsTile(result)
                     else -> result.notImplemented()
                 }
             }
+    }
+
+    private fun requestAddQuickSettingsTile(result: MethodChannel.Result) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            try {
+                val statusBarManager = getSystemService(android.app.StatusBarManager::class.java)
+                val component = android.content.ComponentName(this, TakipTileService::class.java)
+                val icon = android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_stat_takip)
+                statusBarManager.requestAddTileService(
+                    component,
+                    getString(R.string.tile_quick_add),
+                    icon,
+                    mainExecutor
+                ) { res ->
+                    result.success(res == android.app.StatusBarManager.TILE_ADD_REQUEST_RESULT_TILE_ADDED)
+                }
+            } catch (e: Exception) {
+                result.success(false)
+            }
+        } else {
+            result.success(false)
+        }
     }
 
     // Adım sensörü Android 10'dan itibaren çalışma zamanı izni ister; pedometer eklentisi bunu sormaz,

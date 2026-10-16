@@ -237,12 +237,50 @@ class HabitsTab extends StatelessWidget {
                           fontWeight: FontWeight.w600,
                         ),
                       ),
+                      const SizedBox(height: 4),
+                      InkWell(
+                        onTap: () => _showHabitScheduleDialog(context, habit),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 2),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.event_repeat_rounded, size: 13, color: scheme.primary),
+                              const SizedBox(width: 4),
+                              Flexible(
+                                child: Text(
+                                  store.habitScheduleText(habit.id, isTr: s.isTr),
+                                  style: TextStyle(
+                                    fontSize: AppFont.caption,
+                                    color: scheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              const SizedBox(width: 2),
+                              Icon(Icons.arrow_drop_down, size: 14, color: scheme.primary),
+                            ],
+                          ),
+                        ),
+                      ),
                     ],
                   ),
                 ),
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert, size: 20),
                   itemBuilder: (c) => [
+                    PopupMenuItem(
+                      value: 'schedule',
+                      child: Row(
+                        children: [
+                          const Icon(Icons.event_repeat_rounded, size: 18),
+                          const SizedBox(width: 8),
+                          Text(s.isTr ? 'Hedef Günler / Sıklık' : 'Schedule / Days'),
+                        ],
+                      ),
+                    ),
                     PopupMenuItem(
                       value: 'edit',
                       child: Row(
@@ -268,7 +306,9 @@ class HabitsTab extends StatelessWidget {
                     ),
                   ],
                   onSelected: (val) {
-                    if (val == 'edit') {
+                    if (val == 'schedule') {
+                      _showHabitScheduleDialog(context, habit);
+                    } else if (val == 'edit') {
                       showActivityEditDialog(context, habit);
                     } else if (val == 'remove_habit') {
                       store.setActivityHabit(habit.id, false);
@@ -440,6 +480,174 @@ class HabitsTab extends StatelessWidget {
           ),
         ],
       ),
+    );
+  }
+
+  static Future<void> _showHabitScheduleDialog(BuildContext context, Activity habit) async {
+    final s = strings.value;
+    final currentTargetDays = store.habitTargetDays(habit.id);
+    var selectedDays = currentTargetDays == null || currentTargetDays.isEmpty
+        ? {1, 2, 3, 4, 5, 6, 7}
+        : Set<int>.from(currentTargetDays);
+
+    final dayLabels = s.isTr
+        ? {1: 'Pazartesi', 2: 'Salı', 3: 'Çarşamba', 4: 'Perşembe', 5: 'Cuma', 6: 'Cumartesi', 7: 'Pazar'}
+        : {1: 'Monday', 2: 'Tuesday', 3: 'Wednesday', 4: 'Thursday', 5: 'Friday', 6: 'Saturday', 7: 'Sunday'};
+
+    final dayShortLabels = s.isTr
+        ? {1: 'Pzt', 2: 'Sal', 3: 'Çar', 4: 'Per', 5: 'Cum', 6: 'Cmt', 7: 'Paz'}
+        : {1: 'Mon', 2: 'Tue', 3: 'Wed', 4: 'Thu', 5: 'Fri', 6: 'Sat', 7: 'Sun'};
+
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setDialogState) {
+            final scheme = Theme.of(ctx).colorScheme;
+            final isEveryDay = selectedDays.length == 7;
+            final isWeekdays = selectedDays.length == 5 &&
+                selectedDays.contains(1) &&
+                selectedDays.contains(2) &&
+                selectedDays.contains(3) &&
+                selectedDays.contains(4) &&
+                selectedDays.contains(5);
+            final isWeekends = selectedDays.length == 2 && selectedDays.contains(6) && selectedDays.contains(7);
+
+            return AlertDialog(
+              title: Row(
+                children: [
+                  Icon(Icons.event_repeat_rounded, color: scheme.primary),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: Text(
+                      s.isTr ? 'Alışkanlık Sıklığı' : 'Habit Frequency',
+                      style: const TextStyle(fontSize: AppFont.title),
+                    ),
+                  ),
+                ],
+              ),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      habit.name,
+                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
+                    ),
+                    const SizedBox(height: 12),
+                    Wrap(
+                      spacing: 8,
+                      runSpacing: 6,
+                      children: [
+                        ChoiceChip(
+                          label: Text(s.isTr ? 'Her gün' : 'Every day'),
+                          selected: isEveryDay,
+                          onSelected: (_) {
+                            setDialogState(() {
+                              selectedDays = {1, 2, 3, 4, 5, 6, 7};
+                            });
+                          },
+                        ),
+                        ChoiceChip(
+                          label: Text(s.isTr ? 'Hafta içi' : 'Weekdays'),
+                          selected: isWeekdays,
+                          onSelected: (_) {
+                            setDialogState(() {
+                              selectedDays = {1, 2, 3, 4, 5};
+                            });
+                          },
+                        ),
+                        ChoiceChip(
+                          label: Text(s.isTr ? 'Hafta sonu' : 'Weekends'),
+                          selected: isWeekends,
+                          onSelected: (_) {
+                            setDialogState(() {
+                              selectedDays = {6, 7};
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Text(
+                      s.isTr ? 'Hangi günlerde yapılacak?' : 'Which days to do?',
+                      style: TextStyle(
+                        fontSize: AppFont.caption,
+                        fontWeight: FontWeight.w600,
+                        color: scheme.onSurfaceVariant,
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 6,
+                      runSpacing: 6,
+                      children: [
+                        for (int d = 1; d <= 7; d++)
+                          FilterChip(
+                            label: Text(dayShortLabels[d]!),
+                            selected: selectedDays.contains(d),
+                            tooltip: dayLabels[d],
+                            onSelected: (selected) {
+                              setDialogState(() {
+                                if (selected) {
+                                  selectedDays.add(d);
+                                } else {
+                                  if (selectedDays.length > 1) {
+                                    selectedDays.remove(d);
+                                  }
+                                }
+                              });
+                            },
+                          ),
+                      ],
+                    ),
+                    const SizedBox(height: 16),
+                    Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.info_outline, size: 16, color: scheme.onSurfaceVariant),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              s.isTr
+                                  ? 'Planlanmayan günler seriyi bozmaz. Başarı oranı yalnızca seçilen günlere göre hesaplanır.'
+                                  : 'Off-days will not break your streak. Consistency is calculated based on selected days only.',
+                              style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  child: Text(s.cancel),
+                ),
+                FilledButton(
+                  onPressed: () async {
+                    Navigator.pop(ctx);
+                    await store.setHabitTargetDays(
+                      habit.id,
+                      selectedDays.length == 7 ? null : selectedDays,
+                    );
+                  },
+                  child: Text(s.save),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 }

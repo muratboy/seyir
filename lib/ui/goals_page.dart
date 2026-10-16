@@ -500,6 +500,7 @@ class _GoalsPageState extends State<GoalsPage> {
                     Builder(builder: (c) {
                       final act = store.activity(link.activityId);
                       final contribVal = activityBreakdown[act.id] ?? 0.0;
+                      final prop = store.findActivityProperty(link.propertyId);
                       return Container(
                         padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
                         decoration: BoxDecoration(
@@ -513,7 +514,7 @@ class _GoalsPageState extends State<GoalsPage> {
                             Text(act.emoji ?? '🔹', style: const TextStyle(fontSize: AppFont.caption)),
                             const SizedBox(width: 4),
                             Text(
-                              act.name,
+                              prop != null ? '${act.name} (${prop.name})' : act.name,
                               style: TextStyle(
                                 fontSize: AppFont.caption,
                                 fontWeight: FontWeight.w600,
