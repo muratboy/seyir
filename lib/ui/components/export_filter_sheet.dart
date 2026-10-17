@@ -129,13 +129,18 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
             segments: [
               ButtonSegment(
                 value: 'csv',
-                icon: const Icon(Icons.table_chart_outlined, size: 18),
-                label: Text(isTr ? 'CSV (Excel Uyumlu)' : 'CSV (Spreadsheet)'),
+                icon: const Icon(Icons.table_chart_outlined, size: 16),
+                label: Text(isTr ? 'CSV' : 'CSV'),
               ),
               ButtonSegment(
                 value: 'pdf',
-                icon: const Icon(Icons.picture_as_pdf_outlined, size: 18),
-                label: Text(isTr ? 'PDF (Görsel Rapor)' : 'PDF (Visual Report)'),
+                icon: const Icon(Icons.picture_as_pdf_outlined, size: 16),
+                label: Text(isTr ? 'Genel PDF' : 'General PDF'),
+              ),
+              ButtonSegment(
+                value: 'health_pdf',
+                icon: const Icon(Icons.favorite_outline, size: 16),
+                label: Text(isTr ? 'Sağlık PDF' : 'Health PDF'),
               ),
             ],
             selected: {_format},
@@ -278,7 +283,13 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
                         Navigator.pop(context);
                         final range = _effectiveDateRange;
                         final actId = _selectedActivityId;
-                        if (_format == 'pdf') {
+                        if (_format == 'health_pdf') {
+                          await ExportService.exportHealthPdf(
+                            context,
+                            widget.store,
+                            dateRange: range,
+                          );
+                        } else if (_format == 'pdf') {
                           await ExportService.exportPdf(
                             context,
                             widget.store,

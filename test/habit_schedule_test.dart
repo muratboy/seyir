@@ -82,6 +82,18 @@ void main() {
     var cur = today;
     int scheduledCount = 0;
 
+    // Add an entry for today so isDoneToday is always true
+    entries.add(Entry(
+      id: idCounter++,
+      activityId: habit.id,
+      ts: today.add(const Duration(hours: 10)).millisecondsSinceEpoch,
+      qty: 1,
+    ));
+    if (store.isHabitScheduledFor(habit.id, today)) {
+      scheduledCount++;
+    }
+    cur = today.subtract(const Duration(days: 1));
+
     while (scheduledCount < 4) {
       if (store.isHabitScheduledFor(habit.id, cur)) {
         entries.add(Entry(

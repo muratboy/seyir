@@ -10,6 +10,7 @@ import 'package:share_plus/share_plus.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
+import '../logic/correlation_analysis.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 
@@ -85,14 +86,14 @@ class ExportService {
       final csvContent = '\uFEFF${excel.encode(rows)}';
       final tempDir = await getTemporaryDirectory();
       final nowStr = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      final filePath = '${tempDir.path}/takip_kayitlar_$nowStr.csv';
+      final filePath = '${tempDir.path}/seyir_kayitlar_$nowStr.csv';
       final file = File(filePath);
       await file.writeAsString(csvContent);
 
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(filePath)],
-          text: isTr ? 'Takip Kayıtları CSV Yedeği ($nowStr)' : 'Takip entries as CSV ($nowStr)',
+          text: isTr ? 'Seyir Kayıtları CSV Yedeği ($nowStr)' : 'Seyir entries as CSV ($nowStr)',
         ),
       );
     } catch (e) {
@@ -189,7 +190,7 @@ class ExportService {
                       crossAxisAlignment: pw.CrossAxisAlignment.start,
                       children: [
                         pw.Text(
-                          isTr ? 'TAKIP - RAPOR' : 'TAKIP - REPORT',
+                          isTr ? 'SEYİR - RAPOR' : 'SEYIR - REPORT',
                           style: pw.TextStyle(
                             fontSize: 24,
                             fontWeight: pw.FontWeight.bold,
@@ -314,20 +315,215 @@ class ExportService {
 
       final tempDir = await getTemporaryDirectory();
       final nowStr = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
-      final filePath = '${tempDir.path}/takip_rapor_$nowStr.pdf';
+      final filePath = '${tempDir.path}/seyir_rapor_$nowStr.pdf';
       final file = File(filePath);
       await file.writeAsBytes(await pdf.save());
 
       await SharePlus.instance.share(
         ShareParams(
           files: [XFile(filePath)],
-          text: isTr ? 'Takip Alışkanlık & Aktivite PDF Raporu ($nowStr)' : 'Takip habit & activity report ($nowStr)',
+          text: isTr ? 'Seyir Alışkanlık & Aktivite PDF Raporu ($nowStr)' : 'Seyir habit & activity report ($nowStr)',
         ),
       );
     } catch (e) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('${strings.value.isTr ? "PDF Oluşturma Hatası" : "PDF export failed"}: $e')),
+        );
+      }
+    }
+  }
+
+  /// Sağlık, belirtiler, uyku, adım ve tespit edilen korelasyonları içeren özel Sağlık Raporu PDF'i üretir.
+  static Future<void> exportHealthPdf(
+    BuildContext context,
+    AppStore store, {
+    DateTimeRange? dateRange,
+  }) async {
+    try {
+      final isTr = store.language == AppLanguage.tr;
+
+      var entries = store.entries;
+      if (dateRange != null) {
+        final startMs = dateRange.start.millisecondsSinceEpoch;
+        final endMs = DateTime(dateRange.end.year, dateRange.end.month, dateRange.end.day, 23, 59, 59, 999).millisecondsSinceEpoch;
+        entries = entries.where((e) => e.ts >= startMs && e.ts <= endMs).toList();
+      }
+
+      final regularData = await rootBundle.load('assets/fonts/NotoSans-Regular.ttf');
+      final boldData = await rootBundle.load('assets/fonts/NotoSans-Bold.ttf');
+      final ttfRegular = pw.Font.ttf(regularData);
+      final ttfBold = pw.Font.ttf(boldData);
+
+      final pdfTheme = pw.ThemeData.withFont(
+        base: ttfRegular,
+        bold: ttfBold,
+      );
+
+      final pdf = pw.Document(theme: pdfTheme);
+      final dateFmt = DateFormat('dd.MM.yyyy');
+      final timeFmt = DateFormat('HH:mm');
+
+      // Belirti ve sağlık kayıtları
+      final symptomEntries = entries.where((e) {
+        final act = store.activities[e.activityId];
+        return act != null && CorrelationEngine.isSymptom(act);
+      }).toList();
+
+      // Korelasyonlar
+      final correlations = CorrelationEngine.analyze(store, isTr: isTr);
+
+      // Uyku verileri
+      final sleepEntries = entries.where((e) {
+        final act = store.activities[e.activityId];
+        return act?.name.toLowerCase().contains('uyku') ?? false;
+      }).toList();
+      double totalSleepHours = 0;
+      for (final e in sleepEntries) {
+        totalSleepHours += (e.value ?? e.qty);
+      }
+      final avgSleepHours = sleepEntries.isEmpty ? 0.0 : totalSleepHours / sleepEntries.length;
+
+      final nowStr = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
+
+      pdf.addPage(
+        pw.MultiPage(
+          pageFormat: PdfPageFormat.a4,
+          margin: const pw.EdgeInsets.all(32),
+          build: (pw.Context ctx) {
+            return [
+              pw.Row(
+                mainAxisAlignment: pw.MainAxisAlignment.spaceBetween,
+                children: [
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.start,
+                    children: [
+                      pw.Text(
+                        isTr ? 'SEYİR — SAĞLIK & BELİRTİ RAPORU' : 'SEYIR — HEALTH & SYMPTOM REPORT',
+                        style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold, color: PdfColors.teal900),
+                      ),
+                      pw.SizedBox(height: 4),
+                      pw.Text(
+                        isTr ? 'Belirtiler, Alışkanlıklar, Uyku ve Korelasyon Analizi' : 'Symptoms, Habits, Sleep and Correlation Analysis',
+                        style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+                      ),
+                    ],
+                  ),
+                  pw.Column(
+                    crossAxisAlignment: pw.CrossAxisAlignment.end,
+                    children: [
+                      pw.Text(
+                        dateFmt.format(DateTime.now()),
+                        style: pw.TextStyle(fontSize: 12, fontWeight: pw.FontWeight.bold),
+                      ),
+                      pw.Text(
+                        isTr ? 'Oluşturulma Tarihi' : 'Generated Date',
+                        style: const pw.TextStyle(fontSize: 10, color: PdfColors.grey600),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+              pw.Divider(thickness: 1.5, color: PdfColors.teal800),
+              pw.SizedBox(height: 12),
+
+              // Özet Kartları
+              pw.Container(
+                padding: const pw.EdgeInsets.all(12),
+                decoration: pw.BoxDecoration(
+                  color: PdfColors.teal50,
+                  borderRadius: const pw.BorderRadius.all(pw.Radius.circular(8)),
+                  border: pw.Border.all(color: PdfColors.teal200),
+                ),
+                child: pw.Row(
+                  mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
+                  children: [
+                    _buildStatCard(isTr ? 'Kayıtlı Belirti Sayısı' : 'Symptom Logs', symptomEntries.length.toString()),
+                    _buildStatCard(isTr ? 'Ortalama Uyku' : 'Avg Sleep', avgSleepHours > 0 ? '${avgSleepHours.toStringAsFixed(1)} sa' : '-'),
+                    _buildStatCard(isTr ? 'Tespit Edilen İlişkiler' : 'Correlations', correlations.length.toString()),
+                    _buildStatCard(isTr ? 'Toplam Kayıt' : 'Total Entries', entries.length.toString()),
+                  ],
+                ),
+              ),
+              pw.SizedBox(height: 20),
+
+              // Korelasyonlar ve Tetikleyiciler Bölümü
+              if (correlations.isNotEmpty) ...[
+                pw.Text(
+                  isTr ? 'Tespit Edilen Alışkanlık & Belirti İlişkileri (Korelasyonlar)' : 'Identified Habit & Symptom Relationships',
+                  style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: PdfColors.teal900),
+                ),
+                pw.SizedBox(height: 8),
+                pw.TableHelper.fromTextArray(
+                  headers: isTr
+                      ? ['İlişki Türü', 'Başlık', 'Açıklama / Etki']
+                      : ['Type', 'Title', 'Description / Impact'],
+                  data: correlations.map((c) {
+                    final typeStr = c.type == CorrelationType.warning
+                        ? (isTr ? 'TETİKLEYİCİ' : 'TRIGGER')
+                        : (isTr ? 'KORUYUCU / UYUM' : 'RELIEF / SYNERGY');
+                    return [typeStr, c.title, c.description];
+                  }).toList(),
+                  headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+                  headerDecoration: const pw.BoxDecoration(color: PdfColors.teal800),
+                  cellAlignment: pw.Alignment.centerLeft,
+                  cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 5),
+                ),
+                pw.SizedBox(height: 20),
+              ],
+
+              // Belirti Günlüğü Tablosu
+              pw.Text(
+                isTr ? 'Kaydedilen Belirtiler & Şikayetler' : 'Logged Symptoms & Complaints',
+                style: pw.TextStyle(fontSize: 15, fontWeight: pw.FontWeight.bold, color: PdfColors.teal900),
+              ),
+              pw.SizedBox(height: 8),
+              if (symptomEntries.isEmpty)
+                pw.Padding(
+                  padding: const pw.EdgeInsets.symmetric(vertical: 8),
+                  child: pw.Text(
+                    isTr ? 'Bu dönemde kaydedilmiş bir belirti veya şikayet bulunmuyor.' : 'No symptoms or complaints logged in this period.',
+                    style: const pw.TextStyle(fontSize: 11, color: PdfColors.grey700),
+                  ),
+                )
+              else
+                pw.TableHelper.fromTextArray(
+                  headers: isTr
+                      ? ['Tarih / Saat', 'Belirti', 'Şiddet / Miktar', 'Not']
+                      : ['Date / Time', 'Symptom', 'Intensity / Amount', 'Note'],
+                  data: symptomEntries.reversed.take(40).map((e) {
+                    final act = store.activities[e.activityId];
+                    final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
+                    final dtStr = '${dateFmt.format(dt)} ${timeFmt.format(dt)}';
+                    final actName = act?.name ?? '';
+                    final detailStr = store.entryDetail(e);
+                    return [dtStr, actName, detailStr, e.note ?? ''];
+                  }).toList(),
+                  headerStyle: pw.TextStyle(fontWeight: pw.FontWeight.bold, color: PdfColors.white),
+                  headerDecoration: const pw.BoxDecoration(color: PdfColors.blueGrey800),
+                  cellAlignment: pw.Alignment.centerLeft,
+                  cellPadding: const pw.EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                ),
+            ];
+          },
+        ),
+      );
+
+      final tempDir = await getTemporaryDirectory();
+      final filePath = '${tempDir.path}/seyir_saglik_raporu_$nowStr.pdf';
+      final file = File(filePath);
+      await file.writeAsBytes(await pdf.save());
+
+      await SharePlus.instance.share(
+        ShareParams(
+          files: [XFile(filePath)],
+          text: isTr ? 'Seyir Sağlık & Belirti PDF Raporu ($nowStr)' : 'Seyir health report ($nowStr)',
+        ),
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('${strings.value.isTr ? "Sağlık Raporu Hatası" : "Health report export failed"}: $e')),
         );
       }
     }

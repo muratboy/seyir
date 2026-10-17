@@ -17,6 +17,7 @@ class RoadmapDetailPage extends StatefulWidget {
 }
 
 class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
+  bool _isReordering = false;
   Roadmap? _getRoadmap() => store.roadmaps.where((r) => r.id == widget.roadmapId).firstOrNull;
 
   @override
@@ -44,6 +45,13 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
           appBar: AppBar(
             title: Text(r.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.title)),
             actions: [
+              IconButton(
+                tooltip: s.isTr
+                    ? (_isReordering ? 'Sıralamayı Bitir' : 'Adımları Sırala')
+                    : (_isReordering ? 'Done Reordering' : 'Reorder Steps'),
+                icon: Icon(_isReordering ? Icons.check_circle_outline : Icons.sort),
+                onPressed: () => setState(() => _isReordering = !_isReordering),
+              ),
               IconButton(
                 tooltip: s.isTr ? 'Paylaş' : 'Share',
                 icon: const Icon(Icons.share_outlined),
@@ -244,6 +252,38 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                       style: TextStyle(color: scheme.onSurfaceVariant),
                     ),
                   ),
+                )
+              else if (_isReordering)
+                ReorderableListView.builder(
+                  shrinkWrap: true,
+                  physics: const NeverScrollableScrollPhysics(),
+                  itemCount: sortedSteps.length,
+                  onReorderItem: (oldIndex, newIndex) => store.reorderRoadmapSteps(r.id, oldIndex, newIndex),
+                  itemBuilder: (ctx, idx) {
+                    final step = sortedSteps[idx];
+                    return Card(
+                      key: ValueKey('step_reorder_${step.id}'),
+                      margin: const EdgeInsets.only(bottom: 8),
+                      elevation: 0,
+                      color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(14),
+                        side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.4)),
+                      ),
+                      child: ListTile(
+                        leading: CircleAvatar(
+                          radius: 14,
+                          backgroundColor: scheme.primary.withValues(alpha: 0.15),
+                          child: Text('${idx + 1}', style: TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.bold, color: scheme.primary)),
+                        ),
+                        title: Text(step.title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.body)),
+                        subtitle: step.description.isNotEmpty
+                            ? Text(step.description, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: AppFont.caption))
+                            : null,
+                        trailing: const Icon(Icons.drag_handle_rounded),
+                      ),
+                    );
+                  },
                 )
               else
                 ...List.generate(sortedSteps.length, (idx) {
@@ -525,7 +565,9 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
         child: Icon(Icons.more_vert, size: 20),
       ),
       onSelected: (value) async {
-        if (value == 'link') {
+        if (value == 'edit') {
+          await _showEditStepDialog(context, step);
+        } else if (value == 'link') {
           final act = await showActivityPicker(
             context,
             title: isTr ? 'Adıma Bağlanacak Aktivite' : 'Activity for This Step',
@@ -545,6 +587,10 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
       },
       itemBuilder: (_) => [
         PopupMenuItem(
+          value: 'edit',
+          child: Text(isTr ? 'Adımı düzenle' : 'Edit step'),
+        ),
+        PopupMenuItem(
           value: 'link',
           child: Text(linked == null
               ? (isTr ? 'Aktivite bağla' : 'Link an activity')
@@ -554,6 +600,134 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
           PopupMenuItem(value: 'unlink', child: Text(isTr ? 'Bağlantıyı kaldır' : 'Remove link')),
         PopupMenuItem(value: 'delete', child: Text(isTr ? 'Adımı sil' : 'Delete step')),
       ],
+    );
+  }
+
+  Future<void> _showEditStepDialog(BuildContext context, RoadmapStep step) async {
+    final s = strings.value;
+    final titleController = TextEditingController(text: step.title);
+    final descController = TextEditingController(text: step.description);
+    String type = step.type;
+    final targetController = TextEditingController(text: step.target != null ? fmtNum(step.target!) : '');
+    final unitController = TextEditingController(text: step.unit ?? '');
+    Activity? linkedActivity = step.linkedActivityId != null ? store.activities[step.linkedActivityId] : null;
+
+    await showDialog(
+      context: context,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (context, setDialogState) {
+            return AlertDialog(
+              title: Text(s.isTr ? 'Adımı Düzenle' : 'Edit Route Step'),
+              content: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    TextField(
+                      controller: titleController,
+                      decoration: InputDecoration(
+                        labelText: s.isTr ? 'Adım Başlığı *' : 'Step Title *',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: descController,
+                      maxLines: 2,
+                      decoration: InputDecoration(
+                        labelText: s.isTr ? 'Açıklama / İpuçları' : 'Description / Tips',
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    SegmentedButton<String>(
+                      showSelectedIcon: false,
+                      segments: [
+                        ButtonSegment(value: 'task', label: Text(s.isTr ? 'Ölçüsüz Görev' : 'Task')),
+                        ButtonSegment(value: 'goal', label: Text(s.isTr ? 'Ölçülü Hedef' : 'Goal')),
+                      ],
+                      selected: {type},
+                      onSelectionChanged: (val) => setDialogState(() => type = val.first),
+                    ),
+                    const SizedBox(height: 8),
+                    Align(
+                      alignment: Alignment.centerLeft,
+                      child: TextButton.icon(
+                        icon: const Icon(Icons.link_rounded, size: 18),
+                        label: Text(
+                          linkedActivity == null
+                              ? (s.isTr ? 'Aktivite bağla (isteğe bağlı)' : 'Link an activity (optional)')
+                              : store.activityLabel(linkedActivity!.id),
+                        ),
+                        onPressed: () async {
+                          final act = await showActivityPicker(
+                            context,
+                            title: s.isTr ? 'Adıma Bağlanacak Aktivite' : 'Activity for This Step',
+                          );
+                          if (act != null) setDialogState(() => linkedActivity = act);
+                        },
+                      ),
+                    ),
+                    if (linkedActivity != null)
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: TextButton.icon(
+                          icon: const Icon(Icons.link_off_rounded, size: 16, color: Colors.red),
+                          label: Text(
+                            s.isTr ? 'Bağlantıyı kaldır' : 'Remove link',
+                            style: const TextStyle(color: Colors.red, fontSize: AppFont.caption),
+                          ),
+                          onPressed: () => setDialogState(() => linkedActivity = null),
+                        ),
+                      ),
+                    if (type == 'goal') ...[
+                      const SizedBox(height: 12),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: TextField(
+                              controller: targetController,
+                              keyboardType: TextInputType.number,
+                              decoration: InputDecoration(labelText: s.isTr ? 'Toplam Miktar' : 'Total Target'),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: TextField(
+                              controller: unitController,
+                              decoration: InputDecoration(labelText: s.isTr ? 'Birim' : 'Unit'),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              actions: [
+                TextButton(onPressed: () => Navigator.pop(ctx), child: Text(s.cancel)),
+                FilledButton(
+                  onPressed: () async {
+                    final title = titleController.text.trim();
+                    if (title.isEmpty) return;
+                    final targetVal = double.tryParse(targetController.text.trim());
+                    final unitVal = unitController.text.trim();
+
+                    step.title = title;
+                    step.description = descController.text.trim();
+                    step.type = type;
+                    step.target = targetVal;
+                    step.unit = unitVal.isEmpty ? null : unitVal;
+                    step.linkedActivityId = linkedActivity?.id;
+
+                    await store.updateRoadmapStep(step);
+                    if (ctx.mounted) Navigator.pop(ctx);
+                  },
+                  child: Text(s.save),
+                ),
+              ],
+            );
+          },
+        );
+      },
     );
   }
 

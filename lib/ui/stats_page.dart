@@ -17,10 +17,12 @@ import 'components/activity_dot_strip.dart';
 import 'components/activity_format_views.dart';
 import 'components/stats_category_chart.dart';
 import 'components/stats_common.dart';
+import 'components/stats_correlations_card.dart';
 import 'components/stats_insights_card.dart';
 import 'components/stats_overview_cards.dart';
 import 'components/stats_trend_chart.dart';
 import 'contribution_heatmap.dart';
+import '../logic/correlation_analysis.dart';
 
 /// İstatistik sekmesi: seçilen dönemin özeti, dağılımı ve aktiviteleri.
 ///
@@ -182,6 +184,10 @@ class _StatsPageState extends State<StatsPage> {
                 ],
                 if (activityId != null) ...[
                   _calendarCard(store.activity(activityId)),
+                  StatsCorrelationsCard(
+                    insights: CorrelationEngine.analyze(store, activityId: activityId, isTr: s.isTr),
+                    onSelectActivity: _selectActivity,
+                  ),
                   Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
                     child: OutlinedButton.icon(
@@ -211,6 +217,10 @@ class _StatsPageState extends State<StatsPage> {
                     insights: computeWeeklyInsights(store: store, now: now, isTr: s.isTr),
                     onSelectActivity: _selectActivity,
                   ),
+                  StatsCorrelationsCard(
+                    insights: CorrelationEngine.analyze(store, activityId: null, isTr: s.isTr),
+                    onSelectActivity: _selectActivity,
+                  ),
                   _activityList(byActivity, periodCount),
                   const SizedBox(height: 8),
                   StatsCategoryChart(entries: store.entriesIn(period.from, period.to).toList()),
@@ -236,6 +246,8 @@ class _StatsPageState extends State<StatsPage> {
           ExportFilterSheet.show(context, store, initialActivityId: _activityId);
         } else if (kind == 'pdf') {
           ExportService.exportPdf(context, store, activityId: _activityId);
+        } else if (kind == 'health_pdf') {
+          ExportService.exportHealthPdf(context, store);
         } else if (kind == 'csv') {
           ExportService.exportCsv(context, store, activityId: _activityId);
         }
@@ -252,6 +264,16 @@ class _StatsPageState extends State<StatsPage> {
           ),
         ),
         const PopupMenuDivider(),
+        PopupMenuItem(
+          value: 'health_pdf',
+          child: Row(
+            children: [
+              const Icon(Icons.favorite_outline, size: 20, color: Colors.teal),
+              const SizedBox(width: 12),
+              Flexible(child: Text(s.isTr ? 'Sağlık & Belirti Raporu (PDF)' : 'Health & Symptom Report (PDF)')),
+            ],
+          ),
+        ),
         PopupMenuItem(
           value: 'pdf',
           child: Row(

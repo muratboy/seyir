@@ -37,6 +37,7 @@ class Unit {
 const builtinUnits = <Unit>[
   Unit(id: 'ml', name: 'Mililitre', symbol: 'ml', dim: 'volume', factor: 0.001, builtin: true),
   Unit(id: 'l', name: 'Litre', symbol: 'L', dim: 'volume', factor: 1, builtin: true),
+  Unit(id: 'mg', name: 'Miligram', symbol: 'mg', dim: 'mass', factor: 0.001, builtin: true),
   Unit(id: 'g', name: 'Gram', symbol: 'g', dim: 'mass', factor: 1, builtin: true),
   Unit(id: 'kg', name: 'Kilogram', symbol: 'kg', dim: 'mass', factor: 1000, builtin: true),
   Unit(id: 'sn', name: 'Saniye', symbol: 'sn', dim: 'time', factor: 1 / 60, builtin: true),
@@ -52,6 +53,7 @@ const builtinUnits = <Unit>[
 const builtinUnitsEn = <Unit>[
   Unit(id: 'ml', name: 'Millilitre', symbol: 'ml', dim: 'volume', factor: 0.001, builtin: true),
   Unit(id: 'l', name: 'Litre', symbol: 'L', dim: 'volume', factor: 1, builtin: true),
+  Unit(id: 'mg', name: 'Milligram', symbol: 'mg', dim: 'mass', factor: 0.001, builtin: true),
   Unit(id: 'g', name: 'Gram', symbol: 'g', dim: 'mass', factor: 1, builtin: true),
   Unit(id: 'kg', name: 'Kilogram', symbol: 'kg', dim: 'mass', factor: 1000, builtin: true),
   Unit(id: 'sn', name: 'Second', symbol: 's', dim: 'time', factor: 1 / 60, builtin: true),
@@ -243,6 +245,7 @@ class ActivityProperty {
   double value;
   String unitId;
   double perQty; // Kaç adet/birim temel miktar için geçerli olduğu (varsayılan 1.0)
+  String? perUnitId; // Temel miktarın birimi (örn: 'ml', 'g', 'adet', null ise 'adet' kabul edilir)
 
   ActivityProperty({
     this.id = 0,
@@ -251,6 +254,7 @@ class ActivityProperty {
     required this.value,
     required this.unitId,
     this.perQty = 1.0,
+    this.perUnitId,
   });
 
   Map<String, Object?> toMap() => {
@@ -260,6 +264,7 @@ class ActivityProperty {
         'value': value,
         'unit_id': unitId,
         'per_qty': perQty,
+        'per_unit_id': perUnitId,
       };
 
   factory ActivityProperty.fromMap(Map<String, Object?> m) => ActivityProperty(
@@ -269,6 +274,7 @@ class ActivityProperty {
         value: (m['value'] as num).toDouble(),
         unitId: m['unit_id'] as String,
         perQty: ((m['per_qty'] as num?) ?? 1.0).toDouble(),
+        perUnitId: m['per_unit_id'] as String?,
       );
 }
 
@@ -408,6 +414,7 @@ class Goal {
   }) : links = links ?? [];
 
   bool get isCount => mode == 'count';
+  bool get isAmount => mode == 'amount';
   bool get isLimit => type == 'limit';
   bool get isTarget => type != 'limit';
 
@@ -901,6 +908,146 @@ class RoadmapStep {
         autoCompleted: ((m['auto_completed'] as int?) ?? 0) == 1,
         keptOpen: ((m['kept_open'] as int?) ?? 0) == 1,
       );
+}
+
+/// Aktiviteye özel periyodik hatırlatıcı (Örn: "Her gün 09:00 Su" veya "Pzt, Çar, Cuma 18:00 Spor").
+class ActivityReminder {
+  int id;
+  int activityId;
+  String time; // 'HH:mm' örn: '09:00'
+  String daysOfWeek; // '1,2,3,4,5,6,7' (1=Pazartesi .. 7=Pazar)
+  bool isEnabled;
+  String? customMessage;
+
+  ActivityReminder({
+    this.id = 0,
+    required this.activityId,
+    required this.time,
+    this.daysOfWeek = '1,2,3,4,5,6,7',
+    this.isEnabled = true,
+    this.customMessage,
+  });
+
+  Set<int> get days => daysOfWeek.split(',').map(int.tryParse).whereType<int>().toSet();
+
+  Map<String, Object?> toMap() => {
+        if (id != 0) 'id': id,
+        'activity_id': activityId,
+        'time': time,
+        'days_of_week': daysOfWeek,
+        'is_enabled': isEnabled ? 1 : 0,
+        'custom_message': customMessage,
+      };
+
+  factory ActivityReminder.fromMap(Map<String, Object?> m) => ActivityReminder(
+        id: m['id'] as int,
+        activityId: m['activity_id'] as int,
+        time: m['time'] as String,
+        daysOfWeek: (m['days_of_week'] as String?) ?? '1,2,3,4,5,6,7',
+        isEnabled: ((m['is_enabled'] as int?) ?? 1) == 1,
+        customMessage: m['custom_message'] as String?,
+      );
+}
+
+/// Rutin / Aktivite Paketi (Örn: "Sabah Rutini": Su + Vitamin + Meditasyon).
+class Routine {
+  int id;
+  String name;
+  String emoji;
+  int sort;
+  List<RoutineItem> items;
+
+  Routine({
+    this.id = 0,
+    required this.name,
+    this.emoji = '⚡',
+    this.sort = 0,
+    List<RoutineItem>? items,
+  }) : items = items ?? [];
+
+  Map<String, Object?> toMap() => {
+        if (id != 0) 'id': id,
+        'name': name,
+        'emoji': emoji,
+        'sort': sort,
+      };
+
+  factory Routine.fromMap(Map<String, Object?> m) => Routine(
+        id: m['id'] as int,
+        name: m['name'] as String,
+        emoji: (m['emoji'] as String?) ?? '⚡',
+        sort: (m['sort'] as int?) ?? 0,
+      );
+}
+
+/// Rutin içindeki tekil aktivite öğesi
+class RoutineItem {
+  int id;
+  int routineId;
+  int activityId;
+  int? measureId;
+  double qty;
+  String? note;
+  int sort;
+
+  RoutineItem({
+    this.id = 0,
+    this.routineId = 0,
+    required this.activityId,
+    this.measureId,
+    this.qty = 1.0,
+    this.note,
+    this.sort = 0,
+  });
+
+  Map<String, Object?> toMap() => {
+        if (id != 0) 'id': id,
+        'routine_id': routineId,
+        'activity_id': activityId,
+        'measure_id': measureId,
+        'qty': qty,
+        'note': note,
+        'sort': sort,
+      };
+
+  factory RoutineItem.fromMap(Map<String, Object?> m) => RoutineItem(
+        id: m['id'] as int,
+        routineId: m['routine_id'] as int,
+        activityId: m['activity_id'] as int,
+        measureId: m['measure_id'] as int?,
+        qty: (m['qty'] as num?)?.toDouble() ?? 1.0,
+        note: m['note'] as String?,
+        sort: (m['sort'] as int?) ?? 0,
+      );
+}
+
+enum CorrelationType {
+  positive, // Koruyucu veya pozitif etki (A yapılınca B belirtisi azalıyor veya alışkanlık artıyor)
+  negative, // Birlikte yapılmayan / zıt durum
+  warning,  // Tetikleyici (A yapılınca B belirtisi artıyor)
+}
+
+/// Belirti, alışkanlık ve metrikler arasındaki tespit edilen istatistiksel ilişki
+class CorrelationInsight {
+  final int primaryActivityId;
+  final int relatedActivityId;
+  final String title;
+  final String description;
+  final double changeRatio; // Örn: 0.45 (%45 azalma) veya 1.8 (1.8 kat artış)
+  final CorrelationType type;
+  final int coOccurrenceCount;
+  final int totalPrimaryDays;
+
+  const CorrelationInsight({
+    required this.primaryActivityId,
+    required this.relatedActivityId,
+    required this.title,
+    required this.description,
+    required this.changeRatio,
+    required this.type,
+    required this.coOccurrenceCount,
+    required this.totalPrimaryDays,
+  });
 }
 
 

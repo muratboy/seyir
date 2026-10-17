@@ -24,7 +24,7 @@
         android:ellipsize="end"
         android:gravity="center"
         android:maxLines="1"
-        android:text="Takip"
+        android:text="Seyir"
         android:textColor="#1E293B"
         android:textSize="12sp"
         android:textStyle="bold" />

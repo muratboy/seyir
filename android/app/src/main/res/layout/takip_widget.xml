@@ -24,7 +24,7 @@
                 android:id="@+id/widget_title"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:text="Takip"
+                android:text="Seyir"
                 android:textColor="#3D6FE0"
                 android:textSize="15sp"
                 android:textStyle="bold" />

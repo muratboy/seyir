@@ -345,7 +345,13 @@ class GoalEditDialog {
                                     DropdownMenuItem<int?>(
                                       value: null,
                                       child: Text(
-                                        s.isTr ? 'Otomatik / Doğrudan Değer' : 'Automatic / Direct Value',
+                                        s.isTr
+                                            ? (mode == 'amount'
+                                                ? 'Doğrudan Aktivite Miktarı / Hacmi (${act.name})'
+                                                : 'Otomatik / Doğrudan Değer')
+                                            : (mode == 'amount'
+                                                ? 'Direct Activity Amount / Volume (${act.name})'
+                                                : 'Automatic / Direct Value'),
                                         style: const TextStyle(fontSize: AppFont.small),
                                       ),
                                     ),
@@ -353,7 +359,9 @@ class GoalEditDialog {
                                       DropdownMenuItem<int?>(
                                         value: p.id,
                                         child: Text(
-                                          '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (${fmtNum(p.perQty)} adet)',
+                                          p.perUnitId != null && p.perUnitId != 'adet'
+                                              ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
+                                              : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)',
                                           style: const TextStyle(fontSize: AppFont.small),
                                           overflow: TextOverflow.ellipsis,
                                         ),

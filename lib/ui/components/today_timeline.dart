@@ -125,7 +125,7 @@ class TodayTimeline extends StatelessWidget {
             : fmtTime(entry.time);
         final activeTimer = store.getTimerForActivity(act.id);
 
-        return Card(
+        final card = Card(
           margin: EdgeInsets.zero,
           elevation: 0,
           color: activeTimer != null
@@ -239,6 +239,14 @@ class TodayTimeline extends StatelessWidget {
             ),
           ),
         );
+
+        return _buildSwipeableItem(
+          context: context,
+          entry: entry,
+          act: act,
+          s: s,
+          child: card,
+        );
       },
     );
   }
@@ -262,8 +270,8 @@ class TodayTimeline extends StatelessWidget {
             : fmtTime(entry.time);
         final activeTimer = store.getTimerForActivity(act.id);
 
-        return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+        final card = Card(
+          margin: EdgeInsets.zero,
           elevation: 0,
           color: activeTimer != null
               ? Colors.green.withValues(alpha: 0.08)
@@ -414,7 +422,124 @@ class TodayTimeline extends StatelessWidget {
             ),
           ),
         );
+
+        return _buildSwipeableItem(
+          context: context,
+          entry: entry,
+          act: act,
+          s: s,
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
+          child: card,
+        );
       },
+    );
+  }
+
+  Widget _buildSwipeableItem({
+    required BuildContext context,
+    required Entry entry,
+    required Activity act,
+    required Widget child,
+    required AppStrings s,
+    EdgeInsetsGeometry? margin,
+  }) {
+    return Container(
+      margin: margin,
+      child: Dismissible(
+        key: ValueKey('entry_swipe_${entry.id}'),
+        background: Container(
+          alignment: Alignment.centerLeft,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.green.shade600,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            children: [
+              const Icon(Icons.replay_rounded, color: Colors.white, size: 20),
+              const SizedBox(width: 8),
+              Text(
+                s.isTr ? 'Şimdiye Tekrarla' : 'Repeat',
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: AppFont.caption,
+                ),
+              ),
+            ],
+          ),
+        ),
+        secondaryBackground: Container(
+          alignment: Alignment.centerRight,
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          decoration: BoxDecoration(
+            color: Colors.red.shade600,
+            borderRadius: BorderRadius.circular(16),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.end,
+            children: [
+              Text(
+                s.delete,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: AppFont.caption,
+                ),
+              ),
+              const SizedBox(width: 8),
+              const Icon(Icons.delete_outline, color: Colors.white, size: 20),
+            ],
+          ),
+        ),
+        confirmDismiss: (direction) async {
+          if (direction == DismissDirection.startToEnd) {
+            await store.addEntry(
+              act.id,
+              measureId: entry.measureId,
+              qty: entry.qty,
+              value: entry.value,
+              unitId: entry.unitId,
+              note: entry.note,
+              at: DateTime.now(),
+            );
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                SnackBar(
+                  content: Text(s.isTr ? '${act.name} şimdiye tekrarlandı' : '${act.name} repeated to now'),
+                  behavior: SnackBarBehavior.floating,
+                  duration: const Duration(seconds: 2),
+                ),
+              );
+            }
+            return false;
+          } else if (direction == DismissDirection.endToStart) {
+            final ok = await confirm(
+              context,
+              s.deleteConfirmTitle,
+              '${act.name} ${s.deleteConfirmDesc}',
+            );
+            if (ok) {
+              await store.deleteEntry(entry);
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(s.isTr ? 'Kayıt silindi' : 'Entry deleted'),
+                    behavior: SnackBarBehavior.floating,
+                    action: SnackBarAction(
+                      label: s.isTr ? 'Geri Al' : 'Undo',
+                      onPressed: () => store.restoreEntry(entry),
+                    ),
+                  ),
+                );
+              }
+            }
+            return false;
+          }
+          return false;
+        },
+        child: child,
+      ),
     );
   }
 
@@ -422,7 +547,8 @@ class TodayTimeline extends StatelessWidget {
 
   static void showEntryEditSheet(BuildContext context, Entry e, {Future<void> Function(Activity)? onStartTimer}) {
     final s = strings.value;
-    final act = store.activity(e.activityId);
+    var currentActivityId = e.activityId;
+    var act = store.activity(currentActivityId);
     var measureId = e.measureId;
     var qty = e.qty;
     final noteCtrl = TextEditingController(text: e.note ?? '');
@@ -522,6 +648,27 @@ class TodayTimeline extends StatelessWidget {
                                 visualDensity: VisualDensity.compact,
                                 padding: const EdgeInsets.all(4),
                                 constraints: const BoxConstraints(),
+                                icon: const Icon(Icons.swap_horiz_rounded, size: 18),
+                                tooltip: s.isTr ? 'Aktiviteyi Değiştir' : 'Change Activity',
+                                onPressed: () async {
+                                  final chosen = await showActivityPicker(
+                                    c,
+                                    title: s.isTr ? 'Aktiviteyi Değiştir' : 'Change Activity',
+                                  );
+                                  if (chosen != null && chosen.id != currentActivityId) {
+                                    setS(() {
+                                      currentActivityId = chosen.id;
+                                      act = chosen;
+                                      measureId = null;
+                                      qty = 1;
+                                    });
+                                  }
+                                },
+                              ),
+                              IconButton(
+                                visualDensity: VisualDensity.compact,
+                                padding: const EdgeInsets.all(4),
+                                constraints: const BoxConstraints(),
                                 icon: const Icon(Icons.insights_rounded, size: 18),
                                 tooltip: s.isTr ? 'Aktivite Sayfasını Aç' : 'View Activity Page',
                                 onPressed: () {
@@ -552,7 +699,7 @@ class TodayTimeline extends StatelessWidget {
                             return Text(
                               durMins > 0
                                   ? '${s.isTr ? "Süre Aralığı" : "Interval"}: ${fmtTime(startTime)}–${fmtTime(endTime)} (${fmtDateShort(startTime)})'
-                                  : '${s.isTr ? "Eklenme" : "Logged"}: ${fmtTime(refTime)} - ${fmtDateShort(refTime)}',
+                                  : '${s.isTr ? "Eklenme" : "Logged"}: ${fmtDateShort(refTime)} · ${fmtTime(refTime)}',
                               style: TextStyle(
                                 fontSize: AppFont.caption,
                                 color: Theme.of(c).colorScheme.onSurfaceVariant,
@@ -571,6 +718,29 @@ class TodayTimeline extends StatelessWidget {
                           await onStartTimer(act);
                         } else {
                           await store.startTimer(act.id);
+                        }
+                      },
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.calendar_today_outlined),
+                      tooltip: s.isTr ? 'Tarihi değiştir' : 'Change date',
+                      onPressed: () async {
+                        final d = await showDatePicker(
+                          context: c,
+                          initialDate: refTime,
+                          firstDate: DateTime(2020),
+                          lastDate: DateTime.now().add(const Duration(days: 365)),
+                        );
+                        if (d != null) {
+                          setS(() {
+                            refTime = DateTime(
+                              d.year,
+                              d.month,
+                              d.day,
+                              refTime.hour,
+                              refTime.minute,
+                            );
+                          });
                         }
                       },
                     ),
@@ -784,7 +954,7 @@ class TodayTimeline extends StatelessWidget {
                 ),
                 const SizedBox(height: 6),
                 MeasureQtyPicker(
-                  activityId: act.id,
+                  activityId: currentActivityId,
                   measureId: measureId,
                   qty: qty,
                   onChanged: (mId, qVal) => setS(() {
@@ -832,7 +1002,7 @@ class TodayTimeline extends StatelessWidget {
                 ),
                 Builder(
                   builder: (ctx) {
-                    final linked = store.goalsForActivity(act.id);
+                    final linked = store.goalsForActivity(currentActivityId);
                     if (linked.isEmpty) {
                       return Padding(
                         padding: const EdgeInsets.only(bottom: 6),
@@ -892,6 +1062,33 @@ class TodayTimeline extends StatelessWidget {
                         }
                       },
                     ),
+                    const SizedBox(width: 8),
+                    OutlinedButton.icon(
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                      ),
+                      icon: const Icon(Icons.replay_rounded, size: 16),
+                      label: Text(s.isTr ? 'Tekrarla' : 'Repeat', style: const TextStyle(fontSize: AppFont.caption)),
+                      onPressed: () async {
+                        final now = DateTime.now();
+                        await store.addEntry(
+                          currentActivityId,
+                          measureId: measureId,
+                          qty: qty,
+                          note: noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim(),
+                          at: now,
+                        );
+                        if (c.mounted) {
+                          Navigator.pop(c);
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(
+                              content: Text(s.isTr ? '${act.name} şimdiye tekrarlandı' : '${act.name} repeated to now'),
+                              behavior: SnackBarBehavior.floating,
+                            ),
+                          );
+                        }
+                      },
+                    ),
                     const Spacer(),
                     FilledButton(
                       onPressed: () async {
@@ -899,7 +1096,7 @@ class TodayTimeline extends StatelessWidget {
                         final startTime = calcStartTime(refTime, isEndMode, durMins);
                         await store.updateEntry(
                           e,
-                          activityId: e.activityId,
+                          activityId: currentActivityId,
                           time: startTime,
                           measureId: measureId,
                           qty: qty,

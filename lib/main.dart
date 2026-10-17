@@ -71,7 +71,7 @@ class TakipApp extends StatelessWidget {
             ? const Locale('en', 'US')
             : const Locale('tr', 'TR');
         return MaterialApp(
-          title: 'Takip',
+          title: 'Seyir',
           debugShowCheckedModeBanner: false,
           themeMode: store.themeMode,
           theme: _theme(Brightness.light),

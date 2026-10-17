@@ -29,12 +29,27 @@ class TodayQuickShortcuts extends StatelessWidget {
       children: [
         SectionTitle(
           s.quickListTitle,
-          trailing: IconButton(
-            icon: const Icon(Icons.add_circle_outline, size: 20),
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-            onPressed: () => _showAddQuickItemDialog(context),
+          trailing: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              if (items.length > 1)
+                IconButton(
+                  icon: const Icon(Icons.sort_rounded, size: 20),
+                  visualDensity: VisualDensity.compact,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                  tooltip: s.isTr ? 'Kısayolları Sırala' : 'Reorder Shortcuts',
+                  onPressed: () => _showReorderQuickItemsDialog(context),
+                ),
+              IconButton(
+                icon: const Icon(Icons.add_circle_outline, size: 20),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                tooltip: s.isTr ? 'Kısayol Ekle' : 'Add Shortcut',
+                onPressed: () => _showAddQuickItemDialog(context),
+              ),
+            ],
           ),
         ),
         if (items.isEmpty)
@@ -323,6 +338,14 @@ class TodayQuickShortcuts extends StatelessWidget {
               },
             ),
             ListTile(
+              leading: const Icon(Icons.sort_rounded),
+              title: Text(s.isTr ? 'Kısayolları Sırala' : 'Reorder Shortcuts'),
+              onTap: () {
+                Navigator.pop(c);
+                _showReorderQuickItemsDialog(context);
+              },
+            ),
+            ListTile(
               leading: Icon(Icons.delete_outline, color: Theme.of(c).colorScheme.error),
               title: Text(
                 s.isTr ? 'Hızlı Listeden Kaldır' : 'Remove from Shortcuts',
@@ -336,6 +359,77 @@ class TodayQuickShortcuts extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  void _showReorderQuickItemsDialog(BuildContext context) {
+    final s = strings.value;
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (ctx) {
+        return StatefulBuilder(
+          builder: (ctx, setModalState) {
+            final currentItems = store.quickItems;
+            final scheme = Theme.of(ctx).colorScheme;
+
+            return Padding(
+              padding: EdgeInsets.only(
+                left: 16,
+                right: 16,
+                top: 4,
+                bottom: MediaQuery.of(ctx).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Row(
+                    children: [
+                      Icon(Icons.sort_rounded, color: scheme.primary),
+                      const SizedBox(width: 8),
+                      Text(
+                        s.isTr ? 'Kısayolları Sırala' : 'Reorder Shortcuts',
+                        style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
+                      ),
+                      const Spacer(),
+                      TextButton(
+                        onPressed: () => Navigator.pop(ctx),
+                        child: Text(s.isTr ? 'Tamam' : 'Done'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxHeight: MediaQuery.of(ctx).size.height * 0.5,
+                    ),
+                    child: ReorderableListView.builder(
+                      shrinkWrap: true,
+                      itemCount: currentItems.length,
+                      onReorderItem: (oldIdx, newIdx) async {
+                        await store.reorderQuickItems(oldIdx, newIdx);
+                        setModalState(() {});
+                      },
+                      itemBuilder: (c, idx) {
+                        final q = currentItems[idx];
+                        final act = store.activity(q.activityId);
+                        return ListTile(
+                          key: ValueKey('reorder_quick_${q.id}'),
+                          leading: ActivityAvatar(act.id, size: 32),
+                          title: Text(act.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          trailing: const Icon(Icons.drag_handle_rounded),
+                        );
+                      },
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 }

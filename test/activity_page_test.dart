@@ -157,4 +157,83 @@ void main() {
     expect(find.text('Toplam Olay'), findsOneWidget);
     expect(find.text('Aktif Günler'), findsOneWidget);
   });
+
+  testWidgets('ActivityPage edit pencil opens showActivityEditDialog without crash', (tester) async {
+    final act = Activity(id: 5, name: 'Kahve', emoji: '☕', createdAt: 0);
+    seed([act], []);
+
+    await tester.pumpWidget(MaterialApp(
+      home: ActivityPage(activity: act),
+    ));
+    await tester.pumpAndSettle();
+
+    final editButton = find.byIcon(Icons.edit_outlined);
+    expect(editButton, findsOneWidget);
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Düzenle'), findsOneWidget);
+    expect(find.text('Aktivite Adı'), findsOneWidget);
+    expect(find.text('Birleştir'), findsOneWidget);
+    expect(find.text('Kaydet'), findsOneWidget);
+    expect(find.text('Vazgeç'), findsOneWidget);
+  });
+
+  testWidgets('ActivityPage edit goal link opens dialog without crash', (tester) async {
+    final act = Activity(id: 6, name: 'Su', emoji: '💧', createdAt: 0);
+    final goal = Goal(
+      id: 10,
+      name: 'Günlük Su',
+      type: 'target',
+      mode: 'amount',
+      unitId: 'l',
+      target: 2.0,
+      period: GoalPeriod.day,
+      startDate: 0,
+      createdAt: 0,
+      links: [GoalLink(activityId: 6, pct: 100)],
+    );
+    store.goals = [goal];
+    seed([act], []);
+
+    await tester.pumpWidget(MaterialApp(
+      home: ActivityPage(activity: act),
+    ));
+    await tester.pumpAndSettle();
+
+    final goalCard = find.text('Günlük Su');
+    expect(goalCard, findsOneWidget);
+    await tester.ensureVisible(goalCard);
+    await tester.pumpAndSettle();
+    await tester.tap(goalCard);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Hedef Bağlantısını Düzenle'), findsOneWidget);
+    expect(find.text('Kaldır'), findsOneWidget);
+    expect(find.text('Vazgeç'), findsOneWidget);
+    expect(find.text('Kaydet'), findsOneWidget);
+  });
+
+  testWidgets('ActivityPage edit pencil icon opens showActivityEditDialog without crash', (tester) async {
+    final act = Activity(id: 7, name: 'Vişne Suyu', emoji: '🍒', createdAt: 0);
+    seed([act], []);
+
+    await tester.pumpWidget(MaterialApp(
+      home: ActivityPage(activity: act),
+    ));
+    await tester.pumpAndSettle();
+
+    final editButton = find.byTooltip('Aktiviteyi düzenle');
+    expect(editButton, findsOneWidget);
+    await tester.tap(editButton);
+    await tester.pumpAndSettle();
+
+    // Verify dialog opened without error
+    expect(find.text('Düzenle'), findsOneWidget);
+    expect(find.text('Birleştir'), findsOneWidget);
+    expect(find.text('Vazgeç'), findsOneWidget);
+    expect(find.text('Kaydet'), findsOneWidget);
+  });
 }
+
+

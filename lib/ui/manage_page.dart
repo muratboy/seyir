@@ -167,8 +167,8 @@ class _ManagePageState extends State<ManagePage> {
                                         showSnack(
                                           context,
                                           s.isTr
-                                              ? 'Ana ekrana basılı tutup Widgetlar > Takip seçebilirsiniz.'
-                                              : 'Long press home screen -> Widgets -> Takip to add.',
+                                              ? 'Ana ekrana basılı tutup Widgetlar > Seyir seçebilirsiniz.'
+                                              : 'Long press home screen -> Widgets -> Seyir to add.',
                                         );
                                       }
                                     },
@@ -178,20 +178,13 @@ class _ManagePageState extends State<ManagePage> {
                                     title: Text(s.isTr ? 'Mini Widget (1x1)' : 'Mini Widget (1x1)'),
                                     subtitle: Text(
                                       s.isTr
-                                          ? 'Tek dokunuşla sıradaki/öncelikli aktivite kaydı'
-                                          : 'One-tap next/priority activity log',
+                                          ? 'Tek dokunuşla kayıt • ${store.singleWidgetActivityLabel(s)}'
+                                          : 'One-tap log • ${store.singleWidgetActivityLabel(s)}',
                                     ),
-                                    onTap: () async {
+                                    trailing: const Icon(Icons.chevron_right),
+                                    onTap: () {
                                       Navigator.pop(ctx);
-                                      final pinned = await WidgetSync.requestPinSingle();
-                                      if (context.mounted && !pinned) {
-                                        showSnack(
-                                          context,
-                                          s.isTr
-                                              ? 'Ana ekrana basılı tutup Widgetlar > Takip seçebilirsiniz.'
-                                              : 'Long press home screen -> Widgets -> Takip to add.',
-                                        );
-                                      }
+                                      _showSingleWidgetPicker(context);
                                     },
                                   ),
                                   ListTile(
@@ -651,6 +644,137 @@ class _ManagePageState extends State<ManagePage> {
         if (ok) store.deleteActivity(act.id);
       });
     }
+  }
+
+  void _showSingleWidgetPicker(BuildContext context) {
+    final s = strings.value;
+    final isTr = s.isTr;
+    final allActs = store.activities.values.where((a) => !a.isArchived).toList()
+      ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
+
+    showModalBottomSheet(
+      context: context,
+      showDragHandle: true,
+      isScrollControlled: true,
+      builder: (bCtx) => SafeArea(
+        child: ConstrainedBox(
+          constraints: BoxConstraints(
+            maxHeight: MediaQuery.of(bCtx).size.height * 0.75,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.crop_square_rounded, size: 24),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            isTr ? '1x1 Mini Widget Aktivitesi' : '1x1 Mini Widget Activity',
+                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      isTr
+                          ? 'Widget\'a dokunulduğunda hangi aktivite kaydedilsin? Seçtiğinizde hem mevcut widget güncellenir hem de ana ekrana ekleyebilirsiniz.'
+                          : 'Which activity should be logged on tap? Selecting updates your widget and lets you add it to the home screen.',
+                      style: TextStyle(fontSize: 13, color: Theme.of(bCtx).colorScheme.onSurfaceVariant),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(),
+              Expanded(
+                child: ListView(
+                  children: [
+                    ListTile(
+                      leading: const CircleAvatar(
+                        radius: 18,
+                        child: Text('⚡', style: TextStyle(fontSize: 18)),
+                      ),
+                      title: Text(isTr ? 'Akıllı / Otomatik Öneri' : 'Smart / Auto Suggestion'),
+                      subtitle: Text(
+                        isTr
+                            ? 'Sıradaki yapılmamış alışkanlık, kalan hedef veya saate göre öneri'
+                            : 'Next habit, remaining goal or smart time suggestion',
+                        style: const TextStyle(fontSize: 12),
+                      ),
+                      trailing: (store.singleWidgetActivityId == null || store.singleWidgetActivityId == 0)
+                          ? Icon(Icons.check_circle_rounded, color: Theme.of(bCtx).colorScheme.primary)
+                          : null,
+                      onTap: () async {
+                        Navigator.pop(bCtx);
+                        await store.setSingleWidgetActivityId(null);
+                        final pinned = await WidgetSync.requestPinSingle();
+                        if (context.mounted) {
+                          showSnack(
+                            context,
+                            pinned
+                                ? (isTr ? '1x1 Widget (Akıllı Öneri) eklendi!' : '1x1 Widget (Smart Suggestion) added!')
+                                : (isTr
+                                    ? '1x1 Widget "Akıllı Öneri" olarak ayarlandı. Ana ekrana basılı tutup Seyir 1x1 ekleyebilirsiniz.'
+                                    : '1x1 Widget set to "Smart Suggestion". Long press home screen to add Seyir 1x1.'),
+                          );
+                        }
+                      },
+                    ),
+                    const Divider(height: 1),
+                    for (final a in allActs) ...[
+                      ListTile(
+                        leading: CircleAvatar(
+                          radius: 18,
+                          child: Text(
+                            a.emoji != null && a.emoji!.trim().isNotEmpty ? a.emoji!.trim() : '⚡',
+                            style: const TextStyle(fontSize: 18),
+                          ),
+                        ),
+                        title: Text(a.name),
+                        subtitle: Text(
+                          a.isHabit
+                              ? (isTr ? 'Alışkanlık' : 'Habit')
+                              : (store.todayCount(a.id) > 0
+                                  ? (isTr ? 'Bugün: ${store.todayCount(a.id)}' : 'Today: ${store.todayCount(a.id)}')
+                                  : (isTr ? 'Dokun: Kaydet' : 'Tap to log')),
+                          style: const TextStyle(fontSize: 12),
+                        ),
+                        trailing: store.singleWidgetActivityId == a.id
+                            ? Icon(Icons.check_circle_rounded, color: Theme.of(bCtx).colorScheme.primary)
+                            : null,
+                        onTap: () async {
+                          Navigator.pop(bCtx);
+                          await store.setSingleWidgetActivityId(a.id);
+                          final pinned = await WidgetSync.requestPinSingle(actId: a.id);
+                          if (context.mounted) {
+                            showSnack(
+                              context,
+                              pinned
+                                  ? (isTr ? '${a.name} için 1x1 Widget eklendi!' : '1x1 Widget added for ${a.name}!')
+                                  : (isTr
+                                      ? '1x1 Widget "${a.name}" olarak ayarlandı. Ana ekrana basılı tutup Seyir 1x1 ekleyebilirsiniz.'
+                                      : '1x1 Widget set to "${a.name}". Long press home screen to add Seyir 1x1.'),
+                            );
+                          }
+                        },
+                      ),
+                      const Divider(height: 1),
+                    ],
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
 

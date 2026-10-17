@@ -15,6 +15,7 @@ import 'components/active_timer_card.dart';
 import 'components/today_summary_card.dart';
 import 'components/today_health_panel.dart';
 import 'components/today_quick_shortcuts.dart';
+import 'components/today_routines_panel.dart';
 import 'components/today_roadmap_panel.dart';
 import 'components/today_timeline.dart';
 import 'search_page.dart';
@@ -867,6 +868,7 @@ class _TodayViewState extends State<_TodayView> {
                     currentDay: _currentDay,
                     onRefresh: () => setState(() {}),
                   ),
+                  TodayRoutinesPanel(currentDay: _currentDay),
                   TodayQuickShortcuts(
                     currentDay: _currentDay,
                     onStartTimer: _startTimerForActivity,

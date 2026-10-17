@@ -25,6 +25,7 @@ class WidgetSync {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
       await HomeWidget.saveWidgetData<String>('payload', jsonEncode(store.widgetPayload()));
+      await HomeWidget.saveWidgetData<int>('single_act_id_global', store.singleWidgetActivityId ?? 0);
       await HomeWidget.updateWidget(
         name: 'TakipWidgetProvider',
         androidName: 'TakipWidgetProvider',
@@ -54,8 +55,12 @@ class WidgetSync {
     return false;
   }
 
-  static Future<bool> requestPinSingle() async {
+  static Future<bool> requestPinSingle({int? actId}) async {
     try {
+      if (actId != null) {
+        await store.setSingleWidgetActivityId(actId);
+        await push();
+      }
       if (await HomeWidget.isRequestPinWidgetSupported() ?? false) {
         await HomeWidget.requestPinWidget(
           name: 'TakipSingleWidgetProvider',

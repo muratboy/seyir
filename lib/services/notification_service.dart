@@ -127,12 +127,13 @@ class NotificationService {
 
     final timerId = int.tryParse(payload ?? '');
     final isQuickLog = actionId != null && actionId.startsWith('quick_log_');
-    if (timerId == null && actionId != 'alarm_dismiss' && !isQuickLog) return;
+    final isSleepFinish = actionId == 'finish_sleep';
+    if (timerId == null && actionId != 'alarm_dismiss' && !isQuickLog && !isSleepFinish) return;
 
     // Arka plan isolate'ı süreç boyunca yaşar ve kendi AppStore kopyasını taşır. Uygulama bu arada
     // sayaçları veya verileri değiştirmiş olabileceği için her aksiyondan önce veriler yeniden okunur.
     const storeActions = {'timer_pause', 'timer_resume', 'timer_finish', 'alarm_finish'};
-    final changesStore = (timerId != null && storeActions.contains(actionId)) || isQuickLog;
+    final changesStore = (timerId != null && storeActions.contains(actionId)) || isQuickLog || isSleepFinish;
     if (changesStore) {
       await store.refresh();
     }
@@ -177,6 +178,9 @@ class NotificationService {
       if (store.persistentQuickLogEnabled) {
         await updatePersistentQuickLogNotification(store, lastLogMessage: logMsg);
       }
+    } else if (isSleepFinish) {
+      await store.stopSleepSession();
+      await cancelSleepWakeupReminder();
     }
 
     // Açık duran uygulama ve ana ekran widget'ları, arka planda yapılan değişikliği böyle öğrenir.
@@ -527,7 +531,7 @@ class NotificationService {
 
         await _plugin.zonedSchedule(
           3200,
-          (_tr ? '📋 Günlük Takip Özeti' : '📋 Daily Tracking Summary'),
+          (_tr ? '📋 Günlük Seyir Özeti' : '📋 Daily Summary'),
           (_tr ? 'Günün bitmeden aktivitelerini kaydettin mi? Bugün neler yaptığını kontrol et.' : 'Have you logged your activities before the day ends? Check what you did today.'),
           scheduledDate,
           NotificationDetails(android: androidDetails),
@@ -537,8 +541,114 @@ class NotificationService {
           matchDateTimeComponents: DateTimeComponents.time,
         );
       }
+
+      // 3. Aktivite Bazlı Hatırlatıcılar (ID aralığı: 4000 + reminder.id)
+      for (final reminder in store.activityReminders) {
+        final notifId = 4000 + reminder.id;
+        await _plugin.cancel(notifId);
+        if (reminder.isEnabled) {
+          final act = store.activity(reminder.activityId);
+          final parts = reminder.time.split(':');
+          final hour = parts.isNotEmpty ? (int.tryParse(parts[0]) ?? 9) : 9;
+          final minute = parts.length > 1 ? (int.tryParse(parts[1]) ?? 0) : 0;
+          final scheduledDate = _nextInstanceOfTime(hour, minute);
+
+          final actEmoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+          final title = '⏰ $actEmoji${act.name}';
+          final body = reminder.customMessage ?? (_tr ? 'Aktiviteni kaydetme zamanı geldi.' : 'Time to log your activity.');
+
+          final androidDetails = AndroidNotificationDetails(
+            'takip_reminders_channel',
+            (_tr ? 'Akıllı Hatırlatıcılar' : 'Smart Reminders'),
+            channelDescription: (_tr ? 'Su ve aktivite hatırlatıcıları' : 'Water and activity reminders'),
+            importance: Importance.defaultImportance,
+            priority: Priority.defaultPriority,
+            actions: [
+              AndroidNotificationAction(
+                'quick_log_act_${reminder.activityId}',
+                _tr ? 'Hızlı Kaydet' : 'Quick Log',
+                showsUserInterface: false,
+                cancelNotification: true,
+              ),
+            ],
+          );
+
+          await _plugin.zonedSchedule(
+            notifId,
+            title,
+            body,
+            scheduledDate,
+            NotificationDetails(android: androidDetails),
+            androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+            uiLocalNotificationDateInterpretation:
+                UILocalNotificationDateInterpretation.absoluteTime,
+            matchDateTimeComponents: DateTimeComponents.time,
+          );
+        }
+      }
     } catch (e) {
       debugPrint('Error scheduling reminders: $e');
+    }
+  }
+
+  static const int _sleepWakeupNotificationId = 3300;
+
+  /// Uyku seansı devam ederken uyanış hatırlatıcısı planlar
+  static Future<void> scheduleSleepWakeupReminder(AppStore store, DateTime startTime) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    await init();
+    try {
+      await cancelSleepWakeupReminder();
+      final goalMinutes = (store.sleepDailyGoalHours * 60).round();
+      final wakeTime = startTime.add(Duration(minutes: goalMinutes));
+      final tzWake = tz.TZDateTime.from(wakeTime, tz.local);
+      final tzNow = tz.TZDateTime.now(tz.local);
+      final targetTz = tzWake.isBefore(tzNow) ? tzNow.add(const Duration(minutes: 1)) : tzWake;
+
+      final androidDetails = AndroidNotificationDetails(
+        'takip_reminders_channel',
+        (_tr ? 'Akıllı Hatırlatıcılar' : 'Smart Reminders'),
+        channelDescription: (_tr ? 'Su ve aktivite hatırlatıcıları' : 'Water and activity reminders'),
+        importance: Importance.high,
+        priority: Priority.high,
+        actions: [
+          AndroidNotificationAction(
+            'finish_sleep',
+            _tr ? 'Uykuyu Bitir' : 'Finish Sleep',
+            showsUserInterface: false,
+            cancelNotification: true,
+          ),
+        ],
+      );
+
+      final title = _tr ? '🌅 Günaydın! Uykunu tamamladın mı?' : '🌅 Good morning! Did you finish sleeping?';
+      final body = _tr
+          ? 'Hedeflenen ${store.sleepDailyGoalHours.toStringAsFixed(1)} saatlik uyku seansını tamamlamak için dokun.'
+          : 'Tap to complete your targeted ${store.sleepDailyGoalHours.toStringAsFixed(1)}h sleep session.';
+
+      await _plugin.zonedSchedule(
+        _sleepWakeupNotificationId,
+        title,
+        body,
+        targetTz,
+        NotificationDetails(android: androidDetails),
+        androidScheduleMode: AndroidScheduleMode.inexactAllowWhileIdle,
+        uiLocalNotificationDateInterpretation:
+            UILocalNotificationDateInterpretation.absoluteTime,
+      );
+    } catch (e) {
+      debugPrint('Error scheduling sleep wakeup reminder: $e');
+    }
+  }
+
+  /// Uyku uyanış hatırlatıcısını iptal eder
+  static Future<void> cancelSleepWakeupReminder() async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    await init();
+    try {
+      await _plugin.cancel(_sleepWakeupNotificationId);
+    } catch (e) {
+      debugPrint('Error cancelling sleep reminder: $e');
     }
   }
 

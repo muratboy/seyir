@@ -171,9 +171,31 @@ class AppDb {
       name TEXT NOT NULL,
       value REAL NOT NULL,
       unit_id TEXT NOT NULL,
-      per_qty REAL NOT NULL DEFAULT 1.0)''');
+      per_qty REAL NOT NULL DEFAULT 1.0,
+      per_unit_id TEXT)''');
+    await ensureColumn(db, 'activity_properties', 'per_unit_id', 'TEXT');
     await ensureColumn(db, 'goal_links', 'property_id', 'INTEGER');
     await ensureColumn(db, 'goal_links', 'custom_rate', 'REAL');
+    await db.execute('''CREATE TABLE IF NOT EXISTS activity_reminders(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_id INTEGER NOT NULL,
+      time TEXT NOT NULL,
+      days_of_week TEXT NOT NULL DEFAULT '1,2,3,4,5,6,7',
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      custom_message TEXT)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS routines(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      emoji TEXT NOT NULL DEFAULT '⚡',
+      sort INTEGER NOT NULL DEFAULT 0)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS routine_items(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      routine_id INTEGER NOT NULL,
+      activity_id INTEGER NOT NULL,
+      measure_id INTEGER,
+      qty REAL NOT NULL DEFAULT 1.0,
+      note TEXT,
+      sort INTEGER NOT NULL DEFAULT 0)''');
     await _ensureDefaultMeasures(db);
   }
 
@@ -182,6 +204,7 @@ class AppDb {
   static Future<void> _ensureDefaultMeasures(DatabaseExecutor db) async {
     const essentialMeasures = [
       ['Mililitre', 'ml', 1.0],
+      ['Miligram', 'mg', 1.0],
       ['Kilogram', 'kg', 1.0],
       ['Saniye', 'sn', 1.0],
       ['Metre', 'm', 1.0],
@@ -243,7 +266,8 @@ class AppDb {
       name TEXT NOT NULL,
       value REAL NOT NULL,
       unit_id TEXT NOT NULL,
-      per_qty REAL NOT NULL DEFAULT 1.0)''');
+      per_qty REAL NOT NULL DEFAULT 1.0,
+      per_unit_id TEXT)''');
     await db.execute('''CREATE TABLE quick_items(
       id INTEGER PRIMARY KEY AUTOINCREMENT, activity_id INTEGER NOT NULL,
       kind TEXT NOT NULL, daily INTEGER NOT NULL DEFAULT 1, measure_id INTEGER,
@@ -281,6 +305,26 @@ class AppDb {
       linked_activity_id INTEGER,
       auto_completed INTEGER NOT NULL DEFAULT 0,
       kept_open INTEGER NOT NULL DEFAULT 0)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS activity_reminders(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      activity_id INTEGER NOT NULL,
+      time TEXT NOT NULL,
+      days_of_week TEXT NOT NULL DEFAULT '1,2,3,4,5,6,7',
+      is_enabled INTEGER NOT NULL DEFAULT 1,
+      custom_message TEXT)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS routines(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL,
+      emoji TEXT NOT NULL DEFAULT '⚡',
+      sort INTEGER NOT NULL DEFAULT 0)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS routine_items(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      routine_id INTEGER NOT NULL,
+      activity_id INTEGER NOT NULL,
+      measure_id INTEGER,
+      qty REAL NOT NULL DEFAULT 1.0,
+      note TEXT,
+      sort INTEGER NOT NULL DEFAULT 0)''');
   }
 
   static Future<void> seed(DatabaseExecutor db) async {

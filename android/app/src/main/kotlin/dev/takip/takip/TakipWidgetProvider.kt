@@ -21,6 +21,7 @@ class TakipWidgetProvider : HomeWidgetProvider() {
     ) {
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, R.layout.takip_widget)
+            views.setTextViewText(R.id.widget_title, "Seyir")
 
             // Quick Add button opens app directly into composer
             val addUri = Uri.parse("takip://add")

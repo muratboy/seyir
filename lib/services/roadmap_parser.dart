@@ -204,8 +204,8 @@ Important rules:
   static String shareText(Roadmap r, {required bool isTr}) {
     final json = const JsonEncoder.withIndent('  ').convert(toJson(r));
     final how = isTr
-        ? "Takip'te eklemek için: Yol Haritası Ekle › Yapay Zekâ Kalıbıyla İçe Aktar › Yapıştır"
-        : 'To add it in Takip: Add Roadmap › Import with AI Prompt › Paste';
+        ? "Seyir'de eklemek için: Yol Haritası Ekle › Yapay Zekâ Kalıbıyla İçe Aktar › Yapıştır"
+        : 'To add it in Seyir: Add Roadmap › Import with AI Prompt › Paste';
     return '${r.emoji} ${r.title}\n$how\n\n```json\n$json\n```\n';
   }
 

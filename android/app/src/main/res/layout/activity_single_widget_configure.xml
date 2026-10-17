@@ -1,0 +1,79 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/widget_config_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#80000000"
+    android:padding="16dp">
+
+    <LinearLayout
+        android:id="@+id/widget_config_card"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center"
+        android:background="@drawable/quick_record_card_bg"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="vertical"
+        android:padding="16dp">
+
+        <!-- Header -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_marginEnd="8dp"
+                android:src="@drawable/ic_stat_takip" />
+
+            <TextView
+                android:id="@+id/widget_config_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="Seyir • 1x1 Mini Widget"
+                android:textColor="#FFFFFF"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/widget_config_close"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:padding="6dp"
+                android:text="✕"
+                android:textColor="#94A3B8"
+                android:textSize="16sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_config_subtitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp"
+            android:text="Dokunulduğunda hangi aktivite kaydedilsin?"
+            android:textColor="#94A3B8"
+            android:textSize="13sp" />
+
+        <!-- Scrollable list of activities -->
+        <ScrollView
+            android:layout_width="match_parent"
+            android:layout_height="0dp"
+            android:layout_weight="1"
+            android:fadeScrollbars="false"
+            android:maxHeight="360dp">
+
+            <LinearLayout
+                android:id="@+id/widget_config_list"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:orientation="vertical" />
+        </ScrollView>
+    </LinearLayout>
+</FrameLayout>

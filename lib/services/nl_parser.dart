@@ -201,6 +201,7 @@ class NaturalLanguageParser {
     'dk': 'dk', 'dakika': 'dk', 'min': 'dk', 'mins': 'dk', 'minute': 'dk', 'minutes': 'dk',
     'sa': 'sa', 'saat': 'sa', 'h': 'sa', 'hr': 'sa', 'hrs': 'sa', 'hour': 'sa', 'hours': 'sa',
     'ml': 'ml', 'l': 'l', 'lt': 'l', 'litre': 'l', 'liter': 'l',
+    'mg': 'mg', 'miligram': 'mg', 'milligram': 'mg',
     'g': 'g', 'gr': 'g', 'gram': 'g', 'kg': 'kg', 'kilo': 'kg',
     'km': 'km', 'kilometre': 'km', 'metre': 'm', 'kcal': 'kcal',
   };

@@ -30,6 +30,7 @@ class _VoiceInputModal extends StatefulWidget {
 class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerProviderStateMixin {
   bool _isListening = false;
   String _spokenText = '';
+  final TextEditingController _textController = TextEditingController();
   NlParseResult? _parsedResult;
   late AnimationController _animController;
 
@@ -65,6 +66,7 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
   void dispose() {
     VoiceService.stop();
     _animController.dispose();
+    _textController.dispose();
     super.dispose();
   }
 
@@ -72,6 +74,7 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
     setState(() {
       _isListening = true;
       _spokenText = '';
+      _textController.clear();
       _parsedResult = null;
     });
 
@@ -80,6 +83,10 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
         if (!mounted) return;
         setState(() {
           _spokenText = text;
+          _textController.text = text;
+          _textController.selection = TextSelection.fromPosition(
+            TextPosition(offset: text.length),
+          );
           _parseText(text);
         });
       },
@@ -95,6 +102,10 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
   }
 
   void _parseText(String text) {
+    if (text.trim().isEmpty) {
+      setState(() => _parsedResult = null);
+      return;
+    }
     final res = NaturalLanguageParser.parse(
       text,
       activities: store.activities.values.toList(),
@@ -108,6 +119,10 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
   void _selectSample(String sample) {
     setState(() {
       _spokenText = sample;
+      _textController.text = sample;
+      _textController.selection = TextSelection.fromPosition(
+        TextPosition(offset: sample.length),
+      );
       _parseText(sample);
       _isListening = false;
     });
@@ -240,30 +255,55 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
           ),
           const SizedBox(height: 16),
 
-          // Spoken text display
-          if (_spokenText.isNotEmpty)
-            Container(
-              padding: const EdgeInsets.all(14),
-              decoration: BoxDecoration(
-                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
-                borderRadius: BorderRadius.circular(16),
-                border: Border.all(color: scheme.outlineVariant),
-              ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    s.isTr ? 'Algılanan Ses:' : 'Recognized Voice:',
-                    style: TextStyle(fontSize: AppFont.caption, color: scheme.outline),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    '"$_spokenText"',
-                    style: const TextStyle(fontSize: AppFont.subtitle, fontWeight: FontWeight.w600),
-                  ),
-                ],
+          // Spoken / edited text input
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
+            decoration: BoxDecoration(
+              color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(
+                color: _spokenText.isNotEmpty ? scheme.primary.withValues(alpha: 0.6) : scheme.outlineVariant,
               ),
             ),
+            child: Row(
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                Icon(
+                  Icons.edit_note_rounded,
+                  size: 22,
+                  color: _spokenText.isNotEmpty ? scheme.primary : scheme.outline,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: TextField(
+                    controller: _textController,
+                    decoration: InputDecoration(
+                      border: InputBorder.none,
+                      hintText: s.isTr ? 'Konuşun ya da komutu buraya yazın/düzeltin...' : 'Speak or type/edit command here...',
+                      hintStyle: TextStyle(fontSize: AppFont.body, color: scheme.outline),
+                    ),
+                    style: const TextStyle(fontSize: AppFont.body, fontWeight: FontWeight.w600),
+                    onChanged: (text) {
+                      _spokenText = text;
+                      _parseText(text);
+                    },
+                  ),
+                ),
+                if (_spokenText.isNotEmpty)
+                  IconButton(
+                    icon: const Icon(Icons.clear, size: 18),
+                    visualDensity: VisualDensity.compact,
+                    onPressed: () {
+                      _textController.clear();
+                      setState(() {
+                        _spokenText = '';
+                        _parsedResult = null;
+                      });
+                    },
+                  ),
+              ],
+            ),
+          ),
 
           // Parsed result preview card
           if (_parsedResult != null) ...[

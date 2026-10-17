@@ -79,14 +79,14 @@ void main() {
       final tr = const AppStrings(AppLanguage.tr);
       expect(tr.persistentQuickLogTitle, equals('Kilit Ekranı Hızlı Kayıt Bildirimi'));
       expect(tr.persistentQuickLogSubtitle, contains('bildirim panelinde'));
-      expect(tr.quickLogNotificationTitle, equals('Takip — Hızlı Kayıt'));
+      expect(tr.quickLogNotificationTitle, equals('Seyir — Hızlı Kayıt'));
       expect(tr.quickLogActionType, equals('✍️ Yaz'));
       expect(tr.quickLogInputLabel, contains('Ne yaptın?'));
 
       final en = const AppStrings(AppLanguage.en);
       expect(en.persistentQuickLogTitle, equals('Lock Screen Quick Log Notification'));
       expect(en.persistentQuickLogSubtitle, contains('lock screen'));
-      expect(en.quickLogNotificationTitle, equals('Takip — Quick Log'));
+      expect(en.quickLogNotificationTitle, equals('Seyir — Quick Log'));
       expect(en.quickLogActionType, equals('✍️ Type'));
       expect(en.quickLogInputLabel, contains('What did you do?'));
     });

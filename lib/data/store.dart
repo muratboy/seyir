@@ -142,7 +142,30 @@ class AppStore extends ChangeNotifier {
   List<Unit> customUnits = [];
   List<Measure> measures = [];
   Map<int, Activity> activities = {};
-  List<Entry> entries = []; // ts'ye göre artan sıralı
+  List<Entry> _entries = []; // ts'ye göre artan sıralı
+  List<Entry> get entries => _entries;
+  set entries(List<Entry> val) {
+    _entries = val;
+    _rebuildStats();
+  }
+  Map<int, List<Entry>> _entriesByActivity = {};
+
+  /// Aktiviteye ait kayıtlar (ts artan sıralı). O(1) erişim sağlar.
+  List<Entry> entriesForActivity(int activityId) {
+    if (_entriesByActivity.isEmpty && _entries.isNotEmpty) {
+      _rebuildStats();
+    }
+    return _entriesByActivity[activityId] ?? const [];
+  }
+
+  /// Aktivitenin en son kaydı.
+  Entry? lastEntryForActivity(int activityId) {
+    if (_entriesByActivity.isEmpty && _entries.isNotEmpty) {
+      _rebuildStats();
+    }
+    return _entriesByActivity[activityId]?.lastOrNull;
+  }
+
   List<Goal> goals = [];
   final Map<int, List<ActivityProperty>> _activityProperties = {};
   List<ActivityProperty> activityProperties(int activityId) =>
@@ -167,6 +190,8 @@ class AppStore extends ChangeNotifier {
   ActiveTimer? get activeTimer => activeTimers.firstOrNull;
   List<Roadmap> roadmaps = [];
   List<Roadmap> get activeRoadmaps => roadmaps.where((r) => r.isActive).toList();
+  List<ActivityReminder> activityReminders = [];
+  List<Routine> routines = [];
   bool loaded = false;
 
   bool waterReminderEnabled = false;
@@ -223,6 +248,8 @@ class AppStore extends ChangeNotifier {
   // Adım ve uyku kayıtlarının yazıldığı aktiviteler (ayarlarda kimlikleriyle tutulur).
   int? _stepsActivityId;
   int? _sleepActivityId;
+  int? _singleWidgetActivityId;
+  int? get singleWidgetActivityId => _singleWidgetActivityId;
 
   bool sleepTrackerEnabled = false;
   double sleepDailyGoalHours = 8.0;
@@ -239,6 +266,19 @@ class AppStore extends ChangeNotifier {
     _db = null;
     loaded = false;
     _stepLive = false;
+    _entries.clear();
+    _entriesByActivity.clear();
+    activities.clear();
+    goals.clear();
+    quickItems.clear();
+    roadmaps.clear();
+    measures.clear();
+    customUnits.clear();
+    stats.clear();
+    _activityProperties.clear();
+    activeTimers.clear();
+    activityReminders.clear();
+    routines.clear();
   }
 
   // ---------------------------------------------------------------- yükleme
@@ -304,6 +344,7 @@ class AppStore extends ChangeNotifier {
     stepDailyGoal = int.tryParse(settingsMap['step_daily_goal'] ?? '10000') ?? 10000;
     _stepsActivityId = int.tryParse(settingsMap['steps_activity_id'] ?? '');
     _sleepActivityId = int.tryParse(settingsMap['sleep_activity_id'] ?? '');
+    _singleWidgetActivityId = int.tryParse(settingsMap['single_widget_activity_id'] ?? '');
     _stepHistory = {
       for (final e in settingsMap.entries)
         if (e.key.startsWith('step_today_')) e.key.substring('step_today_'.length): int.tryParse(e.value) ?? 0,
@@ -352,6 +393,7 @@ class AppStore extends ChangeNotifier {
       (_activityProperties[p.activityId] ??= []).add(p);
     }
     entries = await _readEntries(d);
+    _rebuildStats();
     final links = await d.query('goal_links');
     goals = (await d.query('goals', orderBy: 'sort, id')).map((m) {
       final g = Goal.fromMap(m);
@@ -371,6 +413,20 @@ class AppStore extends ChangeNotifier {
     roadmaps = roadmapRows.map((m) {
       final r = Roadmap.fromMap(m);
       r.steps = stepRows.where((s) => s['roadmap_id'] == r.id).map(RoadmapStep.fromMap).toList();
+      return r;
+    }).toList();
+
+    final reminderRows = await d.query('activity_reminders');
+    activityReminders = reminderRows.map(ActivityReminder.fromMap).toList();
+
+    final routineRows = await d.query('routines', orderBy: 'sort ASC, id ASC');
+    final routineItemRows = await d.query('routine_items', orderBy: 'sort ASC, id ASC');
+    routines = routineRows.map((m) {
+      final r = Routine.fromMap(m);
+      r.items = routineItemRows
+          .where((it) => it['routine_id'] == r.id)
+          .map(RoutineItem.fromMap)
+          .toList();
       return r;
     }).toList();
 
@@ -732,6 +788,27 @@ class AppStore extends ChangeNotifier {
     return act;
   }
 
+  Future<void> setSingleWidgetActivityId(int? actId) async {
+    if (actId == null || actId == 0) {
+      _singleWidgetActivityId = null;
+      await _deleteSetting('single_widget_activity_id');
+    } else {
+      _singleWidgetActivityId = actId;
+      await _putSetting('single_widget_activity_id', actId.toString());
+    }
+    notifyListeners();
+  }
+
+  String singleWidgetActivityLabel(AppStrings s) {
+    if (_singleWidgetActivityId == null || _singleWidgetActivityId == 0) {
+      return s.isTr ? 'Akıllı / Otomatik Öneri' : 'Smart / Auto Suggestion';
+    }
+    final act = activities[_singleWidgetActivityId];
+    if (act == null) return s.isTr ? 'Akıllı / Otomatik Öneri' : 'Smart / Auto Suggestion';
+    final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+    return '$emoji${act.name}';
+  }
+
   Future<Entry?> syncTodayStepsToEntry({int? steps}) async {
     final count = steps ?? todaySteps;
     if (count <= 0) return null;
@@ -791,6 +868,9 @@ class AppStore extends ChangeNotifier {
     final d = await db;
     await d.insert('settings', {'key': 'sleep_session_start_ts', 'value': sleepSessionStartTs.toString()},
         conflictAlgorithm: ConflictAlgorithm.replace);
+    try {
+      await NotificationService.scheduleSleepWakeupReminder(this, startTime);
+    } catch (_) {}
     notifyListeners();
   }
 
@@ -818,6 +898,9 @@ class AppStore extends ChangeNotifier {
     sleepSessionStartTs = null;
     final d = await db;
     await d.delete('settings', where: 'key = ?', whereArgs: ['sleep_session_start_ts']);
+    try {
+      await NotificationService.cancelSleepWakeupReminder();
+    } catch (_) {}
     notifyListeners();
     return res.entry;
   }
@@ -889,8 +972,10 @@ class AppStore extends ChangeNotifier {
 
   void _rebuildStats() {
     final s = <int, ActivityStats>{};
+    final byAct = <int, List<Entry>>{};
     final recentFrom = DateTime.now().subtract(const Duration(days: 30)).millisecondsSinceEpoch;
     for (final e in entries) {
+      (byAct[e.activityId] ??= []).add(e);
       final st = s.putIfAbsent(e.activityId, ActivityStats.new);
       st.count++;
       if (e.ts >= recentFrom) st.recent++;
@@ -906,6 +991,7 @@ class AppStore extends ChangeNotifier {
       st.dimUses[dim] = (st.dimUses[dim] ?? 0) + 1;
     }
     stats = s;
+    _entriesByActivity = byAct;
   }
 
   // ---------------------------------------------------------------- birimler
@@ -1068,7 +1154,7 @@ class AppStore extends ChangeNotifier {
     final act = activities[activityId];
     if (act == null) return null;
 
-    final last = entries.where((e) => e.activityId == activityId).lastOrNull;
+    final last = lastEntryForActivity(activityId);
     final targetTime = at ?? DateTime.now();
     final added = last != null
         ? (await addEntry(
@@ -1171,6 +1257,10 @@ class AppStore extends ChangeNotifier {
       g.links.removeWhere((l) => l.activityId == id);
     }
     quickItems.removeWhere((q) => q.activityId == id);
+    if (_singleWidgetActivityId == id) {
+      _singleWidgetActivityId = null;
+      await _deleteSetting('single_widget_activity_id');
+    }
     activities.remove(id);
     _changed();
   }
@@ -1186,7 +1276,7 @@ class AppStore extends ChangeNotifier {
       await tx.update('roadmap_steps', {'linked_activity_id': intoId},
           where: 'linked_activity_id=?', whereArgs: [fromId]);
       await tx.update('settings', {'value': '$intoId'},
-          where: "key IN ('steps_activity_id', 'sleep_activity_id') AND value=?", whereArgs: ['$fromId']);
+          where: "key IN ('steps_activity_id', 'sleep_activity_id', 'single_widget_activity_id') AND value=?", whereArgs: ['$fromId']);
       await tx.update('entries', {'activity_id': intoId}, where: 'activity_id=?', whereArgs: [fromId]);
       await tx.update('quick_items', {'activity_id': intoId},
           where: 'activity_id=?', whereArgs: [fromId]);
@@ -2039,8 +2129,24 @@ class AppStore extends ChangeNotifier {
       targetProp = findActivityProperty(link!.propertyId);
     }
 
-    // Özellik bağlantıda seçilmemişse bile, aktivitenin hedefin boyutuna uyan bir özelliği var mı?
+    // 2. Eğer kullanıcı hedef bağlantısında belirli bir özellik SEÇMEMİŞSE (propertyId == null):
+    // Önce kaydın doğrudan değerinin hedefin boyutuna uyup uymadığına bakalım.
+    // Eğer kayıt birimliyse ve boyutu hedef boyutuyla aynıysa (örn: 200 ml vişne suyu -> Litre sıvı alımı hedefi),
+    // doğrudan kayıt değeri baz alınır (özelliklere zorla yönlendirilmez).
     if (targetProp == null) {
+      if (e.unitId != null && e.value != null) {
+        final eu = unit(e.unitId!);
+        if (eu.dim == gu.dim) {
+          // Doğrudan kayıt değeri üzerinden katkı
+          return e.value! * (eu.factor / gu.factor) * f * (link?.customRate ?? 1.0);
+        }
+      } else if (gu.dim == 'count') {
+        // Hedef adet/sayı boyutunda ve kayıt da ölçüsüz/sayı
+        return e.qty * f / gu.factor;
+      }
+
+      // Kayıt doğrudan hedef boyutuna uymuyorsa (örn: kayıt 200 ml veya 1 adet, ama hedef Kalori/kcal veya C Vitamini/mg):
+      // Aktivitenin hedef boyutuna uyan bir özelliği var mı bakalım.
       final props = activityProperties(e.activityId);
       for (final p in props) {
         if (unit(p.unitId).dim == gu.dim) {
@@ -2050,54 +2156,88 @@ class AppStore extends ChangeNotifier {
       }
     }
 
-    // 2. Eğer hedef için bir özellik belirlenmişse:
+    // 3. Eğer hedef için bir özellik belirlenmişse (veya boyut uyumundan türetilmişse):
     if (targetProp != null) {
       final pu = unit(targetProp.unitId);
+      // Hedef birimi ile özellik biriminin boyutu uyuşmalı (örn: ikisi de enerji, ikisi de kütle vb.)
+      if (pu.dim != gu.dim) return null;
+
       final propFactor = pu.factor / gu.factor;
       final perQty = targetProp.perQty > 0 ? targetProp.perQty : 1.0;
-      final baseVal = targetProp.value / perQty;
+      final perUnit = targetProp.perUnitId != null ? unit(targetProp.perUnitId!) : null;
 
       // Kaydın miktar/değer ölçeklemesi:
       double scale = e.qty;
 
       if (e.value != null && e.unitId != null) {
         final eu = unit(e.unitId!);
-        if (eu.dim == pu.dim) {
-          // Kayıt doğrudan özelliğin boyutuyla girilmiş
-          return e.value! * (eu.factor / gu.factor) * f * (link?.customRate ?? 1.0);
-        } else {
-          // Kaydın boyutu farklı (örn: ml girilmiş ama hedef kalori):
-          // Aktivitenin kaydın boyutunda başka bir özelliği var mı?
-          final props = activityProperties(e.activityId);
-          ActivityProperty? dimProp;
-          for (final p in props) {
-            if (p.id != targetProp.id && unit(p.unitId).dim == eu.dim) {
-              dimProp = p;
-              break;
-            }
-          }
-          if (dimProp != null && dimProp.value > 0) {
-            final du = unit(dimProp.unitId);
-            final dimPerQty = dimProp.perQty > 0 ? dimProp.perQty : 1.0;
-            final baseDimVal = (dimProp.value / dimPerQty) * du.factor;
-            final entryDimVal = e.value! * eu.factor;
+        // Durum A: Özelliğin tanımlandığı temel birim (perUnit) kaydın birimiyle aynı boyutta mı?
+        // (örn: Vişne Suyu özellikleri 100 ml için tanımlanmış ve kayıt 200 ml girilmiş)
+        if (perUnit != null && perUnit.dim == eu.dim) {
+          final baseDimVal = perQty * perUnit.factor;
+          final entryDimVal = e.value! * eu.factor;
+          if (baseDimVal > 0) {
             scale = entryDimVal / baseDimVal;
           }
+        } else if (perUnit == null || perUnit.dim == 'count') {
+          // Durum B: Özellik "adet" (porsiyon) başına tanımlanmış (örn: 1 porsiyon/bardak için 76 kcal veya 200 ml hacim).
+          // Ancak kayıt ml veya gram olarak girilmiş (örn: 500 ml Ayran).
+          if (pu.dim == eu.dim && targetProp.value > 0) {
+            final baseDimVal = (targetProp.value / perQty) * pu.factor;
+            final entryDimVal = e.value! * eu.factor;
+            scale = entryDimVal / baseDimVal;
+          } else {
+            // Aktivitenin kaydın boyutunda başka bir özelliği var mı? (örn: Kalori hedefi için Hacim = 200 ml / adet)
+            final props = activityProperties(e.activityId);
+            ActivityProperty? dimProp;
+            for (final p in props) {
+              if (p.id != targetProp.id && unit(p.unitId).dim == eu.dim) {
+                dimProp = p;
+                break;
+              }
+            }
+            if (dimProp != null && dimProp.value > 0) {
+              final du = unit(dimProp.unitId);
+              final dimPerQty = dimProp.perQty > 0 ? dimProp.perQty : 1.0;
+              final baseDimVal = (dimProp.value / dimPerQty) * du.factor;
+              final entryDimVal = e.value! * eu.factor;
+              scale = entryDimVal / baseDimVal;
+            }
+          }
+        }
+      } else {
+        // Kaydın doğrudan ölçü değeri yok, adet (qty) üzerinden girilmiş.
+        // Özellik 1 adetten farklı bir perQty'ye sahipse (örn: perQty = 100 ml),
+        // ve aktivitenin varsayılan ölçüsü (measure) varsa onu kullanabiliriz:
+        if (perUnit != null && perUnit.dim != 'count') {
+          final (usedMeasures, otherMeasures) = measuresFor(e.activityId);
+          final defMeasure = usedMeasures.firstOrNull ?? otherMeasures.firstOrNull;
+          if (defMeasure != null && unit(defMeasure.unitId).dim == perUnit.dim) {
+            final entryDimVal = e.qty * defMeasure.amount * unit(defMeasure.unitId).factor;
+            final baseDimVal = perQty * perUnit.factor;
+            if (baseDimVal > 0) {
+              scale = entryDimVal / baseDimVal;
+            }
+          } else {
+            scale = e.qty / perQty;
+          }
+        } else {
+          scale = e.qty / perQty;
         }
       }
 
-      final result = scale * baseVal * propFactor * f * (link?.customRate ?? 1.0);
+      final result = (scale * targetProp.value) * propFactor * f * (link?.customRate ?? 1.0);
       return result;
     }
 
-    // 3. Klasik doğrudan birim/değer eşleşmesi
+    // 4. Klasik doğrudan birim/değer eşleşmesi
     if (e.unitId == null || e.value == null) {
       if (gu.dim == 'count') return e.qty * f / gu.factor;
       return null;
     }
     final eu = unit(e.unitId!);
     if (eu.dim != gu.dim) return null;
-    return e.value! * eu.factor / gu.factor * f * (link?.customRate ?? 1.0);
+    return e.value! * (eu.factor / gu.factor) * f * (link?.customRate ?? 1.0);
   }
 
   (double, int) goalValue(Goal g, DateTime from, DateTime? to, {Map<int, double>? byActivity}) {
@@ -2201,6 +2341,22 @@ class AppStore extends ChangeNotifier {
     await d.delete('goal_links', where: 'goal_id=?', whereArgs: [g.id]);
     await d.delete('goals', where: 'id=?', whereArgs: [g.id]);
     goals.removeWhere((x) => x.id == g.id);
+    _changed();
+  }
+
+  Future<void> reorderGoals(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= goals.length) return;
+    if (newIndex < 0 || newIndex >= goals.length) return;
+    final item = goals.removeAt(oldIndex);
+    goals.insert(newIndex, item);
+    final d = await db;
+    final batch = d.batch();
+    for (var i = 0; i < goals.length; i++) {
+      final g = goals[i];
+      g.sort = i;
+      batch.update('goals', {'sort': g.sort}, where: 'id=?', whereArgs: [g.id]);
+    }
+    await batch.commit(noResult: true);
     _changed();
   }
 
@@ -2798,7 +2954,7 @@ class AppStore extends ChangeNotifier {
 
   Future<AddResult> quickLogHabit(int activityId, {DateTime? date}) async {
     final targetTime = date ?? DateTime.now();
-    final last = entries.where((e) => e.activityId == activityId).lastOrNull;
+    final last = lastEntryForActivity(activityId);
     if (last != null) {
       return addEntry(
         activityId,
@@ -2874,6 +3030,22 @@ class AppStore extends ChangeNotifier {
     _changed();
   }
 
+  Future<void> reorderQuickItems(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= quickItems.length) return;
+    if (newIndex < 0 || newIndex >= quickItems.length) return;
+    final item = quickItems.removeAt(oldIndex);
+    quickItems.insert(newIndex, item);
+    final d = await db;
+    final batch = d.batch();
+    for (var i = 0; i < quickItems.length; i++) {
+      final q = quickItems[i];
+      q.sort = i;
+      batch.update('quick_items', {'sort': q.sort}, where: 'id=?', whereArgs: [q.id]);
+    }
+    await batch.commit(noResult: true);
+    _changed();
+  }
+
   /// Bir kerelik yapılacaklar, tamamlandıkları günden sonra listeden kalkar.
   Future<void> _cleanupQuickItems() async {
     final today = dayStart(DateTime.now());
@@ -2891,6 +3063,124 @@ class AppStore extends ChangeNotifier {
       await d.delete('quick_items', where: 'id=?', whereArgs: [q.id]);
       quickItems.remove(q);
     }
+  }
+
+  // ---------------------------------------------------------------- aktivite hatırlatıcıları
+
+  List<ActivityReminder> remindersForActivity(int activityId) =>
+      activityReminders.where((r) => r.activityId == activityId).toList();
+
+  Future<ActivityReminder> saveActivityReminder(ActivityReminder reminder) async {
+    final d = await db;
+    if (reminder.id == 0) {
+      reminder.id = await d.insert('activity_reminders', reminder.toMap()..remove('id'));
+      activityReminders.add(reminder);
+    } else {
+      await d.update('activity_reminders', reminder.toMap(),
+          where: 'id = ?', whereArgs: [reminder.id]);
+      final idx = activityReminders.indexWhere((r) => r.id == reminder.id);
+      if (idx != -1) {
+        activityReminders[idx] = reminder;
+      }
+    }
+    _changed();
+    try {
+      await NotificationService.scheduleReminders(this);
+    } catch (_) {}
+    return reminder;
+  }
+
+  Future<void> deleteActivityReminder(int id) async {
+    final d = await db;
+    await d.delete('activity_reminders', where: 'id = ?', whereArgs: [id]);
+    activityReminders.removeWhere((r) => r.id == id);
+    _changed();
+    try {
+      await NotificationService.scheduleReminders(this);
+    } catch (_) {}
+  }
+
+  Future<void> toggleActivityReminder(int id, bool enabled) async {
+    final rem = activityReminders.where((r) => r.id == id).firstOrNull;
+    if (rem == null) return;
+    rem.isEnabled = enabled;
+    final d = await db;
+    await d.update('activity_reminders', {'is_enabled': enabled ? 1 : 0},
+        where: 'id = ?', whereArgs: [id]);
+    _changed();
+    try {
+      await NotificationService.scheduleReminders(this);
+    } catch (_) {}
+  }
+
+  // ---------------------------------------------------------------- rutinler (aktivite paketleri)
+
+  Future<Routine> saveRoutine(Routine routine) async {
+    final d = await db;
+    if (routine.id == 0) {
+      routine.sort = routines.isEmpty ? 0 : routines.map((r) => r.sort).reduce(max) + 1;
+      routine.id = await d.insert('routines', routine.toMap()..remove('id'));
+      routines.add(routine);
+    } else {
+      await d.update('routines', routine.toMap(), where: 'id = ?', whereArgs: [routine.id]);
+      final idx = routines.indexWhere((r) => r.id == routine.id);
+      if (idx != -1) {
+        routines[idx] = routine;
+      }
+    }
+    await d.delete('routine_items', where: 'routine_id = ?', whereArgs: [routine.id]);
+    final batch = d.batch();
+    for (var i = 0; i < routine.items.length; i++) {
+      final it = routine.items[i];
+      it.routineId = routine.id;
+      it.sort = i;
+      batch.insert('routine_items', it.toMap()..remove('id'));
+    }
+    await batch.commit(noResult: true);
+    _changed();
+    return routine;
+  }
+
+  Future<void> deleteRoutine(int id) async {
+    final d = await db;
+    await d.delete('routine_items', where: 'routine_id = ?', whereArgs: [id]);
+    await d.delete('routines', where: 'id = ?', whereArgs: [id]);
+    routines.removeWhere((r) => r.id == id);
+    _changed();
+  }
+
+  Future<void> reorderRoutines(int oldIndex, int newIndex) async {
+    if (oldIndex < 0 || oldIndex >= routines.length) return;
+    if (newIndex < 0 || newIndex >= routines.length) return;
+    final r = routines.removeAt(oldIndex);
+    routines.insert(newIndex, r);
+    final d = await db;
+    final batch = d.batch();
+    for (var i = 0; i < routines.length; i++) {
+      routines[i].sort = i;
+      batch.update('routines', {'sort': i}, where: 'id = ?', whereArgs: [routines[i].id]);
+    }
+    await batch.commit(noResult: true);
+    _changed();
+  }
+
+  Future<List<Entry>> executeRoutine(int routineId, {DateTime? at}) async {
+    final r = routines.where((x) => x.id == routineId).firstOrNull;
+    if (r == null || r.items.isEmpty) return const [];
+    final now = at ?? DateTime.now();
+    final createdEntries = <Entry>[];
+    for (final it in r.items) {
+      if (!activities.containsKey(it.activityId)) continue;
+      final res = await addEntry(
+        it.activityId,
+        measureId: it.measureId,
+        qty: it.qty,
+        at: now,
+        note: it.note,
+      );
+      createdEntries.add(res.entry);
+    }
+    return createdEntries;
   }
 
   // ---------------------------------------------------------------- widget verisi
@@ -2944,24 +3234,32 @@ class AppStore extends ChangeNotifier {
     }
 
     // 1x1 Tek Öğe Widget Verisi (Single Widget)
-    // Öncelik: Yapılmamış alışkanlık > Kalan günlük hedef > Saate göre öneri > Son kayıt
     Activity? singleAct;
     String singleSub = isTr ? 'Hızlı Kayıt' : 'Quick Log';
-    final uncompletedHabit = activities.values.where((a) => a.isHabit && !a.isArchived && todayCount(a.id) == 0).firstOrNull;
-    if (uncompletedHabit != null) {
-      singleAct = uncompletedHabit;
-      singleSub = isTr ? 'Alışkanlık' : 'Habit';
+    if (_singleWidgetActivityId != null && _singleWidgetActivityId! > 0 && activities.containsKey(_singleWidgetActivityId)) {
+      singleAct = activities[_singleWidgetActivityId];
+      if (singleAct != null) {
+        final n = todayCount(singleAct.id);
+        singleSub = n > 0 ? (isTr ? 'Bugün $n' : 'Today $n') : (isTr ? 'Dokun: Kaydet' : 'Tap to log');
+      }
     } else {
-      final uncompletedGoal = goals.where((g) => g.period == GoalPeriod.day && !goalStatus(g, at: now).done).firstOrNull;
-      if (uncompletedGoal != null && uncompletedGoal.links.isNotEmpty) {
-        singleAct = activities[uncompletedGoal.links.first.activityId];
-        final st = goalStatus(uncompletedGoal, at: now);
-        singleSub = isTr ? 'Kalan: ${goalValueText(uncompletedGoal, st.remaining)}' : 'Left: ${goalValueText(uncompletedGoal, st.remaining)}';
+      // Öncelik: Yapılmamış alışkanlık > Kalan günlük hedef > Saate göre öneri > Son kayıt
+      final uncompletedHabit = activities.values.where((a) => a.isHabit && !a.isArchived && todayCount(a.id) == 0).firstOrNull;
+      if (uncompletedHabit != null) {
+        singleAct = uncompletedHabit;
+        singleSub = isTr ? 'Alışkanlık' : 'Habit';
       } else {
-        singleAct = timeBasedSuggestions(now: now).firstOrNull ?? activities[entries.lastOrNull?.activityId];
-        if (singleAct != null) {
-          final n = todayCount(singleAct.id);
-          singleSub = n > 0 ? (isTr ? 'Bugün $n' : 'Today $n') : (isTr ? 'Dokun: Kaydet' : 'Tap to log');
+        final uncompletedGoal = goals.where((g) => g.period == GoalPeriod.day && !goalStatus(g, at: now).done).firstOrNull;
+        if (uncompletedGoal != null && uncompletedGoal.links.isNotEmpty) {
+          singleAct = activities[uncompletedGoal.links.first.activityId];
+          final st = goalStatus(uncompletedGoal, at: now);
+          singleSub = isTr ? 'Kalan: ${goalValueText(uncompletedGoal, st.remaining)}' : 'Left: ${goalValueText(uncompletedGoal, st.remaining)}';
+        } else {
+          singleAct = timeBasedSuggestions(now: now).firstOrNull ?? activities[entries.lastOrNull?.activityId];
+          if (singleAct != null) {
+            final n = todayCount(singleAct.id);
+            singleSub = n > 0 ? (isTr ? 'Bugün $n' : 'Today $n') : (isTr ? 'Dokun: Kaydet' : 'Tap to log');
+          }
         }
       }
     }
@@ -2978,6 +3276,7 @@ class AppStore extends ChangeNotifier {
     }
     return {
       'date': dayKey(now),
+      'isTr': isTr,
       'items': items,
       'goals': goalParts.isEmpty ? '' : '🎯 ${goalParts.join('  ·  ')}',
       'single_title': singleAct != null ? singleAct.name : (isTr ? 'Kayıt Ekle' : 'Add Entry'),
@@ -2985,6 +3284,17 @@ class AppStore extends ChangeNotifier {
       'single_emoji': singleAct?.emoji ?? '⚡',
       'single_act_id': singleAct?.id ?? 0,
       'single_done': singleAct != null && todayCount(singleAct.id) > 0,
+      'single_configured_act_id': _singleWidgetActivityId ?? 0,
+      'activities': [
+        for (final a in activities.values.where((a) => !a.isArchived))
+          {
+            'id': a.id,
+            'name': a.name,
+            'emoji': a.emoji ?? '⚡',
+            'count': todayCount(a.id),
+            'isHabit': a.isHabit,
+          }
+      ],
     };
   }
 
@@ -2993,7 +3303,7 @@ class AppStore extends ChangeNotifier {
   Future<String> exportJson() async {
     final d = await db;
     final out = <String, Object?>{
-      'app': 'takip',
+      'app': 'seyir',
       'version': AppDb.currentVersion,
       'exportedAt': DateTime.now().toIso8601String(),
     };
@@ -3067,8 +3377,8 @@ class AppStore extends ChangeNotifier {
 
   Future<void> importJson(String json) async {
     final m = jsonDecode(json);
-    if (m is! Map || m['app'] != 'takip') {
-      throw FormatException(strings.value.isTr ? 'Bu dosya bir Takip yedeği değil.' : 'This file is not a Takip backup.');
+    if (m is! Map || (m['app'] != 'takip' && m['app'] != 'seyir')) {
+      throw FormatException(strings.value.isTr ? 'Bu dosya bir Seyir yedeği değil.' : 'This file is not a Seyir backup.');
     }
     final version = m['version'];
     if (version is int && version > AppDb.currentVersion) {
@@ -3228,8 +3538,8 @@ class AppStore extends ChangeNotifier {
     final measured = goalUnit != null && goalUnit.dim != 'count';
 
     var done = 0.0;
-    for (final e in entriesIn(DateTime.fromMillisecondsSinceEpoch(since), null)) {
-      if (e.activityId != step.linkedActivityId) continue;
+    for (final e in entriesForActivity(step.linkedActivityId!)) {
+      if (e.ts < since) continue;
       final u = e.unitId == null ? null : unit(e.unitId!);
       if (measured) {
         if (u != null && e.value != null && u.dim == goalUnit.dim) {
@@ -3356,6 +3666,38 @@ class AppStore extends ChangeNotifier {
       await _syncLinkedSteps();
       return;
     }
+  }
+
+  Future<void> updateRoadmapStep(RoadmapStep step) async {
+    final d = await db;
+    await d.update('roadmap_steps', step.toMap(), where: 'id = ?', whereArgs: [step.id]);
+    for (final r in roadmaps) {
+      final idx = r.steps.indexWhere((s) => s.id == step.id);
+      if (idx != -1) {
+        r.steps[idx] = step;
+        break;
+      }
+    }
+    _changed();
+    await _syncLinkedSteps();
+  }
+
+  Future<void> reorderRoadmapSteps(int roadmapId, int oldIndex, int newIndex) async {
+    final r = roadmaps.where((x) => x.id == roadmapId).firstOrNull;
+    if (r == null) return;
+    if (oldIndex < 0 || oldIndex >= r.steps.length) return;
+    if (newIndex < 0 || newIndex >= r.steps.length) return;
+    final item = r.steps.removeAt(oldIndex);
+    r.steps.insert(newIndex, item);
+    final d = await db;
+    final batch = d.batch();
+    for (var i = 0; i < r.steps.length; i++) {
+      final s = r.steps[i];
+      s.order = i + 1;
+      batch.update('roadmap_steps', {'step_order': s.order}, where: 'id = ?', whereArgs: [s.id]);
+    }
+    await batch.commit(noResult: true);
+    _changed();
   }
 
   Future<void> deleteRoadmapStep(int roadmapId, int stepId) async {

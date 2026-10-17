@@ -390,4 +390,127 @@ void main() {
     await tester.tap(find.text(strings.value.cancel));
     await tester.pumpAndSettle();
   });
+
+  test('Visne Suyu test: 100 ml for 50 kcal, 10 mg C-vit, 90 ml water, direct vs water property goal links', () async {
+    final act = await store.addActivity('Vişne Suyu', emoji: '🍒', category: 'nutrition');
+
+    // 1. Define properties for 100 ml Vişne Suyu
+    final calProp = await store.saveActivityProperty(ActivityProperty(
+      activityId: act.id,
+      name: 'Kalori',
+      value: 50,
+      unitId: 'kcal',
+      perQty: 100,
+      perUnitId: 'ml',
+    ));
+
+    final cVitProp = await store.saveActivityProperty(ActivityProperty(
+      activityId: act.id,
+      name: 'C Vitamini',
+      value: 10,
+      unitId: 'mg',
+      perQty: 100,
+      perUnitId: 'ml',
+    ));
+
+    final waterProp = await store.saveActivityProperty(ActivityProperty(
+      activityId: act.id,
+      name: 'Su',
+      value: 90,
+      unitId: 'ml',
+      perQty: 100,
+      perUnitId: 'ml',
+    ));
+
+    // Goal 1A: Sıvı Alımı using Direct Juice Volume (propertyId: null)
+    final liquidGoalDirect = Goal(
+      id: 10,
+      name: 'Sıvı Alımı (Doğrudan)',
+      mode: 'amount',
+      unitId: 'l',
+      target: 2.5,
+      period: GoalPeriod.day,
+      startDate: 0,
+      createdAt: 0,
+      links: [GoalLink(activityId: act.id, pct: 100, propertyId: null)],
+    );
+
+    // Goal 1B: Sıvı Alımı using Water Property (propertyId: waterProp.id)
+    final liquidGoalWater = Goal(
+      id: 11,
+      name: 'Sıvı Alımı (Su İçeriği)',
+      mode: 'amount',
+      unitId: 'l',
+      target: 2.5,
+      period: GoalPeriod.day,
+      startDate: 0,
+      createdAt: 0,
+      links: [GoalLink(activityId: act.id, pct: 100, propertyId: waterProp.id)],
+    );
+
+    // Goal 2: C Vitamini Hedefi (target: 80 mg)
+    final cVitGoal = Goal(
+      id: 12,
+      name: 'Günlük C Vitamini',
+      mode: 'amount',
+      unitId: 'mg',
+      target: 80,
+      period: GoalPeriod.day,
+      startDate: 0,
+      createdAt: 0,
+      links: [GoalLink(activityId: act.id, pct: 100, propertyId: cVitProp.id)],
+    );
+
+    // Goal 3: Kalori Limiti (target: 2000 kcal)
+    final calGoal = Goal(
+      id: 13,
+      name: 'Günlük Kalori Limiti',
+      type: 'limit',
+      mode: 'amount',
+      unitId: 'kcal',
+      target: 2000,
+      period: GoalPeriod.day,
+      startDate: 0,
+      createdAt: 0,
+      links: [GoalLink(activityId: act.id, pct: 100, propertyId: calProp.id)],
+    );
+
+    final now = DateTime.now();
+
+    // Log 200 ml Vişne Suyu (200 ml bardak)
+    final entry200ml = Entry(
+      id: 1,
+      activityId: act.id,
+      ts: now.millisecondsSinceEpoch,
+      qty: 1,
+      value: 200,
+      unitId: 'ml',
+    );
+
+    // 1A. Direct liquid contribution: 200 ml = 0.2 L
+    final contribDirect = store.contribution(liquidGoalDirect, entry200ml, 100, link: liquidGoalDirect.links.first);
+    expect(contribDirect, closeTo(0.2, 0.0001));
+
+    // 1B. Water content contribution: 200 ml * (90 ml / 100 ml) = 180 ml = 0.18 L
+    final contribWater = store.contribution(liquidGoalWater, entry200ml, 100, link: liquidGoalWater.links.first);
+    expect(contribWater, closeTo(0.18, 0.0001));
+
+    // 2. C Vitamin contribution: 200 ml * (10 mg / 100 ml) = 20 mg
+    final contribCVit = store.contribution(cVitGoal, entry200ml, 100, link: cVitGoal.links.first);
+    expect(contribCVit, closeTo(20.0, 0.0001));
+
+    // 3. Calorie contribution: 200 ml * (50 kcal / 100 ml) = 100 kcal
+    final contribCal = store.contribution(calGoal, entry200ml, 100, link: calGoal.links.first);
+    expect(contribCal, closeTo(100.0, 0.0001));
+
+    // Measure test: "1 bardak" measure = 200 ml
+    final glassMeasure = await store.addMeasure('Bardak', 'ml', 200);
+    final addRes = await store.addEntry(act.id, measureId: glassMeasure.id, qty: 1);
+    final entryGlass = addRes.entry;
+
+    expect(store.contribution(liquidGoalDirect, entryGlass, 100, link: liquidGoalDirect.links.first), closeTo(0.2, 0.0001));
+    expect(store.contribution(liquidGoalWater, entryGlass, 100, link: liquidGoalWater.links.first), closeTo(0.18, 0.0001));
+    expect(store.contribution(cVitGoal, entryGlass, 100, link: cVitGoal.links.first), closeTo(20.0, 0.0001));
+    expect(store.contribution(calGoal, entryGlass, 100, link: calGoal.links.first), closeTo(100.0, 0.0001));
+  });
 }

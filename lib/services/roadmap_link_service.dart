@@ -140,7 +140,7 @@ class RoadmapLinkService {
   }) async {
     final client = HttpClient()
       ..connectionTimeout = timeout
-      ..userAgent = 'Takip';
+      ..userAgent = 'Seyir';
     try {
       return await _download(client, uri, allowInsecure, timeout, maxBytes).timeout(timeout * 2);
     } on RoadmapLinkException {

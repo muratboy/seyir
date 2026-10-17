@@ -24,6 +24,7 @@ class _GoalsPageState extends State<GoalsPage> {
   GoalsPageTab _currentTab = GoalsPageTab.goals;
   GoalPeriod? _filterPeriod;
   final Set<int> _expandedGoalHeatmapIds = {};
+  bool _isReorderingGoals = false;
 
   @override
   Widget build(BuildContext context) {
@@ -50,6 +51,16 @@ class _GoalsPageState extends State<GoalsPage> {
                       : s.roadmapsTitle),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
+            actions: [
+              if (_currentTab == GoalsPageTab.goals && allGoals.length > 1)
+                IconButton(
+                  tooltip: s.isTr
+                      ? (_isReorderingGoals ? 'Sıralamayı Bitir' : 'Hedefleri Sırala')
+                      : (_isReorderingGoals ? 'Done Reordering' : 'Reorder Goals'),
+                  icon: Icon(_isReorderingGoals ? Icons.check_circle_outline : Icons.sort),
+                  onPressed: () => setState(() => _isReorderingGoals = !_isReorderingGoals),
+                ),
+            ],
           ),
           body: Column(
             children: [
@@ -176,14 +187,39 @@ class _GoalsPageState extends State<GoalsPage> {
                             ],
                           ),
                         )
-                      : ListView.builder(
-                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                          itemCount: filteredGoals.length,
-                          itemBuilder: (context, i) {
-                            final goal = filteredGoals[i];
-                            return _buildGoalCard(context, goal);
-                          },
-                        ),
+                      : (_isReorderingGoals
+                          ? ReorderableListView.builder(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              itemCount: allGoals.length,
+                              onReorderItem: (oldIdx, newIdx) => store.reorderGoals(oldIdx, newIdx),
+                              itemBuilder: (context, i) {
+                                final goal = allGoals[i];
+                                return Card(
+                                  key: ValueKey('goal_reorder_${goal.id}'),
+                                  margin: const EdgeInsets.only(bottom: 8),
+                                  child: ListTile(
+                                    leading: Icon(
+                                      goal.isLimit ? Icons.shield_outlined : Icons.flag_outlined,
+                                      color: goal.isLimit ? Colors.amber.shade700 : scheme.primary,
+                                    ),
+                                    title: Text(goal.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                                    subtitle: Text(
+                                      '${periodName(goal.period, isTr: s.isTr)} · ${fmtNum(goal.target)} ${store.goalUnitSymbol(goal)}',
+                                      style: const TextStyle(fontSize: AppFont.caption),
+                                    ),
+                                    trailing: const Icon(Icons.drag_handle_rounded),
+                                  ),
+                                );
+                              },
+                            )
+                          : ListView.builder(
+                              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                              itemCount: filteredGoals.length,
+                              itemBuilder: (context, i) {
+                                final goal = filteredGoals[i];
+                                return _buildGoalCard(context, goal);
+                              },
+                            )),
                 ),
               ] else if (_currentTab == GoalsPageTab.habits) ...[
                 // Habits (Zinciri Kırma) List

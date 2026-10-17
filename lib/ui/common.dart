@@ -1584,15 +1584,24 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
                                         DropdownMenuItem<int?>(
                                           value: null,
                                           child: Text(
-                                            s.isTr ? 'Otomatik / Doğrudan Değer' : 'Automatic / Direct Value',
+                                            s.isTr
+                                                ? (g.isAmount
+                                                    ? 'Doğrudan Aktivite Miktarı / Hacmi (${activity.name})'
+                                                    : 'Otomatik / Doğrudan Değer')
+                                                : (g.isAmount
+                                                    ? 'Direct Activity Amount / Volume (${activity.name})'
+                                                    : 'Automatic / Direct Value'),
                                             style: const TextStyle(fontSize: AppFont.small),
+                                            overflow: TextOverflow.ellipsis,
                                           ),
                                         ),
                                         for (final p in props)
                                           DropdownMenuItem<int?>(
                                             value: p.id,
                                             child: Text(
-                                              '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol}',
+                                              p.perUnitId != null && p.perUnitId != 'adet'
+                                                  ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
+                                                  : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)',
                                               style: const TextStyle(fontSize: AppFont.small),
                                               overflow: TextOverflow.ellipsis,
                                             ),
@@ -1625,7 +1634,6 @@ Future<void> showActivityEditDialog(BuildContext context, Activity activity) {
               );
             },
           ),
-          const Spacer(),
           TextButton(onPressed: () => Navigator.pop(c), child: Text(s.cancel)),
           FilledButton(
             onPressed: () async {

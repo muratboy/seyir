@@ -14,10 +14,13 @@ import 'app_font.dart';
 import 'common.dart';
 import 'components/activity_dot_strip.dart';
 import 'components/activity_format_views.dart';
+import 'components/activity_reminders_sheet.dart';
 import 'components/stats_common.dart';
+import 'components/stats_correlations_card.dart';
 import 'components/today_timeline.dart';
 import 'contribution_heatmap.dart';
 import 'activity_merge_page.dart';
+import '../logic/correlation_analysis.dart';
 
 /// Aktivite Sayfası: Kayıt biçimine (Süre, Miktar, Olay) göre özelleşmiş
 /// detaylı görünüm, istatistikler, takvim, hedefler ve geçmiş kayıtlar.
@@ -84,8 +87,10 @@ class _ActivityPageState extends State<ActivityPage> {
         }
 
         final period = StatPeriod.containing(_range, _anchor);
-        final allEntries = store.entries.where((e) => e.activityId == act.id).toList();
-        final periodEntries = store.entriesIn(period.from, period.to).where((e) => e.activityId == act.id).toList();
+        final allEntries = store.entriesForActivity(act.id);
+        final fromTs = period.from.millisecondsSinceEpoch;
+        final toTs = period.to.millisecondsSinceEpoch;
+        final periodEntries = allEntries.where((e) => e.ts >= fromTs && e.ts < toTs).toList();
 
         // Karşılaştırma için elapsedDays
         final elapsedDays = max(1, period.to.difference(period.from).inDays);
@@ -136,6 +141,11 @@ class _ActivityPageState extends State<ActivityPage> {
                   color: act.isHabit ? Colors.orange : scheme.onSurfaceVariant,
                 ),
                 onPressed: () => store.setActivityHabit(act.id, !act.isHabit),
+              ),
+              IconButton(
+                tooltip: isTr ? 'Hatırlatıcılar' : 'Reminders',
+                icon: const Icon(Icons.notifications_active_outlined),
+                onPressed: () => ActivityRemindersSheet.show(context, act),
               ),
               IconButton(
                 tooltip: isTr ? 'Aktiviteyi düzenle' : 'Edit activity',
@@ -248,9 +258,14 @@ class _ActivityPageState extends State<ActivityPage> {
                 // 6. Özellikler & Metrikler (Kalori, Sıvı/Hacim, Protein vb.)
                 _buildPropertiesCard(context, act, isTr),
 
-                // 7. Bağlı Hedefler ve Limitler (varsa)
-                if (linkedGoals.isNotEmpty)
-                  _buildLinkedGoalsCard(context, linkedGoals, isTr),
+                // 7. Bağlı Hedefler ve Limitler (varsa veya hedefler tanımlıysa)
+                if (linkedGoals.isNotEmpty || store.goals.isNotEmpty)
+                  _buildLinkedGoalsCard(context, act, linkedGoals, isTr),
+
+                // 7b. Korelasyonlar & Tetikleyiciler
+                StatsCorrelationsCard(
+                  insights: CorrelationEngine.analyze(store, activityId: act.id, isTr: isTr),
+                ),
 
                 // 8. Bu Dönemdeki Kayıtlar Listesi
                 _buildEntriesSection(context, periodEntries, isTr),
@@ -598,9 +613,11 @@ class _ActivityPageState extends State<ActivityPage> {
                             icon = Icons.label_outline_rounded;
                             iconColor = scheme.primary;
                         }
-                        final perText = p.perQty == 1.0
-                            ? (isTr ? '1 adet / porsiyon' : '1 piece / serving')
-                            : '${fmtNum(p.perQty)} ${isTr ? "adet için" : "pcs"}';
+                        final perText = p.perUnitId != null && p.perUnitId != 'adet'
+                            ? '${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol} ${isTr ? "için" : "per"}'
+                            : (p.perQty == 1.0
+                                ? (isTr ? '1 adet / porsiyon' : '1 piece / serving')
+                                : '${fmtNum(p.perQty)} ${isTr ? "adet için" : "pcs"}');
 
                         return ListTile(
                           contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 2),
@@ -657,18 +674,22 @@ class _ActivityPageState extends State<ActivityPage> {
     required bool isTr,
   }) async {
     final s = strings.value;
+    final (usedM, otherM) = store.measuresFor(act.id);
+    final firstMeasure = usedM.firstOrNull ?? otherM.firstOrNull;
     final nameCtrl = TextEditingController(text: existing?.name ?? '');
     final valCtrl = TextEditingController(text: existing != null ? fmtNum(existing.value) : '');
     final perQtyCtrl = TextEditingController(text: existing != null ? fmtNum(existing.perQty) : '1');
     var selectedUnitId = existing?.unitId ?? 'kcal';
+    var selectedPerUnitId = existing?.perUnitId ?? (firstMeasure?.unitId ?? 'adet');
 
     final presets = [
-      (isTr ? 'Kalori' : 'Calories', 'kcal', Icons.bolt_rounded),
-      (isTr ? 'Sıvı / Hacim' : 'Liquid / Volume', 'ml', Icons.water_drop_outlined),
-      (isTr ? 'Protein' : 'Protein', 'g', Icons.fitness_center_rounded),
-      (isTr ? 'Kafein' : 'Caffeine', 'g', Icons.coffee_rounded),
-      (isTr ? 'Karbonhidrat' : 'Carbs', 'g', Icons.grain_rounded),
-      (isTr ? 'Yağ' : 'Fat', 'g', Icons.opacity_rounded),
+      (isTr ? 'Kalori' : 'Calories', 'kcal', Icons.bolt_rounded, 'kcal', 'adet', 50.0, 1.0),
+      (isTr ? 'Sıvı / Hacim' : 'Liquid / Volume', 'ml', Icons.water_drop_outlined, 'ml', 'ml', 90.0, 100.0),
+      (isTr ? 'C Vitamini' : 'Vitamin C', 'mg', Icons.health_and_safety_rounded, 'mg', 'ml', 10.0, 100.0),
+      (isTr ? 'Protein' : 'Protein', 'g', Icons.fitness_center_rounded, 'g', 'g', 10.0, 100.0),
+      (isTr ? 'Kafein' : 'Caffeine', 'mg', Icons.coffee_rounded, 'mg', 'adet', 80.0, 1.0),
+      (isTr ? 'Karbonhidrat' : 'Carbs', 'g', Icons.grain_rounded, 'g', 'g', 15.0, 100.0),
+      (isTr ? 'Yağ' : 'Fat', 'g', Icons.opacity_rounded, 'g', 'g', 5.0, 100.0),
     ];
 
     await showDialog<void>(
@@ -703,7 +724,12 @@ class _ActivityPageState extends State<ActivityPage> {
                         onPressed: () {
                           setS(() {
                             nameCtrl.text = pre.$1;
-                            selectedUnitId = pre.$2;
+                            selectedUnitId = pre.$4;
+                            selectedPerUnitId = pre.$5;
+                            if (valCtrl.text.isEmpty) valCtrl.text = fmtNum(pre.$6);
+                            if (perQtyCtrl.text == '1' || perQtyCtrl.text.isEmpty) {
+                              perQtyCtrl.text = fmtNum(pre.$7);
+                            }
                           });
                         },
                       );
@@ -717,7 +743,7 @@ class _ActivityPageState extends State<ActivityPage> {
                   textCapitalization: TextCapitalization.sentences,
                   decoration: InputDecoration(
                     labelText: isTr ? 'Özellik Adı' : 'Property Name',
-                    hintText: isTr ? 'örn: Kalori, Sıvı Hacmi, Kafein' : 'e.g. Calories, Volume, Caffeine',
+                    hintText: isTr ? 'örn: Kalori, Su, C Vitamini, Kafein' : 'e.g. Calories, Water, Vitamin C, Caffeine',
                   ),
                 ),
                 const SizedBox(height: 12),
@@ -731,7 +757,7 @@ class _ActivityPageState extends State<ActivityPage> {
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                         decoration: InputDecoration(
                           labelText: isTr ? 'Değer' : 'Value',
-                          hintText: '76',
+                          hintText: '50',
                         ),
                       ),
                     ),
@@ -756,16 +782,46 @@ class _ActivityPageState extends State<ActivityPage> {
                   ],
                 ),
                 const SizedBox(height: 12),
-                TextField(
-                  controller: perQtyCtrl,
-                  keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                  decoration: InputDecoration(
-                    labelText: isTr ? 'Geçerli Olduğu Miktar' : 'For Base Quantity',
-                    hintText: '1',
-                    helperText: isTr
-                        ? 'Genellikle 1 adet/porsiyon için değer girilir.'
-                        : 'Usually the value per 1 item or serving.',
-                  ),
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      flex: 3,
+                      child: TextField(
+                        controller: perQtyCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: isTr ? 'Temel Miktar' : 'Base Quantity',
+                          hintText: '100',
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      flex: 3,
+                      child: DropdownButtonFormField<String>(
+                        initialValue: selectedPerUnitId,
+                        isExpanded: true,
+                        decoration: InputDecoration(labelText: isTr ? 'Temel Birim' : 'Base Unit'),
+                        items: store.allUnits.map((u) {
+                          return DropdownMenuItem(
+                            value: u.id,
+                            child: Text('${u.symbol} (${u.name})', overflow: TextOverflow.ellipsis),
+                          );
+                        }).toList(),
+                        onChanged: (v) {
+                          if (v != null) setS(() => selectedPerUnitId = v);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  isTr
+                      ? 'Örn: 100 ml için 50 kalori, 100 ml için 10 mg C vitamini veya 1 adet için değer.'
+                      : 'E.g. 50 kcal for 100 ml, 10 mg Vitamin C for 100 ml, or per 1 item.',
+                  style: TextStyle(fontSize: AppFont.micro, color: Theme.of(c).colorScheme.onSurfaceVariant),
                 ),
               ],
             ),
@@ -789,11 +845,13 @@ class _ActivityPageState extends State<ActivityPage> {
                       value: val,
                       unitId: selectedUnitId,
                       perQty: perQty > 0 ? perQty : 1.0,
+                      perUnitId: selectedPerUnitId,
                     );
                 prop.name = name;
                 prop.value = val;
                 prop.unitId = selectedUnitId;
                 prop.perQty = perQty > 0 ? perQty : 1.0;
+                prop.perUnitId = selectedPerUnitId;
 
                 await store.saveActivityProperty(prop);
                 if (c.mounted) Navigator.pop(c);
@@ -806,7 +864,7 @@ class _ActivityPageState extends State<ActivityPage> {
     );
   }
 
-  Widget _buildLinkedGoalsCard(BuildContext context, List<(Goal, GoalLink)> linkedGoals, bool isTr) {
+  Widget _buildLinkedGoalsCard(BuildContext context, Activity act, List<(Goal, GoalLink)> linkedGoals, bool isTr) {
     final scheme = Theme.of(context).colorScheme;
 
     return Column(
@@ -814,9 +872,24 @@ class _ActivityPageState extends State<ActivityPage> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(20, 10, 16, 4),
-          child: Text(
-            isTr ? 'Bağlı Hedefler ve Limitler' : 'Linked Goals & Limits',
-            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
+          child: Row(
+            children: [
+              Expanded(
+                child: Text(
+                  isTr ? 'Bağlı Hedefler ve Limitler' : 'Linked Goals & Limits',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
+                ),
+              ),
+              TextButton.icon(
+                style: TextButton.styleFrom(
+                  visualDensity: VisualDensity.compact,
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                ),
+                icon: const Icon(Icons.add, size: 18),
+                label: Text(isTr ? 'Hedefe Bağla' : 'Link to Goal'),
+                onPressed: () => _showLinkGoalDialog(context, act, isTr: isTr),
+              ),
+            ],
           ),
         ),
         Card(
@@ -826,36 +899,355 @@ class _ActivityPageState extends State<ActivityPage> {
             borderRadius: BorderRadius.circular(18),
             side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.3)),
           ),
-          child: Column(
-            children: [
-              for (var i = 0; i < linkedGoals.length; i++) ...[
-                if (i > 0) Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.25)),
-                Builder(builder: (context) {
-                  final (goal, link) = linkedGoals[i];
-                  final isLimit = goal.isLimit;
-                  final prop = store.findActivityProperty(link.propertyId);
-                  final propText = prop != null
-                      ? (isTr ? ' · Ölçü: ${prop.name}' : ' · Measure: ${prop.name}')
-                      : '';
-                  return ListTile(
-                    leading: Icon(
-                      isLimit ? Icons.shield_outlined : Icons.track_changes,
-                      color: isLimit ? Colors.amber.shade800 : Colors.blue.shade800,
-                    ),
-                    title: Text(goal.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    subtitle: Text(
-                      isTr
-                          ? '${periodNames[goal.period]} ${isLimit ? "Limit" : "Hedef"} · Katkı: %${fmtNum(link.pct)}$propText'
-                          : '${periodNamesEn[goal.period]} ${isLimit ? "Limit" : "Goal"} · Contribution: %${fmtNum(link.pct)}$propText',
-                      style: const TextStyle(fontSize: AppFont.caption),
-                    ),
-                  );
-                }),
-              ],
-            ],
-          ),
+          child: linkedGoals.isEmpty
+              ? Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Row(
+                    children: [
+                      Icon(Icons.track_changes_outlined, color: scheme.onSurfaceVariant, size: 28),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Text(
+                          isTr
+                              ? 'Bu aktivite henüz bir hedef veya limite bağlı değil. Yukarıdaki "Hedefe Bağla" düğmesiyle bağlayabilirsiniz.'
+                              : 'Not linked to any goals or limits yet. Tap "Link to Goal" above to connect.',
+                          style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppFont.small),
+                        ),
+                      ),
+                    ],
+                  ),
+                )
+              : Column(
+                  children: [
+                    for (var i = 0; i < linkedGoals.length; i++) ...[
+                      if (i > 0) Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.25)),
+                      Builder(builder: (context) {
+                        final (goal, link) = linkedGoals[i];
+                        final isLimit = goal.isLimit;
+                        final prop = store.findActivityProperty(link.propertyId);
+                        final propText = prop != null
+                            ? (isTr ? ' · Ölçü: ${prop.name}' : ' · Measure: ${prop.name}')
+                            : (goal.isAmount ? (isTr ? ' · Ölçü: Doğrudan Miktar' : ' · Measure: Direct Amount') : '');
+                        return ListTile(
+                          onTap: () => _showEditGoalLinkDialog(context, act, goal, link, isTr: isTr),
+                          leading: Icon(
+                            isLimit ? Icons.shield_outlined : Icons.track_changes,
+                            color: isLimit ? Colors.amber.shade800 : Colors.blue.shade800,
+                          ),
+                          title: Text(goal.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                          subtitle: Text(
+                            isTr
+                                ? '${periodNames[goal.period]} ${isLimit ? "Limit" : "Hedef"} · Katkı: %${fmtNum(link.pct)}$propText'
+                                : '${periodNamesEn[goal.period]} ${isLimit ? "Limit" : "Goal"} · Contribution: %${fmtNum(link.pct)}$propText',
+                            style: const TextStyle(fontSize: AppFont.caption),
+                          ),
+                          trailing: const Icon(Icons.chevron_right, size: 18),
+                        );
+                      }),
+                    ],
+                  ],
+                ),
         ),
       ],
+    );
+  }
+
+  Future<void> _showEditGoalLinkDialog(
+    BuildContext context,
+    Activity act,
+    Goal goal,
+    GoalLink link, {
+    required bool isTr,
+  }) async {
+    final s = strings.value;
+    final props = store.activityProperties(act.id);
+    var selectedPropId = props.any((p) => p.id == link.propertyId) ? link.propertyId : null;
+    var currentPct = link.pct;
+
+    await showDialog<void>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, setS) => AlertDialog(
+          title: Text(isTr ? 'Hedef Bağlantısını Düzenle' : 'Edit Goal Link'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Icon(
+                      goal.isLimit ? Icons.shield_outlined : Icons.track_changes,
+                      color: goal.isLimit ? Colors.amber.shade800 : Colors.blue.shade800,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        '${goal.name} (${fmtNum(goal.target)} ${store.goalUnitSymbol(goal)})',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                Text(
+                  isTr ? 'Ölçü Alınacak Özellik:' : 'Property to Measure:',
+                  style: TextStyle(
+                    fontSize: AppFont.caption,
+                    fontWeight: FontWeight.bold,
+                    color: Theme.of(c).colorScheme.primary,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                DropdownButtonFormField<int?>(
+                  initialValue: selectedPropId,
+                  isExpanded: true,
+                  decoration: InputDecoration(
+                    isDense: true,
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  ),
+                  items: [
+                    DropdownMenuItem<int?>(
+                      value: null,
+                      child: Text(
+                        isTr
+                            ? (goal.isAmount
+                                ? 'Doğrudan Aktivite Miktarı / Hacmi (${act.name})'
+                                : 'Otomatik / Doğrudan Değer')
+                            : (goal.isAmount
+                                ? 'Direct Activity Amount / Volume (${act.name})'
+                                : 'Automatic / Direct Value'),
+                        style: const TextStyle(fontSize: AppFont.small),
+                      ),
+                    ),
+                    for (final p in props)
+                      DropdownMenuItem<int?>(
+                        value: p.id,
+                        child: Text(
+                          p.perUnitId != null && p.perUnitId != 'adet'
+                              ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
+                              : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)',
+                          style: const TextStyle(fontSize: AppFont.small),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                  ],
+                  onChanged: (v) => setS(() => selectedPropId = v),
+                ),
+                const SizedBox(height: 16),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Text(isTr ? 'Katkı Oranı:' : 'Contribution:'),
+                    Text('%${fmtNum(currentPct)}', style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                Slider(
+                  value: currentPct.clamp(5.0, 100.0),
+                  min: 5,
+                  max: 100,
+                  divisions: 19,
+                  label: '%${currentPct.round()}',
+                  onChanged: (v) => setS(() => currentPct = v),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+              style: TextButton.styleFrom(foregroundColor: Theme.of(c).colorScheme.error),
+              onPressed: () async {
+                final ok = await confirm(
+                  context,
+                  isTr ? 'Bağlantıyı Kaldır' : 'Unlink Goal',
+                  isTr
+                      ? '"${act.name}" aktivitesini "${goal.name}" hedefinden kaldırmak istediğinize emin misiniz?'
+                      : 'Are you sure you want to unlink "${act.name}" from "${goal.name}"?',
+                );
+                if (ok) {
+                  await store.setActivityGoals(act.id, {goal.id: null});
+                  if (c.mounted) Navigator.pop(c);
+                }
+              },
+              child: Text(isTr ? 'Kaldır' : 'Unlink'),
+            ),
+            TextButton(
+              onPressed: () => Navigator.pop(c),
+              child: Text(s.cancel),
+            ),
+            FilledButton(
+              onPressed: () async {
+                await store.setActivityGoals(
+                  act.id,
+                  {goal.id: currentPct},
+                  goalProperties: {goal.id: selectedPropId},
+                );
+                if (c.mounted) Navigator.pop(c);
+              },
+              child: Text(s.save),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Future<void> _showLinkGoalDialog(BuildContext context, Activity act, {required bool isTr}) async {
+    final s = strings.value;
+    final linkedIds = store.goalsForActivity(act.id).map((g) => g.$1.id).toSet();
+    final available = store.goals.where((g) => !linkedIds.contains(g.id)).toList();
+
+    if (available.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              isTr
+                  ? 'Bağlanabilecek başka hedef yok. Yeni hedef oluşturmak için Hedefler sayfasına gidin.'
+                  : 'No available goals to link. Create one in Goals tab.',
+            ),
+          ),
+        );
+      }
+      return;
+    }
+
+    final props = store.activityProperties(act.id);
+    var selectedGoalId = available.first.id;
+    int? selectedPropId;
+
+    final firstGoal = available.first;
+    if (firstGoal.isAmount && firstGoal.unitId != null) {
+      final gu = store.unit(firstGoal.unitId!);
+      selectedPropId = props.where((p) => store.unit(p.unitId).dim == gu.dim).firstOrNull?.id;
+    }
+
+    await showDialog<void>(
+      context: context,
+      builder: (c) => StatefulBuilder(
+        builder: (c, setS) {
+          final curGoal = available.where((g) => g.id == selectedGoalId).first;
+          return AlertDialog(
+            title: Text(isTr ? 'Hedefe Bağla' : 'Link to Goal'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isTr ? 'Hedef Seçin:' : 'Select Goal:',
+                    style: TextStyle(
+                      fontSize: AppFont.caption,
+                      fontWeight: FontWeight.bold,
+                      color: Theme.of(c).colorScheme.primary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  DropdownButtonFormField<int>(
+                    initialValue: selectedGoalId,
+                    isExpanded: true,
+                    decoration: InputDecoration(
+                      isDense: true,
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                    ),
+                    items: available.map((g) {
+                      return DropdownMenuItem(
+                        value: g.id,
+                        child: Text(
+                          '${g.name} (${fmtNum(g.target)} ${store.goalUnitSymbol(g)})',
+                          style: const TextStyle(fontSize: AppFont.small),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      );
+                    }).toList(),
+                    onChanged: (v) {
+                      if (v != null) {
+                        setS(() {
+                          selectedGoalId = v;
+                          final g = available.where((x) => x.id == v).first;
+                          if (g.isAmount && g.unitId != null) {
+                            final gu = store.unit(g.unitId!);
+                            selectedPropId = props.where((p) => store.unit(p.unitId).dim == gu.dim).firstOrNull?.id;
+                          } else {
+                            selectedPropId = null;
+                          }
+                        });
+                      }
+                    },
+                  ),
+                  if (props.isNotEmpty) ...[
+                    const SizedBox(height: 16),
+                    Text(
+                      isTr ? 'Ölçü Alınacak Özellik:' : 'Property to Measure:',
+                      style: TextStyle(
+                        fontSize: AppFont.caption,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(c).colorScheme.primary,
+                      ),
+                    ),
+                    const SizedBox(height: 6),
+                    DropdownButtonFormField<int?>(
+                      initialValue: selectedPropId,
+                      isExpanded: true,
+                      decoration: InputDecoration(
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                      ),
+                      items: [
+                        DropdownMenuItem<int?>(
+                          value: null,
+                          child: Text(
+                            isTr
+                                ? (curGoal.isAmount
+                                    ? 'Doğrudan Aktivite Miktarı / Hacmi (${act.name})'
+                                    : 'Otomatik / Doğrudan Değer')
+                                : (curGoal.isAmount
+                                    ? 'Direct Activity Amount / Volume (${act.name})'
+                                    : 'Automatic / Direct Value'),
+                            style: const TextStyle(fontSize: AppFont.small),
+                          ),
+                        ),
+                        for (final p in props)
+                          DropdownMenuItem<int?>(
+                            value: p.id,
+                            child: Text(
+                              p.perUnitId != null && p.perUnitId != 'adet'
+                                  ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
+                                  : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)',
+                              style: const TextStyle(fontSize: AppFont.small),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: (v) => setS(() => selectedPropId = v),
+                    ),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(c),
+                child: Text(s.cancel),
+              ),
+              FilledButton(
+                onPressed: () async {
+                  await store.setActivityGoals(
+                    act.id,
+                    {selectedGoalId: 100},
+                    goalProperties: {selectedGoalId: selectedPropId},
+                  );
+                  if (c.mounted) Navigator.pop(c);
+                },
+                child: Text(isTr ? 'Bağla' : 'Link'),
+              ),
+            ],
+          );
+        },
+      ),
     );
   }
 

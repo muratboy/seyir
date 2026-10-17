@@ -13,6 +13,7 @@ import '../services/backup_service.dart';
 import '../services/notification_service.dart';
 import 'app_font.dart';
 import 'common.dart';
+import 'components/activity_reminders_sheet.dart';
 import 'components/export_filter_sheet.dart';
 
 // Ayarlar'ın alt sayfaları. Bildirimler, sağlık takibi ve yedekleme eskiden Ayarlar'ın tek uzun sayfasındaydı.
@@ -204,7 +205,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                     const Divider(height: 1),
                     SwitchListTile(
                       secondary: const Icon(Icons.fact_check_outlined, color: Colors.teal),
-                      title: Text(s.isTr ? 'Gün Sonu Takip Hatırlatıcısı' : 'End of Day Tracker Reminder'),
+                      title: Text(s.isTr ? 'Gün Sonu Seyir Hatırlatıcısı' : 'End of Day Reminder'),
                       subtitle: Text(
                         store.dailySummaryReminderEnabled
                             ? (s.isTr
@@ -256,6 +257,53 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                       ),
                     ],
                     const Divider(height: 1),
+                    ListTile(
+                      leading: const Icon(Icons.alarm_on_rounded, color: Colors.teal),
+                      title: Text(s.isTr ? 'Aktivite Hatırlatıcıları' : 'Activity Reminders'),
+                      subtitle: Text(
+                        store.activityReminders.isEmpty
+                            ? (s.isTr ? 'Özel hatırlatıcı kurulmamış' : 'No custom reminders set')
+                            : '${store.activityReminders.length} ${s.isTr ? "özel hatırlatıcı kurulu" : "custom reminders"}',
+                        style: const TextStyle(fontSize: AppFont.caption),
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.add_circle_outline, size: 22),
+                        tooltip: s.isTr ? 'Hatırlatıcı Ekle' : 'Add Reminder',
+                        onPressed: () async {
+                          final act = await showActivityPicker(context, title: s.isTr ? 'Hatırlatıcı İçin Aktivite Seç' : 'Choose Activity for Reminder');
+                          if (act != null && context.mounted) {
+                            ActivityRemindersSheet.show(context, act);
+                          }
+                        },
+                      ),
+                    ),
+                    if (store.activityReminders.isNotEmpty) ...[
+                      for (final rem in store.activityReminders)
+                        ListTile(
+                          dense: true,
+                          contentPadding: const EdgeInsets.only(left: 32, right: 16),
+                          leading: Text(store.activity(rem.activityId).emoji ?? '⏰', style: const TextStyle(fontSize: 18)),
+                          title: Text('${store.activity(rem.activityId).name} · ${rem.time}'),
+                          subtitle: Text(
+                            rem.daysOfWeek.split(',').length == 7 ? (s.isTr ? 'Her gün' : 'Every day') : '${rem.daysOfWeek.split(',').length} ${s.isTr ? "gün/hafta" : "days/week"}',
+                            style: const TextStyle(fontSize: AppFont.micro),
+                          ),
+                          trailing: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Switch(
+                                value: rem.isEnabled,
+                                onChanged: (val) => store.toggleActivityReminder(rem.id, val),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline, size: 18),
+                                onPressed: () => store.deleteActivityReminder(rem.id),
+                              ),
+                            ],
+                          ),
+                        ),
+                    ],
+                    const Divider(height: 1),
                     // Tek bir deneme: izin yoksa önce izin istenir, sonra sayaç alarmının yolundan bir bildirim gelir.
                     // Eskiden "Su Testi" ve "Alarm Testi" diye iki geliştirici düğmesi vardı.
                     ListTile(
@@ -291,8 +339,8 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
       showSnack(
         context,
         s.isTr
-            ? 'Bildirim izni yok. Telefonun ayarlarında Takip için bildirimleri açabilirsin.'
-            : 'Notifications are not allowed. You can turn them on for Takip in the phone settings.',
+            ? 'Bildirim izni yok. Telefonun ayarlarında Seyir için bildirimleri açabilirsin.'
+            : 'Notifications are not allowed. You can turn them on for Seyir in the phone settings.',
       );
       return;
     }
@@ -785,7 +833,7 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
                         await SharePlus.instance.share(
                           ShareParams(
                             files: [XFile(file.path)],
-                            text: '${s.isTr ? "Takip JSON Yedeği" : "Takip JSON backup"} (${file.uri.pathSegments.last})',
+                            text: '${s.isTr ? "Seyir JSON Yedeği" : "Seyir JSON backup"} (${file.uri.pathSegments.last})',
                           ),
                         );
                       },
@@ -877,7 +925,7 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
               controller: jsonCtrl,
               maxLines: 3,
               decoration: const InputDecoration(
-                hintText: '{"app": "takip", ...}',
+                hintText: '{"app": "seyir", ...}',
               ),
             ),
           ],
@@ -1057,7 +1105,7 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
                                           SharePlus.instance.share(
                                             ShareParams(
                                               files: [XFile(b.file.path)],
-                                              text: '${s.isTr ? "Takip JSON Yedeği" : "Takip JSON backup"} (${b.name})',
+                                              text: '${s.isTr ? "Seyir JSON Yedeği" : "Seyir JSON backup"} (${b.name})',
                                             ),
                                           );
                                         } else if (val == 'delete') {

@@ -235,7 +235,7 @@ class AppStrings {
   String get persistentQuickLogSubtitle => isTr
       ? 'Kilit ekranında ve bildirim panelinde sürekli durur; uygulamayı açmadan yazarak veya tek dokunuşla kaydetmenizi sağlar'
       : 'Stays on lock screen and notification shade; log by typing or one-tap without opening the app';
-  String get quickLogNotificationTitle => isTr ? 'Takip — Hızlı Kayıt' : 'Takip — Quick Log';
+  String get quickLogNotificationTitle => isTr ? 'Seyir — Hızlı Kayıt' : 'Seyir — Quick Log';
   String get quickLogNotificationBodyEmpty =>
       isTr ? 'Yazarak veya düğmeye dokunarak kaydet' : 'Log by typing or tapping a button';
   String get quickLogActionType => isTr ? '✍️ Yaz' : '✍️ Type';
