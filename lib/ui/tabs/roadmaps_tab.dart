@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import '../../data/models.dart';
 import '../../data/store.dart';
 import '../../logic/l10n.dart';
+import '../components/roadmap_ai_dialog.dart';
 import '../components/roadmap_card.dart';
 import '../components/roadmap_import_dialog.dart';
 import '../components/roadmap_link_dialog.dart';
@@ -39,30 +40,107 @@ class RoadmapsTab extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 16),
-              ListTile(
-                leading: Container(
-                  padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: scheme.primary.withValues(alpha: 0.12),
-                    borderRadius: BorderRadius.circular(12),
+              if (store.hasLlmKey) ...[
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.auto_awesome_rounded, color: Colors.purpleAccent),
                   ),
-                  child: Icon(Icons.auto_awesome_rounded, color: scheme.primary),
+                  title: Text(
+                    s.isTr ? 'Yapay Zekâ ile Anında Üret (Önerilen)' : 'Generate with AI Instantly (Recommended)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    s.isTr
+                        ? 'Konunu yaz, ${store.llmProviderDisplayName} ile saniyeler içinde yol haritan hazırlansın.'
+                        : 'Enter your topic, generated in seconds with ${store.llmProviderDisplayName}.',
+                    style: const TextStyle(fontSize: AppFont.caption),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    RoadmapAiDialog.show(context);
+                  },
                 ),
-                title: Text(
-                  s.isTr ? 'Yapay Zekâ Kalıbıyla İçe Aktar (Önerilen)' : 'Import with AI Prompt (Recommended)',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
+                const Divider(height: 20),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.copy_rounded, color: scheme.onSurfaceVariant),
+                  ),
+                  title: Text(
+                    s.isTr ? 'Kalıpla İçe Aktar (Kopyala/Yapıştır)' : 'Import with Template (Copy/Paste)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    s.isTr
+                        ? 'Kalıbı kopyala, yapay zekâ asistanının yanıtını yapıştırıp yükle.'
+                        : 'Copy the template, paste the AI assistant\'s answer and create.',
+                    style: const TextStyle(fontSize: AppFont.caption),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    RoadmapImportDialog.show(context);
+                  },
                 ),
-                subtitle: Text(
-                  s.isTr
-                      ? 'Kalıbı kopyala, yapay zekâ asistanının yanıtını yapıştırıp anında yükle.'
-                      : 'Copy the template, paste the AI assistant\'s answer and create in seconds.',
-                  style: const TextStyle(fontSize: AppFont.caption),
+              ] else ...[
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: scheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Icon(Icons.auto_awesome_rounded, color: scheme.primary),
+                  ),
+                  title: Text(
+                    s.isTr ? 'Yapay Zekâ Kalıbıyla İçe Aktar (Önerilen)' : 'Import with AI Prompt (Recommended)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    s.isTr
+                        ? 'Kalıbı kopyala, yapay zekâ asistanının yanıtını yapıştırıp anında yükle.'
+                        : 'Copy the template, paste the AI assistant\'s answer and create in seconds.',
+                    style: const TextStyle(fontSize: AppFont.caption),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    RoadmapImportDialog.show(context);
+                  },
                 ),
-                onTap: () {
-                  Navigator.pop(ctx);
-                  RoadmapImportDialog.show(context);
-                },
-              ),
+                const Divider(height: 20),
+                ListTile(
+                  leading: Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.purple.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(Icons.bolt_rounded, color: Colors.purpleAccent),
+                  ),
+                  title: Text(
+                    s.isTr ? 'Tek Tuşla AI Üretimi (BYOK)' : 'One-Tap AI Generation (BYOK)',
+                    style: const TextStyle(fontWeight: FontWeight.w600),
+                  ),
+                  subtitle: Text(
+                    s.isTr
+                        ? 'Kendi ücretsiz Gemini veya OpenAI anahtarını ekleyerek doğrudan üret.'
+                        : 'Add your own free Gemini or OpenAI key to generate directly.',
+                    style: const TextStyle(fontSize: AppFont.caption),
+                  ),
+                  onTap: () {
+                    Navigator.pop(ctx);
+                    RoadmapAiDialog.show(context);
+                  },
+                ),
+              ],
               const Divider(height: 20),
               ListTile(
                 leading: Container(
@@ -252,11 +330,31 @@ class RoadmapsTab extends StatelessWidget {
                 style: TextStyle(color: scheme.onSurfaceVariant, fontSize: AppFont.body, height: 1.4),
               ),
               const SizedBox(height: 24),
-              FilledButton.icon(
-                icon: const Icon(Icons.auto_awesome_rounded),
-                label: Text(s.isTr ? 'Yapay Zekâ Kalıbıyla İçe Aktar' : 'Import with AI Prompt'),
-                onPressed: () => RoadmapImportDialog.show(context),
-              ),
+              if (store.hasLlmKey) ...[
+                FilledButton.icon(
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: Text(s.isTr ? 'Yapay Zekâ ile Anında Üret' : 'Generate with AI'),
+                  onPressed: () => RoadmapAiDialog.show(context),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.copy_rounded),
+                  label: Text(s.isTr ? 'Kalıpla İçe Aktar' : 'Import with Template'),
+                  onPressed: () => RoadmapImportDialog.show(context),
+                ),
+              ] else ...[
+                FilledButton.icon(
+                  icon: const Icon(Icons.auto_awesome_rounded),
+                  label: Text(s.isTr ? 'Yapay Zekâ Kalıbıyla İçe Aktar' : 'Import with AI Prompt'),
+                  onPressed: () => RoadmapImportDialog.show(context),
+                ),
+                const SizedBox(height: 10),
+                OutlinedButton.icon(
+                  icon: const Icon(Icons.bolt_rounded, color: Colors.purpleAccent),
+                  label: Text(s.isTr ? 'Tek Tuşla AI Üretimi (BYOK)' : 'One-Tap AI Generation (BYOK)'),
+                  onPressed: () => RoadmapAiDialog.show(context),
+                ),
+              ],
               const SizedBox(height: 10),
               OutlinedButton.icon(
                 icon: const Icon(Icons.link_rounded),

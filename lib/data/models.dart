@@ -848,6 +848,8 @@ class RoadmapStep {
   double? target;
   String? unit;
   int? linkedActivityId;
+  int? linkedGoalId;
+  int? startedAt;
 
   /// Adımı, bağlı aktivitenin kayıtları hedefe ulaştığı için uygulama tamamladıysa true; kullanıcı elle
   /// işaretlediyse false. Kayıt silinip hedefin altına düşülünce yalnızca böyle tamamlanmış adım yeniden
@@ -870,12 +872,17 @@ class RoadmapStep {
     this.target,
     this.unit,
     this.linkedActivityId,
+    this.linkedGoalId,
+    this.startedAt,
     this.autoCompleted = false,
     this.keptOpen = false,
   });
 
   bool get isTask => type == 'task';
   bool get isGoal => type == 'goal';
+  bool get hasLinkedActivity => linkedActivityId != null;
+  bool get hasLinkedGoal => linkedGoalId != null;
+  bool get hasDurationStarted => startedAt != null;
 
   Map<String, Object?> toMap() => {
         if (id != 0) 'id': id,
@@ -889,6 +896,8 @@ class RoadmapStep {
         'target': target,
         'unit': unit,
         'linked_activity_id': linkedActivityId,
+        'linked_goal_id': linkedGoalId,
+        'started_at': startedAt,
         'auto_completed': autoCompleted ? 1 : 0,
         'kept_open': keptOpen ? 1 : 0,
       };
@@ -905,6 +914,8 @@ class RoadmapStep {
         target: (m['target'] as num?)?.toDouble(),
         unit: m['unit'] as String?,
         linkedActivityId: m['linked_activity_id'] as int?,
+        linkedGoalId: m['linked_goal_id'] as int?,
+        startedAt: m['started_at'] as int?,
         autoCompleted: ((m['auto_completed'] as int?) ?? 0) == 1,
         keptOpen: ((m['kept_open'] as int?) ?? 0) == 1,
       );

@@ -9,6 +9,7 @@ import 'package:share_plus/share_plus.dart';
 import '../data/store.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
+import '../services/ai_service.dart';
 import '../services/backup_service.dart';
 import '../services/notification_service.dart';
 import 'app_font.dart';
@@ -1157,6 +1158,523 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
           },
         ),
       ),
+    );
+  }
+}
+
+/// Kullanıcının kendi yapay zekâ anahtarını (BYOK) tanımladığı ve yönettiği sayfa.
+class AiSettingsPage extends StatefulWidget {
+  const AiSettingsPage({super.key});
+
+  @override
+  State<AiSettingsPage> createState() => _AiSettingsPageState();
+}
+
+class _AiSettingsPageState extends State<AiSettingsPage> {
+  late String _selectedProvider;
+  late final TextEditingController _apiKeyCtrl;
+  late final TextEditingController _modelCtrl;
+  late final TextEditingController _endpointCtrl;
+
+  bool _obscureKey = true;
+  bool _isTesting = false;
+  String? _testSuccess;
+  String? _testError;
+
+  @override
+  void initState() {
+    super.initState();
+    _selectedProvider = store.llmProvider;
+    _apiKeyCtrl = TextEditingController(text: store.llmApiKey);
+    _modelCtrl = TextEditingController(text: store.llmModel);
+    _endpointCtrl = TextEditingController(text: store.llmCustomEndpoint);
+  }
+
+  @override
+  void dispose() {
+    _apiKeyCtrl.dispose();
+    _modelCtrl.dispose();
+    _endpointCtrl.dispose();
+    super.dispose();
+  }
+
+  Future<void> _testConnection() async {
+    final s = strings.value;
+    final isTr = s.isTr;
+
+    setState(() {
+      _isTesting = true;
+      _testSuccess = null;
+      _testError = null;
+    });
+
+    try {
+      final ok = await AiService.testConnection(
+        provider: _selectedProvider,
+        apiKey: _apiKeyCtrl.text,
+        model: _modelCtrl.text.trim().isEmpty ? null : _modelCtrl.text.trim(),
+        customEndpoint: _endpointCtrl.text.trim().isEmpty ? null : _endpointCtrl.text.trim(),
+        isTr: isTr,
+      );
+
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+          if (ok) {
+            _testSuccess = isTr
+                ? '✓ Bağlantı başarılı! ${AiService.providerDisplayName(_selectedProvider)} yanıt verdi.'
+                : '✓ Connection successful! ${AiService.providerDisplayName(_selectedProvider)} responded.';
+          }
+        });
+      }
+    } on AiException catch (e) {
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+          _testError = e.message;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isTesting = false;
+          _testError = isTr ? 'Bağlantı başarısız: $e' : 'Connection failed: $e';
+        });
+      }
+    }
+  }
+
+  Future<void> _save() async {
+    final s = strings.value;
+    final isTr = s.isTr;
+
+    await store.setLlmConfig(
+      provider: _selectedProvider,
+      apiKey: _apiKeyCtrl.text.trim(),
+      model: _modelCtrl.text.trim().isEmpty ? null : _modelCtrl.text.trim(),
+      customEndpoint: _endpointCtrl.text.trim().isEmpty ? null : _endpointCtrl.text.trim(),
+    );
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(isTr ? 'Yapay zekâ ayarları kaydedildi.' : 'AI settings saved.'),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+    }
+  }
+
+  Future<void> _clearKey() async {
+    final s = strings.value;
+    final isTr = s.isTr;
+
+    final ok = await confirm(
+      context,
+      isTr ? 'Anahtarı Kaldır' : 'Remove Key',
+      isTr
+          ? 'Kayıtlı API anahtarınız silinecek ve uygulama tamamen çevrimdışı moda dönecektir. Devam edilsin mi?'
+          : 'Your saved API key will be deleted and the app will return to full offline mode. Continue?',
+    );
+
+    if (ok && mounted) {
+      await store.clearLlmConfig();
+      setState(() {
+        _apiKeyCtrl.clear();
+        _modelCtrl.clear();
+        _endpointCtrl.clear();
+        _testSuccess = null;
+        _testError = null;
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isTr ? 'API anahtarı kaldırıldı.' : 'API key removed.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = strings.value;
+    final isTr = s.isTr;
+    final scheme = Theme.of(context).colorScheme;
+
+    return AnimatedBuilder(
+      animation: store,
+      builder: (context, _) {
+        final hasKey = store.hasLlmKey;
+
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(isTr ? 'Yapay Zekâ & API (BYOK)' : 'AI & API Key (BYOK)'),
+          ),
+          body: ListView(
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            children: [
+              // Gizlilik & Çevrimdışı Bilgi Kartı
+              Card(
+                elevation: 0,
+                color: scheme.primaryContainer.withValues(alpha: 0.35),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Icon(Icons.shield_outlined, color: Colors.amber, size: 24),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isTr ? 'Gizlilik & Çevrimdışı İlkeli' : 'Privacy & Offline-First',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              isTr
+                                  ? 'Seyir verilerinizi asla harici sunuculara göndermez. Bu özellik tamamen isteğe bağlıdır; kendi API anahtarınızı tanımladığınızda sadece tek tıkla yol haritası üretmek için kullanılır. Anahtarınız yalnızca cihazınızda güvenle saklanır.'
+                                  : 'Seyir never sends your data to external servers. This feature is completely optional; your API key is stored only on your device and used solely when generating roadmaps.',
+                              style: const TextStyle(fontSize: AppFont.caption),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Sağlayıcı ve Yapılandırma Kartı
+              Card(
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Text(
+                        isTr ? 'Sağlayıcı ve Model' : 'Provider and Model',
+                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
+                      ),
+                      const SizedBox(height: 12),
+
+                      DropdownButtonFormField<String>(
+                        initialValue: _selectedProvider,
+                        decoration: InputDecoration(
+                          labelText: isTr ? 'Yapay Zekâ Sağlayıcısı' : 'AI Provider',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                        ),
+                        items: [
+                          DropdownMenuItem(
+                            value: 'gemini',
+                            child: Text(isTr ? 'Google Gemini (Önerilen - Ücretsiz)' : 'Google Gemini (Recommended - Free)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'openai',
+                            child: Text('OpenAI (ChatGPT)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'openrouter',
+                            child: Text('OpenRouter (Çoklu Model)'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'custom',
+                            child: Text(isTr ? 'Özel / Yerel Uç Nokta (Ollama)' : 'Custom / Local (Ollama)'),
+                          ),
+                        ],
+                        onChanged: (val) {
+                          if (val != null) {
+                            setState(() {
+                              _selectedProvider = val;
+                              _testSuccess = null;
+                              _testError = null;
+                              // Eğer model boşsa veya varsayılan model yazılıysa yenisini öner
+                              if (_modelCtrl.text.trim().isEmpty) {
+                                _modelCtrl.text = AiService.defaultModelFor(val);
+                              }
+                            });
+                          }
+                        },
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // API Anahtarı
+                      TextField(
+                        controller: _apiKeyCtrl,
+                        obscureText: _obscureKey,
+                        decoration: InputDecoration(
+                          labelText: isTr ? 'API Anahtarı' : 'API Key',
+                          hintText: _selectedProvider == 'gemini' ? 'AIzaSy...' : 'sk-...',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          suffixIcon: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              IconButton(
+                                icon: Icon(_obscureKey ? Icons.visibility_outlined : Icons.visibility_off_outlined),
+                                onPressed: () => setState(() => _obscureKey = !_obscureKey),
+                                tooltip: isTr ? 'Göster / Gizle' : 'Show / Hide',
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.paste_rounded),
+                                onPressed: () async {
+                                  final data = await Clipboard.getData(Clipboard.kTextPlain);
+                                  if (data?.text != null && data!.text!.isNotEmpty) {
+                                    _apiKeyCtrl.text = data.text!.trim();
+                                    setState(() {
+                                      _testSuccess = null;
+                                      _testError = null;
+                                    });
+                                  }
+                                },
+                                tooltip: isTr ? 'Panodan Yapıştır' : 'Paste from clipboard',
+                              ),
+                            ],
+                          ),
+                        ),
+                        onChanged: (_) {
+                          if (_testSuccess != null || _testError != null) {
+                            setState(() {
+                              _testSuccess = null;
+                              _testError = null;
+                            });
+                          }
+                        },
+                      ),
+
+                      const SizedBox(height: 14),
+
+                      // Model Adı
+                      TextField(
+                        controller: _modelCtrl,
+                        decoration: InputDecoration(
+                          labelText: isTr ? 'Model Adı (İsteğe bağlı)' : 'Model Name (Optional)',
+                          hintText: AiService.defaultModelFor(_selectedProvider),
+                          helperText: isTr
+                              ? 'Boş bırakılırsa varsayılan model kullanılır: ${AiService.defaultModelFor(_selectedProvider)}'
+                              : 'Leave empty for default: ${AiService.defaultModelFor(_selectedProvider)}',
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          suffixIcon: _modelCtrl.text.isNotEmpty
+                              ? IconButton(
+                                  icon: const Icon(Icons.clear, size: 18),
+                                  onPressed: () {
+                                    setState(() {
+                                      _modelCtrl.clear();
+                                      _testSuccess = null;
+                                      _testError = null;
+                                    });
+                                  },
+                                  tooltip: isTr ? 'Varsayılana sıfırla' : 'Reset to default',
+                                )
+                              : null,
+                        ),
+                        onChanged: (_) {
+                          if (_testSuccess != null || _testError != null) {
+                            setState(() {
+                              _testSuccess = null;
+                              _testError = null;
+                            });
+                          }
+                        },
+                      ),
+
+                      // Önerilen Hızlı Modeller
+                      if (AiService.recommendedModelsFor(_selectedProvider).isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Wrap(
+                          spacing: 6,
+                          runSpacing: 6,
+                          children: AiService.recommendedModelsFor(_selectedProvider, isTr: isTr).map((opt) {
+                            final currentActive = _modelCtrl.text.trim().isEmpty
+                                ? AiService.defaultModelFor(_selectedProvider)
+                                : AiService.normalizeModelName(_selectedProvider, _modelCtrl.text.trim());
+                            final isSelected = currentActive == opt.id;
+
+                            return ChoiceChip(
+                              label: Text(
+                                '${opt.displayName}${opt.badge != null ? ' (${opt.badge})' : ''}',
+                                style: const TextStyle(fontSize: AppFont.caption),
+                              ),
+                              selected: isSelected,
+                              onSelected: (_) {
+                                setState(() {
+                                  _modelCtrl.text = opt.id;
+                                  _testSuccess = null;
+                                  _testError = null;
+                                });
+                              },
+                            );
+                          }).toList(),
+                        ),
+                      ],
+
+                      if (_selectedProvider == 'custom') ...[
+                        const SizedBox(height: 14),
+                        TextField(
+                          controller: _endpointCtrl,
+                          decoration: InputDecoration(
+                            labelText: isTr ? 'Uç Nokta Adresi (URL)' : 'Endpoint URL',
+                            hintText: 'http://localhost:11434/v1',
+                            helperText: isTr
+                                ? 'Örn: http://192.168.1.10:11434/v1/chat/completions'
+                                : 'E.g. http://192.168.1.10:11434/v1/chat/completions',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                            contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                          ),
+                        ),
+                      ],
+
+                      if (_testSuccess != null) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: Colors.green.withValues(alpha: 0.15),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: Colors.green.withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle_rounded, color: Colors.green, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _testSuccess!,
+                                  style: const TextStyle(color: Colors.green, fontSize: AppFont.caption, fontWeight: FontWeight.w600),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      if (_testError != null) ...[
+                        const SizedBox(height: 14),
+                        Container(
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: scheme.errorContainer.withValues(alpha: 0.5),
+                            borderRadius: BorderRadius.circular(12),
+                            border: Border.all(color: scheme.error.withValues(alpha: 0.4)),
+                          ),
+                          child: Row(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Icon(Icons.error_outline, color: scheme.error, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  _testError!,
+                                  style: TextStyle(color: scheme.onErrorContainer, fontSize: AppFont.caption),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ],
+
+                      const SizedBox(height: 16),
+
+                      // İşlem Butonları
+                      OverflowBar(
+                        alignment: MainAxisAlignment.spaceBetween,
+                        spacing: 8,
+                        overflowSpacing: 8,
+                        children: [
+                          OutlinedButton.icon(
+                            onPressed: _isTesting ? null : _testConnection,
+                            icon: _isTesting
+                                ? const SizedBox(width: 14, height: 14, child: CircularProgressIndicator(strokeWidth: 2))
+                                : const Icon(Icons.network_check_rounded, size: 18),
+                            label: Text(isTr ? 'Bağlantıyı Test Et' : 'Test Connection'),
+                          ),
+                          FilledButton.icon(
+                            onPressed: _save,
+                            icon: const Icon(Icons.save_rounded, size: 18),
+                            label: Text(isTr ? 'Kaydet' : 'Save'),
+                          ),
+                        ],
+                      ),
+
+                      if (hasKey) ...[
+                        const SizedBox(height: 8),
+                        const Divider(),
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: TextButton.icon(
+                            onPressed: _clearKey,
+                            icon: const Icon(Icons.delete_outline, size: 18, color: Colors.red),
+                            label: Text(
+                              isTr ? 'Anahtarı Kaldır (Çevrimdışıya Dön)' : 'Remove Key (Back to Offline)',
+                              style: const TextStyle(color: Colors.red),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Rehber Kartı: Google AI Studio'dan Ücretsiz Anahtar Alma
+              Card(
+                elevation: 0,
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.4),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                child: Padding(
+                  padding: const EdgeInsets.all(16),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        children: [
+                          const Icon(Icons.help_outline_rounded, color: Colors.purpleAccent, size: 20),
+                          const SizedBox(width: 8),
+                          Text(
+                            isTr ? 'Nasıl Ücretsiz Gemini Anahtarı Alınır?' : 'How to Get a Free Gemini Key?',
+                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 10),
+                      Text(
+                        isTr
+                            ? '1. Tarayıcınızda "aistudio.google.com" adresini açın.\n'
+                              '2. Google hesabınızla giriş yapın ve "Get API key" butonuna tıklayın.\n'
+                              '3. "Create API key" diyerek yeni anahtarınızı oluşturun ve kopyalayın.\n'
+                              '4. Kopyaladığınız anahtarı buradaki API Anahtarı alanına yapıştırıp "Kaydet"e basın.\n\n'
+                              '🎉 Kredi kartı gerekmez; Google ücretsiz katmanda dakikada 15 istek sınırı ile kişisel kullanım için tamamen ücretsiz kota sunar.'
+                            : '1. Open "aistudio.google.com" in your browser.\n'
+                              '2. Sign in with your Google account and click "Get API key".\n'
+                              '3. Click "Create API key", copy the generated key.\n'
+                              '4. Paste it into the API Key field above and click "Save".\n\n'
+                              '🎉 No credit card required; Google provides a generous free tier for personal use.',
+                        style: TextStyle(
+                          fontSize: AppFont.caption,
+                          height: 1.45,
+                          color: scheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 }

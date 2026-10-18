@@ -98,3 +98,17 @@ String fmtDaysLeft(int days, {bool isTr = true}) {
   if (days == 1) return isTr ? 'Yarın son gün' : 'Last day tomorrow';
   return isTr ? '$days gün kaldı' : '$days days left';
 }
+
+/// Verilen metnin gün birimi (gün, gun, day, days, gunluk, d) olup olmadığını kontrol eder.
+bool isDayUnit(String? unit) {
+  if (unit == null) return false;
+  final u = unit.trim().toLowerCase();
+  return u == 'gün' ||
+      u == 'gun' ||
+      u == 'day' ||
+      u == 'days' ||
+      u == 'd' ||
+      u == 'günlük' ||
+      u == 'gunluk';
+}
+

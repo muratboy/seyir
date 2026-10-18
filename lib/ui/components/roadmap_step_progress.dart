@@ -23,17 +23,23 @@ class StepProgressLine extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!store.activities.containsKey(step.linkedActivityId)) return const SizedBox.shrink();
+    final hasGoal = step.linkedGoalId != null && store.goals.any((g) => g.id == step.linkedGoalId);
+    final hasActivity = step.linkedActivityId != null && store.activities.containsKey(step.linkedActivityId);
+    final hasStarted = step.startedAt != null;
+
+    if (!hasGoal && !hasActivity && !hasStarted) return const SizedBox.shrink();
     final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
     final progress = store.stepProgress(roadmap, step);
     final note = TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant);
 
     if (progress == null) {
-      return Text(
-        s.isTr ? 'Yolculuk başlayınca aktivitenin kayıtları sayılır' : 'Entries count once the journey starts',
-        style: note,
-      );
+      final msg = hasGoal
+          ? (s.isTr ? 'Yolculuk başlayınca hedefin tamamlanması sayılır' : 'Goal completion counts once journey starts')
+          : (hasActivity
+              ? (s.isTr ? 'Yolculuk başlayınca aktivitenin kayıtları sayılır' : 'Entries count once the journey starts')
+              : (s.isTr ? 'Yolculuk başlayınca ilerleme sayılır' : 'Progress counts once the journey starts'));
+      return Text(msg, style: note);
     }
 
     final keptOpen = step.keptOpen && !step.isCompleted && progress.reached;
@@ -44,11 +50,18 @@ class StepProgressLine extends StatelessWidget {
 
     if ((step.target ?? 0) <= 0) {
       if (keptOpen) return keptOpenNote;
-      if (progress.reached) return Text(s.isTr ? 'Aktivite kaydedildi' : 'The activity was logged', style: note);
+      if (progress.reached) {
+        return Text(
+          hasGoal ? (s.isTr ? 'Hedefe ulaşıldı' : 'Goal reached') : (s.isTr ? 'Aktivite kaydedildi' : 'The activity was logged'),
+          style: note,
+        );
+      }
       // Kayıt olmadan elle tamamlanmış görev için söylenecek bir şey yoktur.
       if (step.isCompleted) return const SizedBox.shrink();
       return Text(
-        s.isTr ? 'Aktivite kaydedilince tamamlanır' : 'Completes when the activity is logged',
+        hasGoal
+            ? (s.isTr ? 'Hedefe ulaşılınca tamamlanır' : 'Completes when goal is reached')
+            : (s.isTr ? 'Aktivite kaydedilince tamamlanır' : 'Completes when activity is logged'),
         style: note,
       );
     }

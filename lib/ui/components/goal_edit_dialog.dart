@@ -273,11 +273,30 @@ class GoalEditDialog {
                 if (links.isEmpty)
                   Padding(
                     padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Text(
-                      s.isTr
-                          ? 'Henüz aktivite bağlanmadı. Yukarıdan ekleyin (örn: Çay, Su, Yoğurt).'
-                          : 'No activities linked yet. Add above.',
-                      style: TextStyle(color: Theme.of(c).colorScheme.onSurfaceVariant, fontSize: AppFont.small),
+                    child: Container(
+                      padding: const EdgeInsets.all(10),
+                      decoration: BoxDecoration(
+                        color: Theme.of(c).colorScheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Icon(Icons.info_outline, size: 18, color: Theme.of(c).colorScheme.primary),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              s.isTr
+                                  ? 'Aktivite bağlamak zorunlu değildir. Aktivitesiz hedefleri doğrudan "Ulaşıldı" olarak işaretleyerek (check-in) takip edebilirsiniz.'
+                                  : 'Linking activities is optional. You can track goals directly with manual check-ins.',
+                              style: TextStyle(
+                                color: Theme.of(c).colorScheme.onSurfaceVariant,
+                                fontSize: AppFont.small,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
                     ),
                   )
                 else

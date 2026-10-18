@@ -113,12 +113,22 @@ class AppDb {
       type TEXT NOT NULL DEFAULT 'task',
       target REAL,
       unit TEXT,
-      linked_activity_id INTEGER)''');
+      linked_activity_id INTEGER,
+      linked_goal_id INTEGER,
+      started_at INTEGER)''');
     try {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_entries_activity_ts ON entries(activity_id, ts)');
     } catch (_) {}
     try {
       await db.execute('CREATE INDEX IF NOT EXISTS idx_entries_end_ts ON entries(end_ts)');
+    } catch (_) {}
+    await db.execute('''CREATE TABLE IF NOT EXISTS goal_checkins(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal_id INTEGER NOT NULL,
+      period_key TEXT NOT NULL,
+      created_at INTEGER NOT NULL)''');
+    try {
+      await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_checkins ON goal_checkins(goal_id, period_key)');
     } catch (_) {}
   }
 
@@ -128,6 +138,8 @@ class AppDb {
   static Future<void> _ensureRoadmapStepColumns(DatabaseExecutor db) async {
     await ensureColumn(db, 'roadmap_steps', 'auto_completed', 'INTEGER NOT NULL DEFAULT 0');
     await ensureColumn(db, 'roadmap_steps', 'kept_open', 'INTEGER NOT NULL DEFAULT 0');
+    await ensureColumn(db, 'roadmap_steps', 'linked_goal_id', 'INTEGER');
+    await ensureColumn(db, 'roadmap_steps', 'started_at', 'INTEGER');
   }
 
   static Future<void> ensureUpToDate(DatabaseExecutor db) async {
@@ -162,6 +174,8 @@ class AppDb {
       target REAL,
       unit TEXT,
       linked_activity_id INTEGER,
+      linked_goal_id INTEGER,
+      started_at INTEGER,
       auto_completed INTEGER NOT NULL DEFAULT 0,
       kept_open INTEGER NOT NULL DEFAULT 0)''');
     await _ensureRoadmapStepColumns(db);
@@ -196,6 +210,14 @@ class AppDb {
       qty REAL NOT NULL DEFAULT 1.0,
       note TEXT,
       sort INTEGER NOT NULL DEFAULT 0)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS goal_checkins(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      goal_id INTEGER NOT NULL,
+      period_key TEXT NOT NULL,
+      created_at INTEGER NOT NULL)''');
+    try {
+      await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_checkins ON goal_checkins(goal_id, period_key)');
+    } catch (_) {}
     await _ensureDefaultMeasures(db);
   }
 

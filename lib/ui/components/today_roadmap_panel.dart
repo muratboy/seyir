@@ -73,6 +73,8 @@ class TodayRoadmapPanel extends StatelessWidget {
     final s = strings.value;
     final scheme = Theme.of(context).colorScheme;
     final linked = store.activities.containsKey(step.linkedActivityId);
+    final linkedGoal = store.goals.where((g) => g.id == step.linkedGoalId).firstOrNull;
+    final hasProgress = linked || linkedGoal != null || step.startedAt != null;
 
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 3),
@@ -177,8 +179,7 @@ class TodayRoadmapPanel extends StatelessWidget {
                             decoration: step.isCompleted ? TextDecoration.lineThrough : null,
                           ),
                         ),
-                        // Aktiviteye bağlı adımın hedefi aşağıdaki ilerleme satırında yazar.
-                        if (!linked && step.isGoal && step.target != null) ...[
+                        if (!hasProgress && step.isGoal && step.target != null) ...[
                           const SizedBox(height: 4),
                           Container(
                             padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -201,14 +202,33 @@ class TodayRoadmapPanel extends StatelessWidget {
                   ),
                 ],
               ),
-              // Aktiviteye bağlı adım kayıtlarla ilerler: ne kadarının dolduğu ve aktiviteyi kaydetme kısayolu,
-              // başlığın hizasında ve kartın bütün genişliğinde gösterilir. Başlığın yanına konduklarında uzun
-              // bir aktivite adı başlığı birkaç harflik bir sütuna sıkıştırıyordu.
-              if (linked) ...[
+              if (linkedGoal != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(left: 38, top: 4),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.track_changes_rounded, size: 14, color: Colors.teal),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          '${s.isTr ? "Hedef:" : "Goal:"} ${linkedGoal.name} (${store.goalValueText(linkedGoal, linkedGoal.target)})',
+                          style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.w600, color: Colors.teal),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+              if (hasProgress) ...[
                 Padding(
                   padding: const EdgeInsets.only(left: 38, top: 8),
                   child: StepProgressLine(roadmap: roadmap, step: step),
                 ),
+              ],
+              if (linked) ...[
                 Padding(
                   padding: const EdgeInsets.only(left: 38, top: 6),
                   child: _buildLinkedActivityAction(context, step),

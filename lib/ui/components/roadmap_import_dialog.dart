@@ -1,9 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../data/models.dart';
+import '../../data/store.dart';
 import '../../logic/l10n.dart';
 import '../../services/roadmap_parser.dart';
 import '../app_font.dart';
+import '../settings_pages.dart';
+import 'roadmap_ai_dialog.dart';
 import 'roadmap_preview.dart';
 
 class RoadmapImportDialog extends StatefulWidget {
@@ -211,6 +214,50 @@ class _RoadmapImportDialogState extends State<RoadmapImportDialog> {
     final theme = Theme.of(context);
     final scheme = theme.colorScheme;
 
+    // BYOK / Tek Tuşla Üretim Banner'ı
+    final byokBanner = Card(
+      elevation: 0,
+      color: Colors.purple.withValues(alpha: 0.12),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        child: Row(
+          children: [
+            const Icon(Icons.bolt_rounded, color: Colors.purpleAccent, size: 20),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                store.hasLlmKey
+                    ? (s.isTr
+                        ? 'Kendi API anahtarınız hazır (${store.llmProviderDisplayName}).'
+                        : 'Your API key is active (${store.llmProviderDisplayName}).')
+                    : (s.isTr
+                        ? 'Kopyala-yapıştır yapmadan tek tuşla üretmek ister misiniz?'
+                        : 'Want to generate directly without copy-pasting?'),
+                style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.w500),
+              ),
+            ),
+            TextButton(
+              onPressed: () {
+                Navigator.pop(context);
+                if (store.hasLlmKey) {
+                  RoadmapAiDialog.show(context);
+                } else {
+                  Navigator.push(context, MaterialPageRoute(builder: (_) => const AiSettingsPage()));
+                }
+              },
+              style: TextButton.styleFrom(visualDensity: VisualDensity.compact),
+              child: Text(
+                store.hasLlmKey
+                    ? (s.isTr ? 'Tek Tıkla Üret' : 'Generate Now')
+                    : (s.isTr ? 'BYOK / Ayarlar' : 'BYOK / Settings'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+
     // 1. adım: kalıbı kopyala
     final templateStep = Card(
       elevation: 0,
@@ -372,6 +419,10 @@ class _RoadmapImportDialogState extends State<RoadmapImportDialog> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.stretch,
                         children: [
+                          if (_previewRoadmap == null) ...[
+                            byokBanner,
+                            const SizedBox(height: 8),
+                          ],
                           templateStep,
                           const SizedBox(height: 12),
                           answerHeader,

@@ -414,6 +414,8 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
   ) {
     final isDone = step.isCompleted;
     final linked = store.activities[step.linkedActivityId];
+    final linkedGoal = store.goals.where((g) => g.id == step.linkedGoalId).firstOrNull;
+    final isDayChallenge = isDayUnit(step.unit);
 
     return IntrinsicHeight(
       child: Row(
@@ -510,10 +512,29 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                           ),
                         ),
                       ),
-                      _buildStepMenu(step, linked, isTr),
+                      _buildStepMenu(step, linked, linkedGoal, isTr),
                     ],
                   ),
-                  if (linked != null) ...[
+                  if (linkedGoal != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.track_changes_rounded, size: 14, color: Colors.teal),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            '${isTr ? "Hedef:" : "Goal:"} ${linkedGoal.name} (${store.goalValueText(linkedGoal, linkedGoal.target)})',
+                            style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.w600, color: Colors.teal),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    StepProgressLine(roadmap: roadmap, step: step),
+                  ] else if (linked != null) ...[
                     const SizedBox(height: 6),
                     Row(
                       mainAxisSize: MainAxisSize.min,
@@ -530,9 +551,52 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                         ),
                       ],
                     ),
-                    // Bağlı aktivitenin kayıtları bu adımı doldurur ve tamamlar.
                     const SizedBox(height: 6),
                     StepProgressLine(roadmap: roadmap, step: step),
+                  ] else if (step.startedAt != null) ...[
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        const Icon(Icons.timer_outlined, size: 14, color: Colors.deepOrange),
+                        const SizedBox(width: 4),
+                        Flexible(
+                          child: Text(
+                            '${isTr ? "Süre Başladı" : "Challenge Active"} (${fmtDateShort(DateTime.fromMillisecondsSinceEpoch(step.startedAt!), isTr: isTr)})',
+                            style: const TextStyle(fontSize: AppFont.caption, fontWeight: FontWeight.w600, color: Colors.deepOrange),
+                            maxLines: 1,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    StepProgressLine(roadmap: roadmap, step: step),
+                  ] else if (isDayChallenge && !isDone) ...[
+                    const SizedBox(height: 6),
+                    InkWell(
+                      onTap: () => store.startRoadmapStepDuration(step.id),
+                      borderRadius: BorderRadius.circular(8),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: scheme.primary.withValues(alpha: 0.25)),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.play_arrow_rounded, size: 16, color: scheme.primary),
+                            const SizedBox(width: 4),
+                            Text(
+                              isTr ? 'Süreyi Başlat' : 'Start Duration',
+                              style: TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.bold, color: scheme.primary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
                   ],
                   if (step.description.isNotEmpty) ...[
                     const SizedBox(height: 6),
@@ -554,10 +618,10 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
     );
   }
 
-  /// Adımın menüsü: aktivite bağlama ve silme.
-  Widget _buildStepMenu(RoadmapStep step, Activity? linked, bool isTr) {
+  /// Adımın menüsü: aktivite bağlama, hedef bağlama, süre başlatma ve silme.
+  Widget _buildStepMenu(RoadmapStep step, Activity? linked, Goal? linkedGoal, bool isTr) {
+    final isDay = isDayUnit(step.unit);
     return PopupMenuButton<String>(
-      // Varsayılan 48 dp'lik düğme kartları gereksiz uzatır.
       padding: EdgeInsets.zero,
       tooltip: isTr ? 'Adım seçenekleri' : 'Step options',
       child: const Padding(
@@ -567,14 +631,29 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
       onSelected: (value) async {
         if (value == 'edit') {
           await _showEditStepDialog(context, step);
-        } else if (value == 'link') {
+        } else if (value == 'link_act') {
           final act = await showActivityPicker(
             context,
             title: isTr ? 'Adıma Bağlanacak Aktivite' : 'Activity for This Step',
           );
           if (act != null) await store.setRoadmapStepActivity(step.id, act.id);
-        } else if (value == 'unlink') {
+        } else if (value == 'unlink_act') {
           await store.setRoadmapStepActivity(step.id, null);
+        } else if (value == 'link_goal') {
+          final g = await _showGoalPicker(context);
+          if (g != null) await store.setRoadmapStepGoal(step.id, g.id);
+        } else if (value == 'unlink_goal') {
+          await store.setRoadmapStepGoal(step.id, null);
+        } else if (value == 'start_duration') {
+          await store.startRoadmapStepDuration(step.id);
+        } else if (value == 'reset_duration') {
+          final ok = await confirm(
+            context,
+            isTr ? 'Süreyi Baştan Başlat' : 'Restart Duration',
+            isTr ? 'Bu adımın süresi bugünden itibaren yeniden başlayacak. Emin misiniz?' : 'Step duration will restart from today. Are you sure?',
+            ok: isTr ? 'Baştan Başlat' : 'Restart',
+          );
+          if (ok) await store.resetRoadmapStepDuration(step.id);
         } else if (value == 'delete') {
           final ok = await confirm(
             context,
@@ -591,15 +670,117 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
           child: Text(isTr ? 'Adımı düzenle' : 'Edit step'),
         ),
         PopupMenuItem(
-          value: 'link',
-          child: Text(linked == null
-              ? (isTr ? 'Aktivite bağla' : 'Link an activity')
-              : (isTr ? 'Bağlı aktiviteyi değiştir' : 'Change linked activity')),
+          value: 'link_goal',
+          child: Row(
+            children: [
+              const Icon(Icons.track_changes_rounded, size: 18, color: Colors.teal),
+              const SizedBox(width: 8),
+              Text(linkedGoal == null
+                  ? (isTr ? '🎯 Hedef bağla' : '🎯 Link a goal')
+                  : (isTr ? '🎯 Bağlı hedefi değiştir' : '🎯 Change linked goal')),
+            ],
+          ),
+        ),
+        if (linkedGoal != null)
+          PopupMenuItem(
+            value: 'unlink_goal',
+            child: Text(isTr ? 'Hedef bağlantısını kaldır' : 'Remove linked goal'),
+          ),
+        PopupMenuItem(
+          value: 'link_act',
+          child: Row(
+            children: [
+              const Icon(Icons.link_rounded, size: 18),
+              const SizedBox(width: 8),
+              Text(linked == null
+                  ? (isTr ? 'Aktivite bağla' : 'Link an activity')
+                  : (isTr ? 'Bağlı aktiviteyi değiştir' : 'Change linked activity')),
+            ],
+          ),
         ),
         if (linked != null)
-          PopupMenuItem(value: 'unlink', child: Text(isTr ? 'Bağlantıyı kaldır' : 'Remove link')),
+          PopupMenuItem(value: 'unlink_act', child: Text(isTr ? 'Aktivite bağlantısını kaldır' : 'Remove activity link')),
+        if (isDay || step.startedAt != null)
+          PopupMenuItem(
+            value: step.startedAt == null ? 'start_duration' : 'reset_duration',
+            child: Row(
+              children: [
+                const Icon(Icons.timer_outlined, size: 18, color: Colors.deepOrange),
+                const SizedBox(width: 8),
+                Text(step.startedAt == null
+                    ? (isTr ? '⏱️ Süreyi başlat' : '⏱️ Start duration')
+                    : (isTr ? '🔄 Süreyi baştan başlat' : '🔄 Restart duration')),
+              ],
+            ),
+          ),
         PopupMenuItem(value: 'delete', child: Text(isTr ? 'Adımı sil' : 'Delete step')),
       ],
+    );
+  }
+
+  Future<Goal?> _showGoalPicker(BuildContext context) async {
+    final s = strings.value;
+    final isTr = s.isTr;
+    final goals = store.goals;
+    if (goals.isEmpty) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(isTr
+                ? 'Tanımlı hedefiniz yok. Önce Hedefler sayfasından hedef ekleyin.'
+                : 'No goals found. Create a goal from the Goals page first.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+      return null;
+    }
+
+    return showModalBottomSheet<Goal>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) {
+        final theme = Theme.of(ctx);
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Padding(
+                padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+                child: Text(
+                  isTr ? 'Adıma Bağlanacak Hedef' : 'Goal for This Step',
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
+                ),
+              ),
+              Expanded(
+                child: ListView.separated(
+                  itemCount: goals.length,
+                  separatorBuilder: (_, _) => const Divider(height: 1),
+                  itemBuilder: (_, idx) {
+                    final g = goals[idx];
+                    final st = store.goalStatus(g);
+                    final pName = (isTr ? periodNames[g.period] : periodNamesEn[g.period]) ?? '';
+                    return ListTile(
+                      leading: CircleAvatar(
+                        backgroundColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+                        child: const Icon(Icons.track_changes_rounded, size: 20),
+                      ),
+                      title: Text(g.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                      subtitle: Text(
+                        '${store.goalValueText(g, g.target)} · $pName',
+                        style: TextStyle(fontSize: AppFont.small, color: theme.colorScheme.onSurfaceVariant),
+                      ),
+                      trailing: st.done ? const Icon(Icons.check_circle, color: Colors.green, size: 20) : null,
+                      onTap: () => Navigator.pop(ctx, g),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        );
+      },
     );
   }
 
@@ -611,6 +792,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
     final targetController = TextEditingController(text: step.target != null ? fmtNum(step.target!) : '');
     final unitController = TextEditingController(text: step.unit ?? '');
     Activity? linkedActivity = step.linkedActivityId != null ? store.activities[step.linkedActivityId] : null;
+    Goal? linkedGoal = step.linkedGoalId != null ? store.goals.where((g) => g.id == step.linkedGoalId).firstOrNull : null;
 
     await showDialog(
       context: context,
@@ -648,36 +830,68 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                       onSelectionChanged: (val) => setDialogState(() => type = val.first),
                     ),
                     const SizedBox(height: 8),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        icon: const Icon(Icons.link_rounded, size: 18),
-                        label: Text(
-                          linkedActivity == null
-                              ? (s.isTr ? 'Aktivite bağla (isteğe bağlı)' : 'Link an activity (optional)')
-                              : store.activityLabel(linkedActivity!.id),
-                        ),
-                        onPressed: () async {
-                          final act = await showActivityPicker(
-                            context,
-                            title: s.isTr ? 'Adıma Bağlanacak Aktivite' : 'Activity for This Step',
-                          );
-                          if (act != null) setDialogState(() => linkedActivity = act);
-                        },
-                      ),
-                    ),
-                    if (linkedActivity != null)
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: TextButton.icon(
-                          icon: const Icon(Icons.link_off_rounded, size: 16, color: Colors.red),
-                          label: Text(
-                            s.isTr ? 'Bağlantıyı kaldır' : 'Remove link',
-                            style: const TextStyle(color: Colors.red, fontSize: AppFont.caption),
+                    // Hedef bağlama
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.track_changes_rounded, size: 18, color: Colors.teal),
+                            label: Text(
+                              linkedGoal == null
+                                  ? (s.isTr ? 'Hedef bağla' : 'Link a goal')
+                                  : '🎯 ${linkedGoal!.name}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onPressed: () async {
+                              final g = await _showGoalPicker(context);
+                              if (g != null) {
+                                setDialogState(() {
+                                  linkedGoal = g;
+                                  if (unitController.text.trim().isEmpty) {
+                                    unitController.text = s.isTr ? 'gün' : 'days';
+                                  }
+                                });
+                              }
+                            },
                           ),
-                          onPressed: () => setDialogState(() => linkedActivity = null),
                         ),
-                      ),
+                        if (linkedGoal != null)
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                            tooltip: s.isTr ? 'Hedef bağlantısını kaldır' : 'Remove goal link',
+                            onPressed: () => setDialogState(() => linkedGoal = null),
+                          ),
+                      ],
+                    ),
+                    // Aktivite bağlama
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.link_rounded, size: 18),
+                            label: Text(
+                              linkedActivity == null
+                                  ? (s.isTr ? 'Aktivite bağla' : 'Link activity')
+                                  : store.activityLabel(linkedActivity!.id),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onPressed: () async {
+                              final act = await showActivityPicker(
+                                context,
+                                title: s.isTr ? 'Adıma Bağlanacak Aktivite' : 'Activity for This Step',
+                              );
+                              if (act != null) setDialogState(() => linkedActivity = act);
+                            },
+                          ),
+                        ),
+                        if (linkedActivity != null)
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                            tooltip: s.isTr ? 'Aktivite bağlantısını kaldır' : 'Remove activity link',
+                            onPressed: () => setDialogState(() => linkedActivity = null),
+                          ),
+                      ],
+                    ),
                     if (type == 'goal') ...[
                       const SizedBox(height: 12),
                       Row(
@@ -717,6 +931,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                     step.target = targetVal;
                     step.unit = unitVal.isEmpty ? null : unitVal;
                     step.linkedActivityId = linkedActivity?.id;
+                    step.linkedGoalId = linkedGoal?.id;
 
                     await store.updateRoadmapStep(step);
                     if (ctx.mounted) Navigator.pop(ctx);
@@ -739,6 +954,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
     final targetController = TextEditingController();
     final unitController = TextEditingController();
     Activity? linkedActivity;
+    Goal? linkedGoal;
 
     await showDialog(
       context: context,
@@ -755,7 +971,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                       controller: titleController,
                       decoration: InputDecoration(
                         labelText: s.isTr ? 'Adım Başlığı *' : 'Step Title *',
-                        hintText: s.isTr ? 'Örn: Radyoyu tamir et' : 'e.g. Fix the radio',
+                        hintText: s.isTr ? 'Örn: Kursa kayıt ol' : 'e.g. Enroll in course',
                       ),
                     ),
                     const SizedBox(height: 12),
@@ -768,7 +984,6 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                     ),
                     const SizedBox(height: 12),
                     SegmentedButton<String>(
-                      // Onay işareti "Ölçüsüz Görev"i iki satıra bölüyordu; seçim dolgu rengiyle görünür.
                       showSelectedIcon: false,
                       segments: [
                         ButtonSegment(value: 'task', label: Text(s.isTr ? 'Ölçüsüz Görev' : 'Task')),
@@ -778,39 +993,67 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                       onSelectionChanged: (val) => setDialogState(() => type = val.first),
                     ),
                     const SizedBox(height: 8),
-                    // İsteğe bağlı: bağlanan aktivitenin kayıtları adımı doldurur ve tamamlar.
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: TextButton.icon(
-                        icon: const Icon(Icons.link_rounded, size: 18),
-                        label: Text(
-                          linkedActivity == null
-                              ? (s.isTr ? 'Aktivite bağla (isteğe bağlı)' : 'Link an activity (optional)')
-                              : store.activityLabel(linkedActivity!.id),
-                        ),
-                        onPressed: () async {
-                          final act = await showActivityPicker(
-                            context,
-                            title: s.isTr ? 'Adıma Bağlanacak Aktivite' : 'Activity for This Step',
-                          );
-                          if (act != null) setDialogState(() => linkedActivity = act);
-                        },
-                      ),
-                    ),
-                    Align(
-                      alignment: Alignment.centerLeft,
-                      child: Padding(
-                        padding: const EdgeInsets.only(left: 12),
-                        child: Text(
-                          s.isTr
-                              ? 'Bağlı aktivitenin kayıtları bu adımı kendiliğinden doldurur ve tamamlar.'
-                              : 'Entries of the linked activity fill and complete this step on their own.',
-                          style: TextStyle(
-                            fontSize: AppFont.micro,
-                            color: Theme.of(context).colorScheme.onSurfaceVariant,
+                    // Hedef bağlama
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.track_changes_rounded, size: 18, color: Colors.teal),
+                            label: Text(
+                              linkedGoal == null
+                                  ? (s.isTr ? 'Hedef bağla (isteğe bağlı)' : 'Link a goal (optional)')
+                                  : '🎯 ${linkedGoal!.name}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onPressed: () async {
+                              final g = await _showGoalPicker(context);
+                              if (g != null) {
+                                setDialogState(() {
+                                  linkedGoal = g;
+                                  if (unitController.text.trim().isEmpty) {
+                                    unitController.text = s.isTr ? 'gün' : 'days';
+                                  }
+                                });
+                              }
+                            },
                           ),
                         ),
-                      ),
+                        if (linkedGoal != null)
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                            tooltip: s.isTr ? 'Hedef bağlantısını kaldır' : 'Remove goal link',
+                            onPressed: () => setDialogState(() => linkedGoal = null),
+                          ),
+                      ],
+                    ),
+                    // Aktivite bağlama
+                    Row(
+                      children: [
+                        Expanded(
+                          child: TextButton.icon(
+                            icon: const Icon(Icons.link_rounded, size: 18),
+                            label: Text(
+                              linkedActivity == null
+                                  ? (s.isTr ? 'Aktivite bağla (isteğe bağlı)' : 'Link an activity (optional)')
+                                  : store.activityLabel(linkedActivity!.id),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                            onPressed: () async {
+                              final act = await showActivityPicker(
+                                context,
+                                title: s.isTr ? 'Adıma Bağlanacak Aktivite' : 'Activity for This Step',
+                              );
+                              if (act != null) setDialogState(() => linkedActivity = act);
+                            },
+                          ),
+                        ),
+                        if (linkedActivity != null)
+                          IconButton(
+                            icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                            tooltip: s.isTr ? 'Aktivite bağlantısını kaldır' : 'Remove activity link',
+                            onPressed: () => setDialogState(() => linkedActivity = null),
+                          ),
+                      ],
                     ),
                     if (type == 'goal') ...[
                       const SizedBox(height: 12),
@@ -856,6 +1099,7 @@ class _RoadmapDetailPageState extends State<RoadmapDetailPage> {
                       unit: unitVal.isEmpty ? null : unitVal,
                       isCompleted: false,
                       linkedActivityId: linkedActivity?.id,
+                      linkedGoalId: linkedGoal?.id,
                     );
 
                     await store.addRoadmapStep(r.id, newStep);

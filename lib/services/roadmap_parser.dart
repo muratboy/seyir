@@ -3,7 +3,7 @@ import '../data/models.dart';
 
 class RoadmapParser {
   /// Kullanıcının LLM'e göndermek için panoya kopyalayacağı standart prompt şablonu
-  static const String promptTemplate = '''Lütfen benim için "[BURAYA KONUYU YAZIN: örn: 3 Ayda Sağlıklı Kilo Verme / KPSS Sınavına Hazırlık / Radyo Tamiri Öğrenme / İngilizce B2 Seviyesi]" konusunda adım adım uygulanabilir bir yol haritası hazırla.
+  static const String promptTemplate = '''Lütfen benim için "[BURAYA KONUYU YAZIN: örn: 3 Ayda Sağlıklı Kilo Verme / KPSS Sınavına Hazırlık / İngilizce B2 Seviyesi]" konusunda adım adım uygulanabilir bir yol haritası hazırla.
 
 Aşağıdaki JSON kalıbını BİREBİR kullanarak yanıt ver. Yanıtında SADECE markdown kod bloğu içindeki JSON çıktısını ver:
 
@@ -16,7 +16,7 @@ Aşağıdaki JSON kalıbını BİREBİR kullanarak yanıt ver. Yanıtında SADEC
   "steps": [
     {
       "order": 1,
-      "title": "Adım Başlığı (örn: Radyoyu sök ve lehimleri kontrol et)",
+      "title": "Adım Başlığı (örn: Temel kaynakları ve kitapları belirle)",
       "description": "Bu adımda ne yapılması gerektiği ve püf noktaları",
       "type": "task",
       "target": null,
@@ -35,13 +35,13 @@ Aşağıdaki JSON kalıbını BİREBİR kullanarak yanıt ver. Yanıtında SADEC
 ```
 
 Önemli Kurallar:
-- "type": "task" -> Ölçüsüz, tek seferlik tiklenebilir görevler için kullanılır (örneğin: radyoyu tamir etmek, kursa kayıt olmak, kitap satın almak).
+- "type": "task" -> Ölçüsüz, tek seferlik tiklenebilir görevler için kullanılır (örneğin: kursa kayıt olmak, kaynak kitap almak, seviye testi çözmek).
 - "type": "goal" -> Ölçüsü, miktarı veya süresi olan adımlar için kullanılır (örneğin: toplam 600 dk yürüyüş, 12 bölüm, 50 km). "target" ve "unit" alanlarını doldur.
 - "target", adım boyunca TOPLAMDA ulaşılacak miktardır; günlük miktar değildir. Günlük bir alışkanlığı toplamına çevirerek yaz (günde 30 dk, 20 gün -> 600 dk).
 ''';
 
   /// [promptTemplate] şablonunun İngilizce arayüzde kopyalanan karşılığı.
-  static const String promptTemplateEn = '''Please prepare a step-by-step, actionable roadmap for me on "[WRITE THE TOPIC HERE: e.g. Losing Weight Healthily in 3 Months / Preparing for an Exam / Learning to Repair a Radio / English at B2 Level]".
+  static const String promptTemplateEn = '''Please prepare a step-by-step, actionable roadmap for me on "[WRITE THE TOPIC HERE: e.g. Losing Weight Healthily in 3 Months / Preparing for an Exam / English at B2 Level]".
 
 Answer using EXACTLY the JSON template below. Give ONLY the JSON output, inside a markdown code block:
 
@@ -54,7 +54,7 @@ Answer using EXACTLY the JSON template below. Give ONLY the JSON output, inside 
   "steps": [
     {
       "order": 1,
-      "title": "Step title (e.g. Open the radio and check the solder joints)",
+      "title": "Step title (e.g. Choose core study materials and set targets)",
       "description": "What to do in this step and what to watch out for",
       "type": "task",
       "target": null,
@@ -73,7 +73,7 @@ Answer using EXACTLY the JSON template below. Give ONLY the JSON output, inside 
 ```
 
 Important rules:
-- "type": "task" -> for one-off tasks without a measure that are simply ticked off (e.g. repairing the radio, enrolling in a course, buying a book).
+- "type": "task" -> for one-off tasks without a measure that are simply ticked off (e.g. enrolling in a course, buying a book, taking a test).
 - "type": "goal" -> for steps with an amount, a quantity or a duration (e.g. 600 minutes of walking in total, 12 episodes, 50 km). Fill in "target" and "unit".
 - "target" is the TOTAL to reach over the whole step, not a daily amount. Turn a daily habit into its total (30 minutes a day for 20 days -> 600 min).
 ''';

@@ -309,12 +309,17 @@ class _RoutineEditSheetState extends State<RoutineEditSheet> {
     }
 
     if (matchedActIds.isNotEmpty) {
-      _items = matchedActIds
-          .map((id) => RoutineItem(
-                activityId: id,
-                qty: 1.0,
-              ))
-          .toList();
+      _items = matchedActIds.map((id) {
+        final (usedMeasures, otherMeasures) = store.measuresFor(id);
+        final defaultMeasure = store.stats[id]?.lastMeasureId != null
+            ? store.measureById(store.stats[id]!.lastMeasureId)
+            : (usedMeasures.isNotEmpty ? usedMeasures.first : otherMeasures.firstOrNull);
+        return RoutineItem(
+          activityId: id,
+          measureId: defaultMeasure?.id,
+          qty: 1.0,
+        );
+      }).toList();
     }
     setState(() {});
   }
@@ -453,8 +458,16 @@ class _RoutineEditSheetState extends State<RoutineEditSheet> {
                       title: isTr ? 'Rutine Aktivite Ekle' : 'Add Activity to Routine',
                     );
                     if (act != null) {
+                      final (usedMeasures, otherMeasures) = store.measuresFor(act.id);
+                      final defaultMeasure = store.stats[act.id]?.lastMeasureId != null
+                          ? store.measureById(store.stats[act.id]!.lastMeasureId)
+                          : (usedMeasures.isNotEmpty ? usedMeasures.first : otherMeasures.firstOrNull);
                       setState(() {
-                        _items.add(RoutineItem(activityId: act.id, qty: 1.0));
+                        _items.add(RoutineItem(
+                          activityId: act.id,
+                          measureId: defaultMeasure?.id,
+                          qty: 1.0,
+                        ));
                       });
                     }
                   },
@@ -483,11 +496,15 @@ class _RoutineEditSheetState extends State<RoutineEditSheet> {
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _items.length,
-                separatorBuilder: (_, _) => const SizedBox(height: 6),
+                separatorBuilder: (_, _) => const SizedBox(height: 8),
                 itemBuilder: (context, i) {
                   final it = _items[i];
                   final act = store.activity(it.activityId);
-                  final m = store.measureById(it.measureId);
+                  final (usedMeasures, otherMeasures) = store.measuresFor(it.activityId);
+                  final allAvailableMeasures = [
+                    ...usedMeasures,
+                    ...otherMeasures.where((m) => !usedMeasures.any((u) => u.id == m.id)),
+                  ];
 
                   return Container(
                     padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
@@ -495,28 +512,81 @@ class _RoutineEditSheetState extends State<RoutineEditSheet> {
                       color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
                       borderRadius: BorderRadius.circular(12),
                     ),
-                    child: Row(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(act.emoji ?? '📌', style: const TextStyle(fontSize: 18)),
-                        const SizedBox(width: 10),
-                        Expanded(
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(act.name, style: const TextStyle(fontWeight: FontWeight.w600)),
-                              if (m != null)
-                                Text(
-                                  '${fmtNum(it.qty)} ${m.name}',
-                                  style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                        Row(
+                          children: [
+                            Text(act.emoji ?? '📌', style: const TextStyle(fontSize: 18)),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(act.name, style: const TextStyle(fontWeight: FontWeight.w600)),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.remove_circle_outline, size: 20),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                              onPressed: it.qty > 1
+                                  ? () => setState(() => it.qty -= 1.0)
+                                  : (it.qty > 0.5 ? () => setState(() => it.qty = 0.5) : null),
+                            ),
+                            Padding(
+                              padding: const EdgeInsets.symmetric(horizontal: 4),
+                              child: Text(
+                                fmtNum(it.qty),
+                                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
+                              ),
+                            ),
+                            IconButton(
+                              icon: const Icon(Icons.add_circle_outline, size: 20),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                              onPressed: () => setState(() => it.qty += 1.0),
+                            ),
+                            const SizedBox(width: 4),
+                            IconButton(
+                              icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                              visualDensity: VisualDensity.compact,
+                              padding: EdgeInsets.zero,
+                              constraints: const BoxConstraints(minWidth: 28, minHeight: 28),
+                              onPressed: () => setState(() => _items.removeAt(i)),
+                            ),
+                          ],
+                        ),
+                        if (allAvailableMeasures.isNotEmpty) ...[
+                          const SizedBox(height: 6),
+                          DropdownButtonFormField<int?>(
+                            initialValue: allAvailableMeasures.any((x) => x.id == it.measureId) ? it.measureId : null,
+                            isDense: true,
+                            isExpanded: true,
+                            decoration: InputDecoration(
+                              isDense: true,
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+                              border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                            ),
+                            items: [
+                              DropdownMenuItem<int?>(
+                                value: null,
+                                child: Text(
+                                  isTr ? 'Ölçü seçilmedi (1 adet)' : 'No measure (1 count)',
+                                  style: const TextStyle(fontSize: AppFont.caption),
+                                ),
+                              ),
+                              for (final meas in allAvailableMeasures)
+                                DropdownMenuItem<int?>(
+                                  value: meas.id,
+                                  child: Text(
+                                    '${meas.name} (${fmtNum(meas.amount)} ${store.unit(meas.unitId).symbol})',
+                                    style: const TextStyle(fontSize: AppFont.caption),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
                                 ),
                             ],
+                            onChanged: (val) => setState(() => it.measureId = val),
                           ),
-                        ),
-                        IconButton(
-                          icon: const Icon(Icons.remove_circle_outline, size: 20, color: Colors.red),
-                          visualDensity: VisualDensity.compact,
-                          onPressed: () => setState(() => _items.removeAt(i)),
-                        ),
+                        ],
                       ],
                     ),
                   );

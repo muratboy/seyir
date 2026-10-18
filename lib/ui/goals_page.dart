@@ -262,6 +262,7 @@ class _GoalsPageState extends State<GoalsPage> {
     final status = store.goalStatus(goal, byActivity: activityBreakdown);
     final unitSym = store.goalUnitSymbol(goal);
     final isDone = status.done;
+    final isManual = status.isManual;
     final streak = store.goalStreak(goal);
 
     return Card(
@@ -336,20 +337,26 @@ class _GoalsPageState extends State<GoalsPage> {
                             Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: Colors.green.shade100,
+                                color: isManual ? Colors.teal.shade100 : Colors.green.shade100,
                                 borderRadius: BorderRadius.circular(8),
                               ),
                               child: Row(
                                 mainAxisSize: MainAxisSize.min,
                                 children: [
-                                  Icon(Icons.check, size: 14, color: Colors.green.shade800),
+                                  Icon(
+                                    isManual ? Icons.check_circle_rounded : Icons.check,
+                                    size: 14,
+                                    color: isManual ? Colors.teal.shade900 : Colors.green.shade800,
+                                  ),
                                   const SizedBox(width: 2),
                                   Text(
-                                    s.isTr ? 'Tamamlandı' : 'Achieved',
+                                    isManual
+                                        ? (s.isTr ? '✓ İşaretlendi' : '✓ Checked-in')
+                                        : (s.isTr ? 'Tamamlandı' : 'Achieved'),
                                     style: TextStyle(
                                       fontSize: AppFont.micro,
                                       fontWeight: FontWeight.bold,
-                                      color: Colors.green.shade900,
+                                      color: isManual ? Colors.teal.shade900 : Colors.green.shade900,
                                     ),
                                   ),
                                 ],
@@ -416,7 +423,9 @@ class _GoalsPageState extends State<GoalsPage> {
                 PopupMenuButton<String>(
                   icon: const Icon(Icons.more_vert),
                   onSelected: (val) async {
-                    if (val == 'edit') {
+                    if (val == 'toggle_checkin') {
+                      await store.toggleGoalCheckin(goal);
+                    } else if (val == 'edit') {
                       GoalEditDialog.show(context, existing: goal);
                     } else if (val == 'delete') {
                       final ok = await confirm(
@@ -428,6 +437,14 @@ class _GoalsPageState extends State<GoalsPage> {
                     }
                   },
                   itemBuilder: (c) => [
+                    PopupMenuItem(
+                      value: 'toggle_checkin',
+                      child: Text(
+                        isManual
+                            ? (s.isTr ? 'İşareti Kaldır' : 'Unmark Check-in')
+                            : (s.isTr ? 'Ulaşıldı Olarak İşaretle' : 'Mark as Completed'),
+                      ),
+                    ),
                     PopupMenuItem(value: 'edit', child: Text(s.edit)),
                     PopupMenuItem(
                       value: 'delete',
@@ -580,6 +597,94 @@ class _GoalsPageState extends State<GoalsPage> {
                       );
                     }),
                   ],
+                ],
+              ),
+            ] else ...[
+              const SizedBox(height: 10),
+              InkWell(
+                borderRadius: BorderRadius.circular(12),
+                onTap: () => store.toggleGoalCheckin(goal),
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                  decoration: BoxDecoration(
+                    color: isManual
+                        ? Colors.green.withValues(alpha: 0.12)
+                        : scheme.surfaceContainerHighest.withValues(alpha: 0.45),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(
+                      color: isManual
+                          ? Colors.green.shade400
+                          : scheme.outlineVariant.withValues(alpha: 0.5),
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(
+                        isManual ? Icons.check_circle_rounded : Icons.radio_button_unchecked,
+                        color: isManual ? Colors.green.shade700 : scheme.onSurfaceVariant,
+                        size: 22,
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              isManual
+                                  ? (s.isTr ? 'Bu dönem ulaşıldı olarak işaretlendi' : 'Marked as completed for this period')
+                                  : (s.isTr ? 'Doğrudan işaretleme (check-in)' : 'Manual check-in'),
+                              style: TextStyle(
+                                fontSize: AppFont.small,
+                                fontWeight: FontWeight.bold,
+                                color: isManual ? Colors.green.shade900 : scheme.onSurface,
+                              ),
+                            ),
+                            Text(
+                              isManual
+                                  ? (s.isTr ? 'Geri almak için dokunun' : 'Tap to undo')
+                                  : (s.isTr ? 'Hedefe ulaşıldı olarak işaretlemek için dokunun' : 'Tap to mark as achieved'),
+                              style: TextStyle(
+                                fontSize: AppFont.micro,
+                                color: isManual ? Colors.green.shade800 : scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      FilledButton.tonal(
+                        onPressed: () => store.toggleGoalCheckin(goal),
+                        style: FilledButton.styleFrom(
+                          visualDensity: VisualDensity.compact,
+                          backgroundColor: isManual
+                              ? Colors.red.withValues(alpha: 0.12)
+                              : Colors.green.withValues(alpha: 0.15),
+                          foregroundColor: isManual ? Colors.red.shade800 : Colors.green.shade800,
+                          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                        ),
+                        child: Text(
+                          isManual
+                              ? (s.isTr ? 'Geri Al' : 'Undo')
+                              : (s.isTr ? '✓ Ulaşıldı' : '✓ Check-in'),
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.micro),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+            if (goal.links.isNotEmpty && isManual) ...[
+              const SizedBox(height: 6),
+              Row(
+                children: [
+                  Icon(Icons.check_circle_outline, size: 14, color: Colors.teal.shade800),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      s.isTr ? 'Ayrıca bu dönem elle tamamlandı olarak işaretlendi' : 'Also manually marked as completed for this period',
+                      style: TextStyle(fontSize: AppFont.micro, color: Colors.teal.shade900, fontWeight: FontWeight.w500),
+                    ),
+                  ),
                 ],
               ),
             ],

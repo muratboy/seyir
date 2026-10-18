@@ -267,6 +267,14 @@ class _ManagePageState extends State<ManagePage> {
                           : 'PDF and CSV reports, JSON backup, local backups',
                       page: const BackupSettingsPage(),
                     ),
+                    const Divider(height: 1),
+                    _SettingsLink(
+                      icon: Icons.auto_awesome_rounded,
+                      color: Colors.purpleAccent,
+                      title: s.isTr ? 'Yapay Zekâ & API (BYOK)' : 'AI & API Key (BYOK)',
+                      summary: _aiSummary(s),
+                      page: const AiSettingsPage(),
+                    ),
                   ],
                 ),
               ),
@@ -804,6 +812,16 @@ class _ManagePageState extends State<ManagePage> {
         ? (s.isTr ? 'uyku takibi açık' : 'sleep tracking on')
         : (s.isTr ? 'uyku takibi kapalı' : 'sleep tracking off');
     return '$steps · $sleep';
+  }
+
+  /// "Google Gemini · gemini-1.5-flash" ya da "İsteğe bağlı anahtar tanımlanmadı (Çevrimdışı)"
+  String _aiSummary(AppStrings s) {
+    if (store.hasLlmKey) {
+      return '${store.llmProviderDisplayName} · ${store.activeLlmModel}';
+    }
+    return s.isTr
+        ? 'İsteğe bağlı anahtar tanımlanmadı (Çevrimdışı)'
+        : 'Optional key not configured (Offline)';
   }
 }
 
