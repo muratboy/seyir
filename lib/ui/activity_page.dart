@@ -1316,10 +1316,14 @@ class _ActivityPageState extends State<ActivityPage> {
                   title: Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      Text(
-                        detail.isNotEmpty ? detail : widget.activity.name,
-                        style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppFont.body),
+                      Expanded(
+                        child: Text(
+                          detail.isNotEmpty ? detail : widget.activity.name,
+                          style: const TextStyle(fontWeight: FontWeight.w600, fontSize: AppFont.body),
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
+                      const SizedBox(width: 8),
                       Text(
                         '$dateStr $timeStr',
                         style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),

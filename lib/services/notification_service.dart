@@ -652,6 +652,17 @@ class NotificationService {
     }
   }
 
+  /// Belirli bir aktivite hatırlatıcısına ait planlanmış bildirimi iptal eder (ID: 4000 + reminderId).
+  static Future<void> cancelActivityReminder(int reminderId) async {
+    if (kIsWeb || !Platform.isAndroid) return;
+    await init();
+    try {
+      await _plugin.cancel(4000 + reminderId);
+    } catch (e) {
+      debugPrint('Error cancelling activity reminder: $e');
+    }
+  }
+
   static tz.TZDateTime _nextInstanceOfTime(int hour, int minute) {
     final tz.TZDateTime now = tz.TZDateTime.now(tz.local);
     tz.TZDateTime scheduledDate =

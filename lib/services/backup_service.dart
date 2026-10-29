@@ -31,6 +31,9 @@ class BackupFileInfo {
 class BackupService {
   static const int maxAutoBackups = 7;
 
+  /// Testlerde güvenlik yedeği hatasını simüle etmek için kullanılır.
+  static Future<File> Function(AppStore store)? snapshotOverrideForTest;
+
   static Future<Directory> getBackupDir() async {
     final docs = await getApplicationDocumentsDirectory();
     final dir = Directory(p.join(docs.path, 'backups'));
@@ -57,6 +60,9 @@ class BackupService {
 
   /// Geri yükleme öncesinde mevcut verileri kaybetmemek için otomatik güvenlik yedeği alır.
   static Future<File> createPreRestoreSnapshot(AppStore store) async {
+    if (snapshotOverrideForTest != null) {
+      return snapshotOverrideForTest!(store);
+    }
     return createBackup(store, prefix: 'pre_restore');
   }
 

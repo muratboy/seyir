@@ -447,7 +447,12 @@ class AppStore extends ChangeNotifier {
     await _cleanupQuickItems();
 
     final timerRows = await d.query('active_timers', orderBy: 'id ASC');
-    activeTimers = timerRows.map(ActiveTimer.fromMap).toList();
+    activeTimers = timerRows.map((r) {
+      final t = ActiveTimer.fromMap(r);
+      final prev = getTimer(t.id);
+      final collapsed = _timerCollapsed[t.id] ?? prev?.isCollapsed ?? false;
+      return t.copyWith(isCollapsed: collapsed);
+    }).toList();
     _timerCollapsed.removeWhere((id, _) => !activeTimers.any((t) => t.id == id));
 
     final stepRows = await d.query('roadmap_steps', orderBy: 'step_order ASC, id ASC');
@@ -482,6 +487,26 @@ class AppStore extends ChangeNotifier {
           .toList();
       return t;
     }).toList();
+
+    // Eski satırlarda (target_unit NULL) birimi bir kez hesaplayıp veritabanına yaz
+    for (final t in todos) {
+      if (t.targetAmount != null && (t.targetUnit == null || t.targetUnit!.isEmpty)) {
+        final firstActId = t.linkedActivityIds.firstOrNull;
+        Unit? titleUnit;
+        final words = t.title.split(RegExp(r'\s+'));
+        for (final w in words) {
+          final u = _unitNamed(w);
+          if (u != null) {
+            titleUnit = u;
+            break;
+          }
+        }
+        final derivedUnit = titleUnit?.id ??
+            (firstActId != null ? activityBaseUnit(firstActId) : 'adet');
+        t.targetUnit = derivedUnit;
+        await d.update('todos', {'target_unit': derivedUnit}, where: 'id = ?', whereArgs: [t.id]);
+      }
+    }
 
     loaded = true;
     // Kayıtlar başka bir yerde değişmiş olabilir (başka bir isolate, geri yüklenen yedek): adımlar sessizce
@@ -1329,17 +1354,30 @@ class AppStore extends ChangeNotifier {
     }
     activeTimers.removeWhere((t) => t.activityId == id);
     await NotificationService.updateTimerNotification(activeTimers, activities);
+
+    // Bağlı hatırlatıcıların bildirimlerini iptal et
+    final matchingReminders = activityReminders.where((r) => r.activityId == id).toList();
+    for (final r in matchingReminders) {
+      await NotificationService.cancelActivityReminder(r.id);
+    }
+
     await d.transaction((tx) async {
       await tx.delete('entries', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('goal_links', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('todo_links', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('quick_items', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('activity_properties', where: 'activity_id=?', whereArgs: [id]);
+      await tx.delete('activity_reminders', where: 'activity_id=?', whereArgs: [id]);
+      await tx.delete('routine_items', where: 'activity_id=?', whereArgs: [id]);
       await tx.update('roadmap_steps', {'linked_activity_id': null}, where: 'linked_activity_id=?', whereArgs: [id]);
       await tx.delete('activities', where: 'id=?', whereArgs: [id]);
     });
     entries.removeWhere((e) => e.activityId == id);
     _activityProperties.remove(id);
+    activityReminders.removeWhere((r) => r.activityId == id);
+    for (final r in routines) {
+      r.items.removeWhere((it) => it.activityId == id);
+    }
     for (final r in roadmaps) {
       for (final step in r.steps) {
         if (step.linkedActivityId == id) step.linkedActivityId = null;
@@ -1369,6 +1407,9 @@ class AppStore extends ChangeNotifier {
     }
     activities.remove(id);
     _changed();
+    try {
+      await NotificationService.scheduleReminders(this);
+    } catch (_) {}
   }
 
   /// [fromId] kayıtlarını [intoId] altına taşır ve [fromId]'yi siler (yazım hatalı tekrarları birleştirmek için).
@@ -1386,8 +1427,56 @@ class AppStore extends ChangeNotifier {
       await tx.update('entries', {'activity_id': intoId}, where: 'activity_id=?', whereArgs: [fromId]);
       await tx.update('quick_items', {'activity_id': intoId},
           where: 'activity_id=?', whereArgs: [fromId]);
-      await tx.update('activity_properties', {'activity_id': intoId},
-          where: 'activity_id=?', whereArgs: [fromId]);
+
+      // Özellikler (aynı isimli özellik varsa hedefteki korunur, çiftler tekilleşir)
+      final existingProps = await tx.query('activity_properties', where: 'activity_id=?', whereArgs: [intoId]);
+      final existingPropNames = existingProps.map((p) => (p['name'] as String).toLowerCase()).toSet();
+      final fromProps = await tx.query('activity_properties', where: 'activity_id=?', whereArgs: [fromId]);
+      for (final p in fromProps) {
+        final pName = (p['name'] as String).toLowerCase();
+        if (existingPropNames.contains(pName)) {
+          await tx.delete('activity_properties', where: 'id=?', whereArgs: [p['id']]);
+        } else {
+          await tx.update('activity_properties', {'activity_id': intoId}, where: 'id=?', whereArgs: [p['id']]);
+        }
+      }
+
+      // Hatırlatıcılar (aynı saat ve günlerde olanlar tekilleştirilir)
+      final existingReminders = await tx.query('activity_reminders', where: 'activity_id=?', whereArgs: [intoId]);
+      final fromReminders = await tx.query('activity_reminders', where: 'activity_id=?', whereArgs: [fromId]);
+      for (final r in fromReminders) {
+        final rId = r['id'] as int;
+        final rTime = r['time'] as String;
+        final rDays = (r['days_of_week'] as String?) ?? '1,2,3,4,5,6,7';
+        final isDuplicate = existingReminders.any((er) => er['time'] == rTime && ((er['days_of_week'] as String?) ?? '1,2,3,4,5,6,7') == rDays);
+        if (isDuplicate) {
+          await NotificationService.cancelActivityReminder(rId);
+          await tx.delete('activity_reminders', where: 'id=?', whereArgs: [rId]);
+        } else {
+          await tx.update('activity_reminders', {'activity_id': intoId}, where: 'id=?', whereArgs: [rId]);
+        }
+      }
+
+      // Rutin öğeleri (aynı rutinde hedef aktivite zaten varsa çiftler tekilleştirilir)
+      final routineItemRows = await tx.query('routine_items', orderBy: 'routine_id, id');
+      final itemsByRoutine = <int, List<Map<String, Object?>>>{};
+      for (final row in routineItemRows) {
+        final rId = row['routine_id'] as int;
+        itemsByRoutine.putIfAbsent(rId, () => []).add(row);
+      }
+      for (final entry in itemsByRoutine.entries) {
+        final rItems = entry.value;
+        final hasInto = rItems.any((it) => it['activity_id'] == intoId);
+        final fromMatches = rItems.where((it) => it['activity_id'] == fromId).toList();
+        for (final it in fromMatches) {
+          if (hasInto) {
+            await tx.delete('routine_items', where: 'id=?', whereArgs: [it['id']]);
+          } else {
+            await tx.update('routine_items', {'activity_id': intoId}, where: 'id=?', whereArgs: [it['id']]);
+          }
+        }
+      }
+
       for (final g in goals) {
         final hasFrom = g.links.any((l) => l.activityId == fromId);
         final hasInto = g.links.any((l) => l.activityId == intoId);
@@ -1413,6 +1502,9 @@ class AppStore extends ChangeNotifier {
       await tx.delete('activities', where: 'id=?', whereArgs: [fromId]);
     });
     await load();
+    try {
+      await NotificationService.scheduleReminders(this);
+    } catch (_) {}
   }
 
   /// Aktiviteye ait ek bir özellik (örn: kalori, sıvı hacmi, kafein vb.) kaydeder veya günceller.
@@ -1502,7 +1594,6 @@ class AppStore extends ChangeNotifier {
     }
 
     double totalTimeMinutes = 0;
-    double totalVolumeLiters = 0;
     final actCounts = <int, int>{};
     final actTimes = <int, double>{};
     final actVolumes = <int, double>{};
@@ -1517,7 +1608,6 @@ class AppStore extends ChangeNotifier {
           actTimes[e.activityId] = (actTimes[e.activityId] ?? 0) + mins;
         } else if (u.dim == 'volume') {
           final liters = e.value! * u.factor;
-          totalVolumeLiters += liters;
           actVolumes[e.activityId] = (actVolumes[e.activityId] ?? 0) + liters;
         }
       }
@@ -1527,7 +1617,6 @@ class AppStore extends ChangeNotifier {
       date: dayStart(day),
       count: list.length,
       totalTimeMinutes: totalTimeMinutes,
-      totalVolumeLiters: totalVolumeLiters,
       activityCounts: actCounts,
       activityTimeMinutes: actTimes,
       activityVolumeLiters: actVolumes,
@@ -1613,9 +1702,9 @@ class AppStore extends ChangeNotifier {
     final finalValue = m != null ? m.amount * qty : value;
 
     int? calculatedEndTs = endTs ?? endAt?.millisecondsSinceEpoch;
-    if (calculatedEndTs == null && (finalUnitId == 'dk' || finalUnitId == 'sa') && finalValue != null && finalValue > 0) {
-      final durationMins = (finalValue * (finalUnitId == 'sa' ? 60 : 1)).round();
-      calculatedEndTs = time.add(Duration(minutes: durationMins)).millisecondsSinceEpoch;
+    if (calculatedEndTs == null && (finalUnitId == 'dk' || finalUnitId == 'sa' || finalUnitId == 'sn') && finalValue != null && finalValue > 0) {
+      final durationSecs = (finalValue * (finalUnitId == 'sa' ? 3600 : (finalUnitId == 'dk' ? 60 : 1))).round();
+      calculatedEndTs = time.add(Duration(seconds: durationSecs)).millisecondsSinceEpoch;
     }
 
     final e = Entry(
@@ -1740,12 +1829,18 @@ class AppStore extends ChangeNotifier {
   // fazla sayaç varken kartlar tek satırlık kompakt görünümde durur.
   final Map<int, bool> _timerCollapsed = {};
 
-  bool isTimerCollapsed(ActiveTimer timer) => _timerCollapsed[timer.id] ?? activeTimers.length > 1;
+  bool isTimerCollapsed(ActiveTimer timer) =>
+      _timerCollapsed[timer.id] ?? timer.isCollapsed || (activeTimers.length > 1);
 
   void toggleTimerCollapse(int id) {
     final timer = getTimer(id);
     if (timer == null) return;
-    _timerCollapsed[id] = !isTimerCollapsed(timer);
+    final next = !isTimerCollapsed(timer);
+    _timerCollapsed[id] = next;
+    final idx = activeTimers.indexWhere((t) => t.id == id);
+    if (idx != -1) {
+      activeTimers[idx] = activeTimers[idx].copyWith(isCollapsed: next);
+    }
     notifyListeners();
   }
 
@@ -3348,21 +3443,6 @@ class AppStore extends ChangeNotifier {
     _changed();
   }
 
-  Future<void> reorderRoutines(int oldIndex, int newIndex) async {
-    if (oldIndex < 0 || oldIndex >= routines.length) return;
-    if (newIndex < 0 || newIndex >= routines.length) return;
-    final r = routines.removeAt(oldIndex);
-    routines.insert(newIndex, r);
-    final d = await db;
-    final batch = d.batch();
-    for (var i = 0; i < routines.length; i++) {
-      routines[i].sort = i;
-      batch.update('routines', {'sort': i}, where: 'id = ?', whereArgs: [routines[i].id]);
-    }
-    await batch.commit(noResult: true);
-    _changed();
-  }
-
   Future<List<Entry>> executeRoutine(int routineId, {DateTime? at}) async {
     final r = routines.where((x) => x.id == routineId).firstOrNull;
     if (r == null || r.items.isEmpty) return const [];
@@ -3571,6 +3651,14 @@ class AppStore extends ChangeNotifier {
     'roadmaps': Roadmap.fromMap,
     'roadmap_steps': RoadmapStep.fromMap,
     'activity_properties': ActivityProperty.fromMap,
+    'activity_reminders': ActivityReminder.fromMap,
+    'routines': Routine.fromMap,
+    'routine_items': RoutineItem.fromMap,
+    'goal_checkins': (r) {
+      if (r['goal_id'] is! int || r['period_key'] is! String) {
+        throw const FormatException('goal_checkins');
+      }
+    },
     'todos': Todo.fromMap,
     'todo_links': TodoLink.fromMap,
   };
@@ -3638,11 +3726,17 @@ class AppStore extends ChangeNotifier {
     // Geri yükleme öncesinde mevcut verileri korumak için güvenlik yedeği al
     try {
       await BackupService.createPreRestoreSnapshot(this);
-    } catch (_) {}
+    } catch (e) {
+      throw StateError(
+        strings.value.isTr
+            ? 'Geri yükleme öncesi güvenlik yedeği alınamadı. Verilerinizin kaybolmaması için işlem durduruldu: $e'
+            : 'Failed to create safety backup before restore. Aborted to prevent data loss: $e',
+      );
+    }
 
     final d = await db;
     await d.transaction((tx) async {
-      for (final t in AppDb.tables) {
+      for (final t in AppDb.tables.reversed) {
         await tx.delete(t);
       }
       for (final t in AppDb.tables) {
@@ -3650,10 +3744,28 @@ class AppStore extends ChangeNotifier {
           await tx.insert(t, row);
         }
       }
+      // Geri yüklemeden sonra var olmayan bir aktiviteye, rutine ya da hedefe işaret eden yetim satırları temizle
+      await tx.delete('routine_items',
+          where: 'activity_id NOT IN (SELECT id FROM activities) OR routine_id NOT IN (SELECT id FROM routines)');
+      await tx.delete('activity_reminders',
+          where: 'activity_id NOT IN (SELECT id FROM activities)');
+      await tx.delete('goal_checkins',
+          where: 'goal_id NOT IN (SELECT id FROM goals)');
+      await tx.delete('todo_links',
+          where: 'activity_id NOT IN (SELECT id FROM activities) OR todo_id NOT IN (SELECT id FROM todos)');
+      await tx.delete('goal_links',
+          where: 'activity_id NOT IN (SELECT id FROM activities) OR goal_id NOT IN (SELECT id FROM goals)');
+      await tx.delete('activity_properties',
+          where: 'activity_id NOT IN (SELECT id FROM activities)');
+      await tx.update('roadmap_steps', {'linked_activity_id': null},
+          where: 'linked_activity_id IS NOT NULL AND linked_activity_id NOT IN (SELECT id FROM activities)');
     });
     // Adım durumu da yedektekiyle değişir.
     _stepLive = false;
     await load();
+    try {
+      await NotificationService.scheduleReminders(this);
+    } catch (_) {}
   }
 
   // ---------------------------------------------------------------- yol haritaları (roadmaps)
@@ -4227,50 +4339,36 @@ class AppStore extends ChangeNotifier {
     return 'adet';
   }
 
-  /// Aktivitenin gösterim birim sembolünü döner ('dk', 'L', 'kg' vb.).
-  String activityUnitSymbol(int activityId) {
-    final baseId = activityBaseUnit(activityId);
-    if (baseId == 'adet') return '';
-    return unit(baseId).symbol;
-  }
-
   /// Yapılacağa karşılık gelen sanal Hedef nesnesini döner.
   /// Bütün birim, dönüşüm ve ilerleme hesapları hedeflerin yardımcılarıyla ortaklaşır.
   Goal todoGoal(Todo todo) {
     final firstActId = todo.linkedActivityIds.firstOrNull;
-    Unit? titleUnit;
-    if (todo.targetAmount != null) {
-      final words = todo.title.split(RegExp(r'\s+'));
-      for (final w in words) {
-        final u = _unitNamed(w);
-        if (u != null) {
-          titleUnit = u;
-          break;
+    final format = firstActId != null ? activityFormat(firstActId) : ActivityFormat.event;
+
+    // Hedefin birimi: öncelikle todo.targetUnit (veya başlıktan türetilen), yoksa aktivitenin temel birimi
+    String? resolvedUnitId = todo.targetUnit;
+    if (resolvedUnitId == null || resolvedUnitId.isEmpty) {
+      if (todo.targetAmount != null) {
+        final words = todo.title.split(RegExp(r'\s+'));
+        for (final w in words) {
+          final u = _unitNamed(w);
+          if (u != null) {
+            resolvedUnitId = u.id;
+            break;
+          }
         }
       }
+      resolvedUnitId ??= (firstActId != null ? activityBaseUnit(firstActId) : 'adet');
     }
 
-    final format = firstActId != null ? activityFormat(firstActId) : ActivityFormat.event;
-    final baseUnitId = titleUnit != null
-        ? ((titleUnit.dim == 'volume')
-            ? 'l'
-            : (titleUnit.dim == 'time')
-                ? 'dk'
-                : (titleUnit.dim == 'distance')
-                    ? (titleUnit.factor >= 1000 ? 'km' : 'm')
-                    : (titleUnit.dim == 'mass')
-                        ? (titleUnit.factor >= 1000 ? 'kg' : 'g')
-                        : titleUnit.id)
-        : (firstActId != null ? activityBaseUnit(firstActId) : 'adet');
-
     final isCount = (todo.targetAmount == null && format == ActivityFormat.event) ||
-        (format == ActivityFormat.event && baseUnitId == 'adet' && todo.targetAmount == null);
+        (format == ActivityFormat.event && resolvedUnitId == 'adet' && todo.targetAmount == null);
 
     return Goal(
       id: -todo.id,
       name: todo.title,
       mode: isCount ? 'count' : 'amount',
-      unitId: isCount ? null : baseUnitId,
+      unitId: isCount ? null : resolvedUnitId,
       target: todo.targetAmount ?? 1.0,
       period: GoalPeriod.total,
       startDate: todo.createdAt,
@@ -4281,6 +4379,10 @@ class AppStore extends ChangeNotifier {
       ],
     );
   }
+
+/// Hedef miktara ulaşılıp ulaşılmadığını kayan noktalı sayı toleransıyla (epsilon) kontrol eder.
+bool isTargetReached(double current, double target, {double epsilon = 1e-9}) =>
+    current >= target - epsilon;
 
   /// Yapılacağın hesaplanan ilerleme ve tamamlanma durumu.
   TodoProgress todoProgress(Todo todo) {
@@ -4312,7 +4414,7 @@ class AppStore extends ChangeNotifier {
     }
 
     final derivedDone = (todo.targetAmount != null)
-        ? (current >= todo.targetAmount! - 1e-9)
+        ? isTargetReached(current, todo.targetAmount!)
         : matchingEntries.isNotEmpty;
 
     bool isDone;
@@ -4354,24 +4456,27 @@ class AppStore extends ChangeNotifier {
     final goal = todoGoal(todo);
     final progress = todoProgress(todo);
     final val = amount ?? (progress.remainingAmount > 0 ? progress.remainingAmount : (todo.targetAmount ?? 1.0));
-    final baseUnitId = goal.unitId ?? activityBaseUnit(actId);
-    final baseU = unit(baseUnitId);
+    final targetUnitId = todo.targetUnit ?? goal.unitId ?? activityBaseUnit(actId);
+    final targetU = unit(targetUnitId);
+
+    // Aynı miktar "Ne yaptın?" kutusuna yazılsaydı açılacak 1.0 temel ölçüyü bul
+    final m = measures.where((m) => m.unitId == targetUnitId && m.amount == 1.0).firstOrNull;
 
     AddResult result;
-    if (baseU.dim == 'time') {
+    if (m != null) {
       result = await addEntry(
         actId,
-        value: val,
-        unitId: 'dk',
+        measureId: m.id,
+        qty: val,
         note: note,
         at: at,
       );
-    } else if (baseU.dim == 'count') {
+    } else if (targetU.dim == 'count') {
       result = await addEntry(
         actId,
         qty: val,
         value: val,
-        unitId: baseUnitId,
+        unitId: targetUnitId,
         note: note,
         at: at,
       );
@@ -4379,7 +4484,8 @@ class AppStore extends ChangeNotifier {
       result = await addEntry(
         actId,
         value: val,
-        unitId: baseUnitId,
+        unitId: targetUnitId,
+        qty: 1,
         note: note,
         at: at,
       );
@@ -4398,7 +4504,7 @@ class AppStore extends ChangeNotifier {
       if (!todo.isLinked) continue;
       final progress = todoProgress(todo);
       final derivedDone = (todo.targetAmount != null)
-          ? (progress.currentAmount >= todo.targetAmount!)
+          ? isTargetReached(progress.currentAmount, todo.targetAmount!)
           : progress.contributingEntries.isNotEmpty;
 
       // Elle durum türetilen durumla aynıysa manualState temizlenir
@@ -4433,6 +4539,20 @@ class AppStore extends ChangeNotifier {
   Future<Todo> createTodo(Todo todo, {List<int>? activityIds}) async {
     final d = await db;
     if (activityIds != null) todo.linkedActivityIds = List.from(activityIds);
+    if (todo.targetAmount != null && (todo.targetUnit == null || todo.targetUnit!.isEmpty)) {
+      final firstActId = todo.linkedActivityIds.firstOrNull;
+      Unit? titleUnit;
+      final words = todo.title.split(RegExp(r'\s+'));
+      for (final w in words) {
+        final u = _unitNamed(w);
+        if (u != null) {
+          titleUnit = u;
+          break;
+        }
+      }
+      todo.targetUnit = titleUnit?.id ??
+          (firstActId != null ? activityBaseUnit(firstActId) : 'adet');
+    }
     final id = await d.insert('todos', todo.toMap());
     todo.id = id;
     for (final actId in todo.linkedActivityIds) {
@@ -4479,7 +4599,7 @@ class AppStore extends ChangeNotifier {
     } else {
       final progress = todoProgress(todo);
       final derivedDone = (todo.targetAmount != null)
-          ? (progress.currentAmount >= todo.targetAmount!)
+          ? isTargetReached(progress.currentAmount, todo.targetAmount!)
           : progress.contributingEntries.isNotEmpty;
 
       final currentDone = todo.manualState == 'done' || (todo.manualState == null && derivedDone);

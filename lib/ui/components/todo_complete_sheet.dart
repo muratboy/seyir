@@ -64,9 +64,11 @@ class _TodoCompleteSheetState extends State<TodoCompleteSheet> {
 
     final selectedAct = store.activity(_selectedActivityId);
     final goal = store.todoGoal(widget.todo);
-    final baseUnit = (goal.unitId != null && goal.unitId!.isNotEmpty)
-        ? goal.unitId!
-        : store.activityBaseUnit(_selectedActivityId);
+    final baseUnit = (widget.todo.targetUnit != null && widget.todo.targetUnit!.isNotEmpty)
+        ? widget.todo.targetUnit!
+        : ((goal.unitId != null && goal.unitId!.isNotEmpty)
+            ? goal.unitId!
+            : store.activityBaseUnit(_selectedActivityId));
     final unitLabel = (widget.todo.targetAmount == null &&
             store.activityFormat(_selectedActivityId) == ActivityFormat.event &&
             baseUnit == 'adet')

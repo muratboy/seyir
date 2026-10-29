@@ -1366,6 +1366,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                       const SizedBox(height: 12),
 
                       DropdownButtonFormField<String>(
+                        isExpanded: true,
                         initialValue: _selectedProvider,
                         decoration: InputDecoration(
                           labelText: isTr ? 'Yapay Zekâ Sağlayıcısı' : 'AI Provider',
@@ -1375,19 +1376,25 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                         items: [
                           DropdownMenuItem(
                             value: 'gemini',
-                            child: Text(isTr ? 'Google Gemini (Önerilen - Ücretsiz)' : 'Google Gemini (Recommended - Free)'),
+                            child: Text(
+                              isTr ? 'Google Gemini (Önerilen - Ücretsiz)' : 'Google Gemini (Recommended - Free)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                           DropdownMenuItem(
                             value: 'openai',
-                            child: Text('OpenAI (ChatGPT)'),
+                            child: const Text('OpenAI (ChatGPT)', overflow: TextOverflow.ellipsis),
                           ),
                           DropdownMenuItem(
                             value: 'openrouter',
-                            child: Text('OpenRouter (Çoklu Model)'),
+                            child: const Text('OpenRouter (Çoklu Model)', overflow: TextOverflow.ellipsis),
                           ),
                           DropdownMenuItem(
                             value: 'custom',
-                            child: Text(isTr ? 'Özel / Yerel Uç Nokta (Ollama)' : 'Custom / Local (Ollama)'),
+                            child: Text(
+                              isTr ? 'Özel / Yerel Uç Nokta (Ollama)' : 'Custom / Local (Ollama)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                         ],
                         onChanged: (val) {
@@ -1642,9 +1649,11 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                         children: [
                           const Icon(Icons.help_outline_rounded, color: Colors.purpleAccent, size: 20),
                           const SizedBox(width: 8),
-                          Text(
-                            isTr ? 'Nasıl Ücretsiz Gemini Anahtarı Alınır?' : 'How to Get a Free Gemini Key?',
-                            style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
+                          Expanded(
+                            child: Text(
+                              isTr ? 'Nasıl Ücretsiz Gemini Anahtarı Alınır?' : 'How to Get a Free Gemini Key?',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
+                            ),
                           ),
                         ],
                       ),

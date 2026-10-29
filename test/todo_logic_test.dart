@@ -7,6 +7,7 @@ import 'package:takip/data/models.dart';
 import 'package:takip/data/store.dart';
 import 'package:takip/logic/activity_format_analysis.dart';
 import 'package:takip/logic/todo_parser.dart';
+import 'package:takip/services/nl_parser.dart';
 
 import 'support/real_db.dart';
 
@@ -673,6 +674,251 @@ void main() {
       final items = payload['items'] as List<Map<String, Object?>>;
       expect(items.isNotEmpty, isTrue);
       expect(items.first['sub'], '0/30 dk');
+    });
+
+    test('H5: Hedefe ulaşma karşılaştırması aynı toleransla tek bir yardımcıda toplanır ve _syncTodos ile todoProgress uyumludur', () async {
+      final s = AppStore();
+      await s.load();
+      final act = await s.addActivity('Su');
+      final todo = await s.createTodo(
+        Todo(id: 0, title: '0.1 L su', createdAt: 0, targetAmount: 0.1),
+        activityIds: [act.id],
+      );
+      // 1.0 - 0.9 = 0.09999999999999998 (< 0.1)
+      final val = 1.0 - 0.9;
+      await s.addEntry(act.id, value: val, unitId: 'l');
+
+      final prog = s.todoProgress(todo);
+      expect(prog.isCompleted, isTrue);
+      final dbTodo = s.todos.firstWhere((t) => t.id == todo.id);
+      expect(dbTodo.doneAt, isNotNull, reason: '_syncTodos must agree with todoProgress via isTargetReached');
+    });
+
+    test('H1: ml/L alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
+      final s = AppStore();
+      await s.load();
+      final act = await s.addActivity('Su');
+      final todo = await s.createTodo(
+        Todo(id: 0, title: '500 ml su iç', createdAt: 0, targetAmount: 500.0, targetUnit: 'ml'),
+        activityIds: [act.id],
+      );
+
+      // Başlangıç durumu
+      var p = s.todoProgress(todo);
+      expect(p.targetAmount, 500.0);
+      expect(p.unitSymbol, 'ml');
+      expect(p.currentAmount, 0.0);
+      expect(p.remainingAmount, 500.0);
+      expect(p.isCompleted, isFalse);
+
+      // 0.2 L su içildiğinde (200 ml katkı yapmalı)
+      await s.addEntry(act.id, value: 0.2, unitId: 'l');
+      p = s.todoProgress(todo);
+      expect(p.currentAmount, closeTo(200.0, 1e-9));
+      expect(p.remainingAmount, closeTo(300.0, 1e-9));
+      expect(p.isCompleted, isFalse);
+
+      // Tamamlama kaydı açıldığında 300 ml kayıt açılmalı (500 L veya 300 L DEĞİL!)
+      final res = await s.completeTodoWithEntry(todo);
+      expect(res.entry.unitId, 'ml');
+      expect(res.entry.value, closeTo(300.0, 1e-9));
+
+      p = s.todoProgress(todo);
+      expect(p.currentAmount, closeTo(500.0, 1e-9));
+      expect(p.isCompleted, isTrue);
+    });
+
+    test('H1: mg/g alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
+      final s = AppStore();
+      await s.load();
+      final act = await s.addActivity('Aspirin');
+      final todo = await s.createTodo(
+        Todo(id: 0, title: '500 mg aspirin al', createdAt: 0, targetAmount: 500.0, targetUnit: 'mg'),
+        activityIds: [act.id],
+      );
+
+      var p = s.todoProgress(todo);
+      expect(p.unitSymbol, 'mg');
+      expect(p.targetAmount, 500.0);
+
+      // 0.2 g alındığında (200 mg katkı yapmalı)
+      await s.addEntry(act.id, value: 0.2, unitId: 'g');
+      p = s.todoProgress(todo);
+      expect(p.currentAmount, closeTo(200.0, 1e-9));
+
+      final res = await s.completeTodoWithEntry(todo);
+      expect(res.entry.unitId, 'mg');
+      expect(res.entry.value, closeTo(300.0, 1e-9));
+
+      p = s.todoProgress(todo);
+      expect(p.isCompleted, isTrue);
+    });
+
+    test('H1: sn/dk/sa alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
+      final s = AppStore();
+      await s.load();
+      final actPlank = await s.addActivity('Plank');
+      final todoPlank = await s.createTodo(
+        Todo(id: 0, title: '90 sn plank', createdAt: 0, targetAmount: 90.0, targetUnit: 'sn'),
+        activityIds: [actPlank.id],
+      );
+
+      var p = s.todoProgress(todoPlank);
+      expect(p.unitSymbol, 'sn');
+      expect(p.targetAmount, 90.0);
+
+      // 30 sn yapıldı
+      await s.addEntry(actPlank.id, value: 30, unitId: 'sn');
+      p = s.todoProgress(todoPlank);
+      expect(p.currentAmount, closeTo(30.0, 1e-9));
+
+      // 0.5 dk (30 sn) daha yapıldı
+      await s.addEntry(actPlank.id, value: 0.5, unitId: 'dk');
+      p = s.todoProgress(todoPlank);
+      expect(p.currentAmount, closeTo(60.0, 1e-9));
+
+      final res = await s.completeTodoWithEntry(todoPlank);
+      expect(res.entry.unitId, 'sn');
+      expect(res.entry.value, closeTo(30.0, 1e-9));
+
+      p = s.todoProgress(todoPlank);
+      expect(p.isCompleted, isTrue);
+
+      // 2 sa ders testi
+      final actDers = await s.addActivity('Ders');
+      final todoDers = await s.createTodo(
+        Todo(id: 0, title: '2 sa ders çalış', createdAt: 0, targetAmount: 2.0, targetUnit: 'sa'),
+        activityIds: [actDers.id],
+      );
+      var pDers = s.todoProgress(todoDers);
+      expect(pDers.unitSymbol, 'sa');
+      expect(pDers.targetAmount, 2.0);
+
+      // 60 dk ders girildiğinde 1 sa saymalı
+      await s.addEntry(actDers.id, value: 60, unitId: 'dk');
+      pDers = s.todoProgress(todoDers);
+      expect(pDers.currentAmount, closeTo(1.0, 1e-9));
+    });
+
+    test('H1: m/km ve g/kg alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
+      final s = AppStore();
+      await s.load();
+      final actKos = await s.addActivity('Koşu');
+      final todoKos = await s.createTodo(
+        Todo(id: 0, title: '500 m koşu', createdAt: 0, targetAmount: 500.0, targetUnit: 'm'),
+        activityIds: [actKos.id],
+      );
+      var pKos = s.todoProgress(todoKos);
+      expect(pKos.unitSymbol, 'm');
+
+      // 0.2 km koşulduğunda (200 m saymalı)
+      await s.addEntry(actKos.id, value: 0.2, unitId: 'km');
+      pKos = s.todoProgress(todoKos);
+      expect(pKos.currentAmount, closeTo(200.0, 1e-9));
+
+      final resKos = await s.completeTodoWithEntry(todoKos);
+      expect(resKos.entry.unitId, 'm');
+      expect(resKos.entry.value, closeTo(300.0, 1e-9));
+
+      // 500 g dambıl
+      final actAgirlik = await s.addActivity('Ağırlık');
+      final todoAgirlik = await s.createTodo(
+        Todo(id: 0, title: '500 g kaldır', createdAt: 0, targetAmount: 500.0, targetUnit: 'g'),
+        activityIds: [actAgirlik.id],
+      );
+      var pAg = s.todoProgress(todoAgirlik);
+      expect(pAg.unitSymbol, 'g');
+
+      // 0.5 kg girildiğinde (500 g tamamlamalı)
+      await s.addEntry(actAgirlik.id, value: 0.5, unitId: 'kg');
+      pAg = s.todoProgress(todoAgirlik);
+      expect(pAg.currentAmount, closeTo(500.0, 1e-9));
+      expect(pAg.isCompleted, isTrue);
+    });
+
+    test('H1: Başlık düzenlenince hedefin birimi ve anlamı değişmez', () async {
+      final s = AppStore();
+      await s.load();
+      final act = await s.addActivity('Su');
+      final todo = await s.createTodo(
+        Todo(id: 0, title: '500 ml su iç', createdAt: 0, targetAmount: 500.0, targetUnit: 'ml'),
+        activityIds: [act.id],
+      );
+
+      expect(s.todoProgress(todo).unitSymbol, 'ml');
+
+      // Başlıkta birim geçmeyen bir metinle güncelle
+      final updated = todo.copyWith(title: 'Günlük hidrasyon hedefini tamamla');
+      await s.updateTodo(updated);
+
+      final reloaded = s.todos.firstWhere((t) => t.id == todo.id);
+      expect(reloaded.targetUnit, 'ml');
+      expect(s.todoProgress(reloaded).unitSymbol, 'ml');
+      expect(s.todoProgress(reloaded).targetAmount, 500.0);
+    });
+
+    test('H1: target_unit NULL olan eski satırların geçişi (migration) doğru çalışır', () async {
+      final s = AppStore();
+      await s.load();
+      final act = await s.addActivity('Su');
+
+      // Veritabanına doğrudan target_unit NULL olan eski satırlar ekle
+      final d = await s.db;
+      final id1 = await d.insert('todos', {
+        'title': '500 ml su iç',
+        'created_at': 0,
+        'target_amount': 500.0,
+        'target_unit': null,
+        'sort_order': 0,
+      });
+      await d.insert('todo_links', {'todo_id': id1, 'activity_id': act.id});
+
+      final id2 = await d.insert('todos', {
+        'title': 'Günde su iç',
+        'created_at': 0,
+        'target_amount': 2.0,
+        'target_unit': null,
+        'sort_order': 0,
+      });
+      await d.insert('todo_links', {'todo_id': id2, 'activity_id': act.id});
+
+      // Mağaza veritabanından yeniden okur
+      await s.load();
+
+      final todo1 = s.todos.firstWhere((t) => t.id == id1);
+      expect(todo1.targetUnit, 'ml'); // Başlıktan türetilmiş olmalı
+      expect(s.todoProgress(todo1).unitSymbol, 'ml');
+
+      final todo2 = s.todos.firstWhere((t) => t.id == id2);
+      expect(todo2.targetUnit, 'l'); // Aktivitenin temel biriminden türetilmiş olmalı
+      expect(s.todoProgress(todo2).unitSymbol, 'L');
+    });
+
+    test('H1: "Ne yaptın?" kutusu ile "Kaydet ve tamamla" eşdeğerliği', () async {
+      final s = AppStore();
+      await s.load();
+      final act = await s.addActivity('Su');
+
+      // 1. "500 ml su iç" yapılacak öğesini tamamlayarak kayıt aç
+      final todo = await s.createTodo(
+        Todo(id: 0, title: '500 ml su iç', createdAt: 0, targetAmount: 500.0, targetUnit: 'ml'),
+        activityIds: [act.id],
+      );
+      final resTodo = await s.completeTodoWithEntry(todo);
+
+      // 2. "Ne yaptın?" kutusundan "500 ml su" yazıldığında açılan kayıt
+      final parsed = NaturalLanguageParser.parse('500 ml su', activities: [act], measures: s.measures);
+      final resDirect = await s.addEntry(
+        act.id,
+        measureId: parsed.matchedMeasure?.id,
+        qty: parsed.quantity,
+      );
+
+      // Değer ve birim birebir aynı olmalı
+      expect(resTodo.entry.value, resDirect.entry.value);
+      expect(resTodo.entry.unitId, resDirect.entry.unitId);
+      expect(resTodo.entry.value, 500.0);
+      expect(resTodo.entry.unitId, 'ml');
     });
   });
 }

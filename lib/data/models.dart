@@ -745,7 +745,6 @@ class DaySummary {
   final DateTime date;
   final int count;
   final double totalTimeMinutes;
-  final double totalVolumeLiters;
   final Map<int, int> activityCounts;
   final Map<int, double> activityTimeMinutes;
   final Map<int, double> activityVolumeLiters;
@@ -754,7 +753,6 @@ class DaySummary {
     required this.date,
     required this.count,
     required this.totalTimeMinutes,
-    required this.totalVolumeLiters,
     this.activityCounts = const {},
     this.activityTimeMinutes = const {},
     this.activityVolumeLiters = const {},
@@ -764,7 +762,6 @@ class DaySummary {
         date: date,
         count: 0,
         totalTimeMinutes: 0,
-        totalVolumeLiters: 0,
       );
 }
 
@@ -1087,6 +1084,7 @@ class Todo {
   int createdAt; // ms
   String? dueDate; // YYYY-MM-DD
   double? targetAmount;
+  String? targetUnit;
   int? doneAt; // ms
   String? manualState; // null | 'done' | 'open'
   int sortOrder;
@@ -1099,6 +1097,7 @@ class Todo {
     required this.createdAt,
     this.dueDate,
     this.targetAmount,
+    this.targetUnit,
     this.doneAt,
     this.manualState,
     this.sortOrder = 0,
@@ -1114,6 +1113,7 @@ class Todo {
       'created_at': createdAt,
       'due_date': dueDate,
       'target_amount': targetAmount,
+      'target_unit': targetUnit,
       'done_at': doneAt,
       'manual_state': manualState,
       'sort_order': sortOrder,
@@ -1129,6 +1129,7 @@ class Todo {
         createdAt: m['created_at'] as int,
         dueDate: m['due_date'] as String?,
         targetAmount: (m['target_amount'] as num?)?.toDouble(),
+        targetUnit: m['target_unit'] as String?,
         doneAt: m['done_at'] as int?,
         manualState: m['manual_state'] as String?,
         sortOrder: (m['sort_order'] as int?) ?? 0,
@@ -1141,6 +1142,7 @@ class Todo {
     int? createdAt,
     String? dueDate,
     double? targetAmount,
+    String? targetUnit,
     int? doneAt,
     String? manualState,
     int? sortOrder,
@@ -1153,6 +1155,7 @@ class Todo {
       createdAt: createdAt ?? this.createdAt,
       dueDate: dueDate ?? this.dueDate,
       targetAmount: targetAmount ?? this.targetAmount,
+      targetUnit: targetUnit ?? this.targetUnit,
       doneAt: doneAt ?? this.doneAt,
       manualState: manualState ?? this.manualState,
       sortOrder: sortOrder ?? this.sortOrder,

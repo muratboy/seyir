@@ -10,6 +10,7 @@ import 'package:takip/logic/l10n.dart';
 import 'package:takip/main.dart';
 import 'package:takip/services/roadmap_parser.dart';
 import 'package:takip/ui/manage_page.dart';
+import 'package:takip/ui/activity_merge_page.dart';
 import 'package:takip/ui/components/todo_complete_sheet.dart';
 import 'package:takip/ui/components/todo_quick_add_sheet.dart';
 
@@ -233,7 +234,7 @@ void main() {
         }
 
         Future<void> back() async {
-          await tester.tap(find.byType(BackButton));
+          tester.state<NavigatorState>(find.byType(Navigator).first).pop();
           await tester.pump(const Duration(milliseconds: 400));
           await tester.pump(const Duration(milliseconds: 400));
         }
@@ -258,6 +259,17 @@ void main() {
         await tester.tap(find.byTooltip(tr ? 'Temizle' : 'Clear'));
         await scrollThrough('today', steps: 6);
 
+        // Arama sayfası (TakipSearchDelegate)
+        await tester.tap(find.byIcon(Icons.search));
+        await tester.pump(const Duration(milliseconds: 400));
+        await expectClean('search page');
+        await tester.enterText(find.byType(TextField).last, 'su');
+        await tester.pump(const Duration(milliseconds: 400));
+        await expectClean('search results');
+        await scrollThrough('search results', steps: 2);
+        await tester.tap(find.byTooltip(tr ? 'Geri' : 'Back').first);
+        await tester.pump(const Duration(milliseconds: 400));
+
         // Goals, todos, habits and roadmaps.
         await openTab(s.tabGoals);
         await tester.tap(find.textContaining(tr ? 'Isı Haritası' : 'Heatmap').first);
@@ -276,6 +288,7 @@ void main() {
         await tester.tap(find.textContaining('Çok uzun başlık').first);
         await tester.pump(const Duration(milliseconds: 400));
         await expectClean('todo edit page');
+        await scrollThrough('todo edit page', steps: 2);
         await back();
 
         final habitsTabFinder = find.textContaining(tr ? 'Zinciri Kırma (' : 'Habits (');
@@ -360,10 +373,46 @@ void main() {
         await tester.tap(find.text(s.activitiesManagement));
         await expectClean('activities');
         await scrollThrough('activities', steps: 2);
+
+        // ActivityMergePage (boş)
+        await tester.tap(find.byIcon(Icons.call_merge_rounded));
+        await tester.pump(const Duration(milliseconds: 400));
+        await expectClean('activity merge page');
+        await scrollThrough('activity merge page', steps: 2);
+        await back();
+
+        // ActivityPage
+        await tester.tap(find.text('Su').first);
+        await tester.pump(const Duration(milliseconds: 400));
+        await expectClean('activity page');
+        await scrollThrough('activity page', steps: 3);
+        await back();
+
+        // ActivityMergePage (dolu - etki kartı ve uyarılar)
+        final navCtx = tester.element(find.byType(Navigator).first);
+        Navigator.push(
+          navCtx,
+          MaterialPageRoute(
+            builder: (_) => ActivityMergePage(
+              initialFromActivity: store.activities.values.first,
+              initialIntoActivity: store.activities.values.last,
+            ),
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+        await expectClean('activity merge page populated');
+        await scrollThrough('activity merge page populated', steps: 3);
+        await back();
+
         await back();
         await scrollThrough('settings', steps: 3);
         final settingsList = find.descendant(of: find.byType(ManagePage), matching: find.byType(ListView));
-        for (final page in [s.sectionNotificationsReminders, s.sectionHealthTracking, s.sectionBackupReports]) {
+        for (final page in [
+          s.sectionNotificationsReminders,
+          s.sectionHealthTracking,
+          s.sectionBackupReports,
+          tr ? 'Yapay Zekâ & API (BYOK)' : 'AI & API Key (BYOK)',
+        ]) {
           // Coming back from a page leaves the list where it was; the next row may be out of sight.
           await tester.drag(settingsList, const Offset(0, 3000));
           await tester.pump(const Duration(milliseconds: 300));

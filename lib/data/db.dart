@@ -230,9 +230,11 @@ class AppDb {
       created_at INTEGER NOT NULL,
       due_date TEXT,
       target_amount REAL,
+      target_unit TEXT,
       done_at INTEGER,
       manual_state TEXT,
       sort_order INTEGER NOT NULL DEFAULT 0)''');
+    await ensureColumn(db, 'todos', 'target_unit', 'TEXT');
     await db.execute('''CREATE TABLE IF NOT EXISTS todo_links(
       todo_id INTEGER NOT NULL,
       activity_id INTEGER NOT NULL,
@@ -406,6 +408,10 @@ class AppDb {
     'roadmaps',
     'roadmap_steps',
     'activity_properties',
+    'activity_reminders',
+    'routines',
+    'routine_items',
+    'goal_checkins',
     'todos',
     'todo_links',
   ];

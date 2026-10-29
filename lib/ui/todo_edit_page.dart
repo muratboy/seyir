@@ -26,6 +26,7 @@ class _TodoEditPageState extends State<TodoEditPage> {
 
   DateTime? _dueDate;
   late List<int> _linkedActivityIds;
+  String? _targetUnit;
 
   @override
   void initState() {
@@ -39,6 +40,8 @@ class _TodoEditPageState extends State<TodoEditPage> {
         ? DateTime.tryParse(widget.todo.dueDate!)
         : null;
     _linkedActivityIds = List.from(widget.todo.linkedActivityIds);
+    _targetUnit = widget.todo.targetUnit ??
+        (_linkedActivityIds.isNotEmpty ? store.activityBaseUnit(_linkedActivityIds.first) : null);
   }
 
   @override
@@ -63,6 +66,7 @@ class _TodoEditPageState extends State<TodoEditPage> {
       note: note.isNotEmpty ? note : null,
       dueDate: dueDateStr,
       targetAmount: targetAmount,
+      targetUnit: _targetUnit,
     );
 
     await store.updateTodo(updated, activityIds: _linkedActivityIds);
@@ -240,16 +244,47 @@ class _TodoEditPageState extends State<TodoEditPage> {
 
                 const SizedBox(height: 14),
 
-                // Hedef Miktar
+                // Hedef Miktar ve Birim
                 if (_linkedActivityIds.isNotEmpty) ...[
-                  TextField(
-                    controller: _amountController,
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    decoration: InputDecoration(
-                      labelText: s.isTr ? 'Hedef Miktar (isteğe bağlı)' : 'Target Amount (optional)',
-                      hintText: s.isTr ? 'Boş bırakılırsa ilk bağlı kayıt yeterlidir' : 'Leave empty to complete on first entry',
-                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
-                    ),
+                  Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Expanded(
+                        flex: 3,
+                        child: TextField(
+                          controller: _amountController,
+                          keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                          decoration: InputDecoration(
+                            labelText: s.isTr ? 'Hedef Miktar' : 'Target Amount',
+                            hintText: s.isTr ? 'İsteğe bağlı' : 'Optional',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        flex: 2,
+                        child: DropdownButtonFormField<String>(
+                          initialValue: _targetUnit ?? store.activityBaseUnit(_linkedActivityIds.first),
+                          decoration: InputDecoration(
+                            labelText: s.isTr ? 'Birim' : 'Unit',
+                            border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                          ),
+                          items: [
+                            for (final u in store.allUnits)
+                              DropdownMenuItem(
+                                value: u.id,
+                                child: Text(u.symbol.isNotEmpty ? u.symbol : u.name),
+                              ),
+                          ],
+                          onChanged: (val) {
+                            if (val != null) {
+                              setState(() => _targetUnit = val);
+                            }
+                          },
+                        ),
+                      ),
+                    ],
                   ),
                   const SizedBox(height: 16),
                 ],

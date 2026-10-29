@@ -946,7 +946,6 @@ void main() {
       final summary1 = store.getDaySummary(day);
       expect(summary1.count, equals(2));
       expect(summary1.totalTimeMinutes, equals(45.0));
-      expect(summary1.totalVolumeLiters, equals(0.5));
       expect(summary1.activityCounts[1], equals(1));
       expect(summary1.activityCounts[2], equals(1));
 

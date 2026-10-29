@@ -196,12 +196,16 @@ class TodoInputParser {
       final mUnit = mUnitId != null ? builtinUnits.where((u) => u.id == mUnitId).firstOrNull : null;
 
       final wordsLower = cleaned.toLowerCase().split(RegExp(r'\s+'));
+      final hasSecond = wordsLower.any((w) => w.contains('saniye') || w == 'sn' || w.startsWith('sn'));
       final hasMinute = wordsLower.any((w) => w.contains('dakika') || w == 'dk' || w.startsWith('dk'));
       final hasHour = wordsLower.any((w) => w.contains('saat') || w == 'sa');
 
-      if (nlResult.targetMinutes != null) {
-        suggestedAmount = nlResult.targetMinutes!.toDouble();
-        suggestedUnit = 'dk';
+      if (mUnit != null && mUnit.id == 'sn') {
+        suggestedAmount = nlResult.quantity;
+        suggestedUnit = 'sn';
+      } else if (hasSecond) {
+        suggestedAmount = nlResult.hasExplicitQuantity ? nlResult.quantity : 60.0;
+        suggestedUnit = 'sn';
       } else if (mUnit != null && mUnit.dim == 'time') {
         // Süre birimleri dakikaya normalize edilir (1 sa -> 60 dk, 30 dk -> 30 dk)
         suggestedAmount = mUnitId == 'sa' ? (nlResult.quantity * 60) : nlResult.quantity;
@@ -212,9 +216,12 @@ class TodoInputParser {
       } else if (hasHour) {
         suggestedAmount = (nlResult.hasExplicitQuantity ? nlResult.quantity : 1.0) * 60;
         suggestedUnit = 'dk';
+      } else if (nlResult.targetMinutes != null) {
+        suggestedAmount = nlResult.targetMinutes!.toDouble();
+        suggestedUnit = 'dk';
       } else if (nlResult.hasExplicitQuantity) {
         suggestedAmount = nlResult.quantity;
-        suggestedUnit = mUnit?.symbol ?? m?.name;
+        suggestedUnit = mUnit?.id ?? m?.unitId ?? mUnit?.symbol ?? m?.name;
       }
     }
 

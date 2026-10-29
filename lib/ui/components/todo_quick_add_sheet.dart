@@ -128,6 +128,7 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
       createdAt: DateTime.now().millisecondsSinceEpoch,
       dueDate: dueDateStr,
       targetAmount: _targetAmount,
+      targetUnit: _targetUnit,
     );
 
     await store.createTodo(

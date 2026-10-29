@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:io';
 import 'dart:isolate';
 
 import 'package:flutter/services.dart';
@@ -96,6 +97,55 @@ void main() {
       expect(await _entryRows(app, act.id), hasLength(1));
       expect(app.activeTimers, isEmpty, reason: 'the stale copy must be dropped');
       expect(await app.finishTimer(t.id), isNull);
+    });
+
+    test('H4: store.refresh() sonrasında sayaçların isCollapsed durumu korunur', () async {
+      final s = await openStore();
+      final act = await s.addActivity('Ders');
+      final t = await s.startTimer(act.id);
+      s.toggleTimerCollapse(t.id);
+      expect(s.getTimer(t.id)!.isCollapsed, isTrue);
+      await s.refresh();
+      expect(s.getTimer(t.id)!.isCollapsed, isTrue);
+    });
+
+    test('H6: Geri yükleme öncesi güvenlik yedeği alınamazsa işlem iptal edilir ve veriler korunur', () async {
+      final s = await openStore();
+      final act = await s.addActivity('Önemli Aktivite');
+      await s.addEntry(act.id, value: 10, unitId: 'dk');
+      final initialEntries = List.of(s.entries);
+
+      // Simüle edilen snapshot hatası
+      BackupService.snapshotOverrideForTest = (_) => throw FileSystemException('Disk dolu');
+      addTearDown(() => BackupService.snapshotOverrideForTest = null);
+
+      final dummyBackup = await s.exportJson();
+
+      // Türkçe hata kontrolü
+      strings.value = const AppStrings(AppLanguage.tr);
+      await expectLater(
+        s.importJson(dummyBackup),
+        throwsA(isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Geri yükleme öncesi güvenlik yedeği alınamadı'),
+        )),
+      );
+
+      // İngilizce hata kontrolü
+      strings.value = const AppStrings(AppLanguage.en);
+      await expectLater(
+        s.importJson(dummyBackup),
+        throwsA(isA<StateError>().having(
+          (e) => e.message,
+          'message',
+          contains('Failed to create safety backup before restore'),
+        )),
+      );
+
+      // Veriler silinmemiş olmalı
+      expect(s.entries.length, initialEntries.length);
+      expect(s.activities.containsKey(act.id), isTrue);
     });
 
     test('a countdown paused from another isolate is not auto-saved as completed', () async {
@@ -1168,6 +1218,123 @@ void main() {
       expect(s.activities.keys, [rest.id]);
       expect(s.entries, hasLength(2));
     });
+
+    test('H3 Delete: deleteActivity removes all referencing reminders, routine items, and leaves no orphaned references in any table', () async {
+      final s = await openStore();
+      final act = await s.addActivity('Koşu');
+
+      // Hatırlatıcı kur
+      await s.saveActivityReminder(ActivityReminder(
+        id: 0,
+        activityId: act.id,
+        time: '07:00',
+      ));
+
+      // Rutin öğesi kur
+      await s.saveRoutine(Routine(
+        id: 0,
+        name: 'Sabah Rutini',
+        items: [RoutineItem(activityId: act.id, qty: 10)],
+      ));
+
+      // Kayıt, hedef, todo, timer, quickItem kur
+      await s.addEntry(act.id);
+      final g = Goal(
+        id: 0,
+        name: 'Koşu Hedefi',
+        mode: 'count',
+        target: 1,
+        period: GoalPeriod.day,
+        startDate: 0,
+        createdAt: 0,
+        links: [GoalLink(activityId: act.id, pct: 100)],
+      );
+      await s.saveGoal(g);
+      await s.createTodo(Todo(id: 0, title: 'Koş', createdAt: 0), activityIds: [act.id]);
+      await s.startTimer(act.id);
+
+      // Aktiviteyi sil
+      await s.deleteActivity(act.id);
+
+      // Bellek denetimi
+      expect(s.activities.containsKey(act.id), isFalse);
+      expect(s.activityReminders.any((r) => r.activityId == act.id), isFalse);
+      expect(s.routines.first.items.any((it) => it.activityId == act.id), isFalse);
+
+      // Veritabanı koruma denetimi: sqlite_master içindeki activity_id veya linked_activity_id içeren hiçbir tabloda act.id kalmamalı
+      final d = await s.db;
+      final tables = await d.query('sqlite_master', columns: ['name'], where: "type = 'table' AND name NOT LIKE 'sqlite_%'");
+      for (final trow in tables) {
+        final tName = trow['name'] as String;
+        final colInfo = await d.rawQuery('PRAGMA table_info($tName)');
+        final hasActId = colInfo.any((c) => c['name'] == 'activity_id');
+        final hasLinkedActId = colInfo.any((c) => c['name'] == 'linked_activity_id');
+        if (hasActId) {
+          final res = await d.rawQuery('SELECT COUNT(*) as c FROM $tName WHERE activity_id = ?', [act.id]);
+          final count = (res.first['c'] as int?) ?? 0;
+          expect(count, 0, reason: '$tName tablosunda silinen aktivite kimliği (${act.id}) kaldı!');
+        }
+        if (hasLinkedActId) {
+          final res = await d.rawQuery('SELECT COUNT(*) as c FROM $tName WHERE linked_activity_id = ?', [act.id]);
+          final count = (res.first['c'] as int?) ?? 0;
+          expect(count, 0, reason: '$tName tablosunda silinen aktivite kimliği (${act.id}) kaldı!');
+        }
+      }
+    });
+
+    test('H3 Merge: mergeActivity moves reminders & routines to target activity, deduplicates, and leaves no references to fromId', () async {
+      final s = await openStore();
+      final actOld = await s.addActivity('Kosu');
+      final actNew = await s.addActivity('Koşu');
+
+      // Her ikisine de aynı saatte hatırlatıcı kur (çift - tekilleşmeli)
+      await s.saveActivityReminder(ActivityReminder(id: 0, activityId: actOld.id, time: '08:00', daysOfWeek: '1,2,3,4,5'));
+      await s.saveActivityReminder(ActivityReminder(id: 0, activityId: actNew.id, time: '08:00', daysOfWeek: '1,2,3,4,5'));
+      // actOld'a farklı bir saatte de hatırlatıcı kur (taşınmalı)
+      await s.saveActivityReminder(ActivityReminder(id: 0, activityId: actOld.id, time: '18:00', daysOfWeek: '1,2,3,4,5'));
+
+      // Rutin kur (aynı rutinde ikisi de var - tekilleşmeli)
+      await s.saveRoutine(Routine(
+        id: 0,
+        name: 'Spor Rutini',
+        items: [
+          RoutineItem(activityId: actOld.id, qty: 10),
+          RoutineItem(activityId: actNew.id, qty: 10),
+        ],
+      ));
+
+      await s.mergeActivity(actOld.id, actNew.id);
+
+      // Hatırlatıcılar tekilleşmiş ve taşınmış olmalı: 08:00 (1 adet) + 18:00 (1 adet) = 2 adet, hepsi actNew.id altında
+      expect(s.activityReminders, hasLength(2));
+      for (final r in s.activityReminders) {
+        expect(r.activityId, actNew.id);
+      }
+
+      // Rutin tekilleşmiş olmalı: 1 adet actNew.id
+      expect(s.routines.first.items, hasLength(1));
+      expect(s.routines.first.items.first.activityId, actNew.id);
+
+      // Veritabanı koruma denetimi: hiçbir tabloda actOld.id kalmamalı
+      final d = await s.db;
+      final tables = await d.query('sqlite_master', columns: ['name'], where: "type = 'table' AND name NOT LIKE 'sqlite_%'");
+      for (final trow in tables) {
+        final tName = trow['name'] as String;
+        final colInfo = await d.rawQuery('PRAGMA table_info($tName)');
+        final hasActId = colInfo.any((c) => c['name'] == 'activity_id');
+        final hasLinkedActId = colInfo.any((c) => c['name'] == 'linked_activity_id');
+        if (hasActId) {
+          final res = await d.rawQuery('SELECT COUNT(*) as c FROM $tName WHERE activity_id = ?', [actOld.id]);
+          final count = (res.first['c'] as int?) ?? 0;
+          expect(count, 0, reason: '$tName tablosunda birleştirilen eski aktivite kimliği (${actOld.id}) kaldı!');
+        }
+        if (hasLinkedActId) {
+          final res = await d.rawQuery('SELECT COUNT(*) as c FROM $tName WHERE linked_activity_id = ?', [actOld.id]);
+          final count = (res.first['c'] as int?) ?? 0;
+          expect(count, 0, reason: '$tName tablosunda birleştirilen eski aktivite kimliği (${actOld.id}) kaldı!');
+        }
+      }
+    });
   });
 
   group('Natural language parser', () {
@@ -1577,6 +1744,141 @@ void main() {
       expect(app.loaded, isTrue);
       expect(app.entries, hasLength(1));
       expect(app.goals, isEmpty);
+    });
+
+    test('H2 Guard: Every user table in sqlite_master is explicitly included in AppDb.tables', () async {
+      final s = await openStore();
+      final d = await s.db;
+      final rows = await d.query(
+        'sqlite_master',
+        columns: ['name'],
+        where: "type = 'table' AND name NOT LIKE 'sqlite_%' AND name != 'android_metadata'",
+      );
+      final masterTables = rows.map((r) => r['name'] as String).toSet();
+      for (final table in masterTables) {
+        expect(
+          AppDb.tables.contains(table),
+          isTrue,
+          reason: 'Veritabanında bulunan "$table" tablosu AppDb.tables yedekleme listesine eklenmemiş! Yedekleme koruma testi kırıldı.',
+        );
+      }
+    });
+
+    test('H2 Roundtrip: Full database with routines, routine_items, activity_reminders, goal_checkins is 100% preserved', () async {
+      final s = await openStore();
+      final act = await s.addActivity('Sabah Egzersizi', emoji: '🧘');
+      final goal = Goal(
+        id: 0,
+        name: 'Günlük Egzersiz',
+        mode: 'count',
+        period: GoalPeriod.day,
+        target: 1,
+        startDate: 0,
+        createdAt: 0,
+        links: [GoalLink(activityId: act.id, pct: 100)],
+      );
+      await s.saveGoal(goal);
+
+      // 1. Hatırlatıcı ekle
+      await s.saveActivityReminder(ActivityReminder(
+        id: 0,
+        activityId: act.id,
+        time: '08:30',
+        daysOfWeek: '1,2,3,4,5',
+        customMessage: 'Egzersiz vakti!',
+      ));
+
+      // 2. Rutin ve Rutin Öğesi ekle
+      await s.saveRoutine(Routine(
+        id: 0,
+        name: 'Güne Başlangıç',
+        emoji: '🌅',
+        items: [
+          RoutineItem(activityId: act.id, qty: 15.0, note: 'Isınma'),
+        ],
+      ));
+
+      // 3. Goal Check-in ekle
+      await s.toggleGoalCheckin(goal, done: true);
+
+      // Dışa aktar
+      final backupJson = await s.exportJson();
+      final decoded = jsonDecode(backupJson) as Map<String, dynamic>;
+      expect((decoded['routines'] as List), hasLength(1));
+      expect((decoded['routine_items'] as List), hasLength(1));
+      expect((decoded['activity_reminders'] as List), hasLength(1));
+      expect((decoded['goal_checkins'] as List), hasLength(1));
+
+      // Veritabanını temizleyen yeni bir store'a geri yükle
+      final s2 = await openStore();
+      await s2.importJson(backupJson);
+
+      expect(s2.activityReminders, hasLength(1));
+      expect(s2.activityReminders.first.time, '08:30');
+      expect(s2.activityReminders.first.activityId, act.id);
+      expect(s2.activityReminders.first.customMessage, 'Egzersiz vakti!');
+
+      expect(s2.routines, hasLength(1));
+      expect(s2.routines.first.name, 'Güne Başlangıç');
+      expect(s2.routines.first.items, hasLength(1));
+      expect(s2.routines.first.items.first.activityId, act.id);
+      expect(s2.routines.first.items.first.note, 'Isınma');
+
+      final restoredGoal = s2.goals.firstWhere((g) => g.name == 'Günlük Egzersiz');
+      expect(s2.isGoalCheckinDone(restoredGoal), isTrue);
+    });
+
+    test('H2 Orphan cleanup: restoring a backup with missing/orphaned references cleans up invalid child rows', () async {
+      final s = await openStore();
+      await s.addActivity('Su');
+      await s.saveGoal(Goal(
+        id: 10,
+        name: 'Su Hedefi',
+        mode: 'count',
+        period: GoalPeriod.day,
+        target: 1,
+        startDate: 0,
+        createdAt: 0,
+      ));
+      await s.saveRoutine(Routine(id: 20, name: 'Sabah Rutini'));
+
+      final backupMap = jsonDecode(await s.exportJson()) as Map<String, dynamic>;
+
+      // Yetim satırlar ekle: Var olmayan aktivite 999 ve var olmayan hedef 888
+      (backupMap['activity_reminders'] as List).add({
+        'id': 101,
+        'activity_id': 999, // Yok
+        'time': '12:00',
+        'days_of_week': '1,2,3',
+        'is_enabled': 1,
+        'custom_message': 'Yetim hatırlatıcı',
+      });
+      (backupMap['routine_items'] as List).add({
+        'id': 201,
+        'routine_id': 20,
+        'activity_id': 999, // Yok
+        'qty': 1.0,
+        'sort': 0,
+      });
+      (backupMap['goal_checkins'] as List).add({
+        'id': 301,
+        'goal_id': 888, // Yok
+        'period_key': '2026-10-29',
+        'created_at': DateTime.now().millisecondsSinceEpoch,
+      });
+
+      await s.importJson(jsonEncode(backupMap));
+
+      // İçe aktarma sonrası yetim satırlar temizlenmiş olmalı
+      final d = await s.db;
+      final orphanReminders = await d.query('activity_reminders', where: 'activity_id = 999');
+      expect(orphanReminders, isEmpty);
+
+      final orphanItems = await d.query('routine_items', where: 'activity_id = 999');
+      expect(orphanItems, isEmpty);
+
+      final orphanCheckins = await d.query('goal_checkins', where: 'goal_id = 888');
+      expect(orphanCheckins, isEmpty);
     });
   });
 
