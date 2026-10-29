@@ -272,6 +272,8 @@ void main() {
         await scrollToTop();
         await tester.tap(find.byType(FilterChip).at(1));
         await expectClean('stats, one activity');
+        await tester.ensureVisible(find.byType(ChoiceChip).first);
+        await tester.pump(const Duration(milliseconds: 300));
         await tester.tap(find.byType(ChoiceChip).first);
         await expectClean('stats, one activity by entries');
         await scrollThrough('stats, one activity');

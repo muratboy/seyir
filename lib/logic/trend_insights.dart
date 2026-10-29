@@ -59,7 +59,7 @@ List<TrendInsight> computeWeeklyInsights({
 
   // 1. Tutulan Hedefler (Goal Met)
   for (final g in store.goals) {
-    final status = store.goalStatus(g);
+    final status = store.goalStatus(g, at: now);
     if (status.done && status.value > 0) {
       final actId = g.links.firstOrNull?.activityId;
       insights.add(
