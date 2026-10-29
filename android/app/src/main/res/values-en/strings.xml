@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Seyir</string>
+    <string name="todo_widget_name">To-dos</string>
+    <string name="todo_widget_description">Track your to-dos and single-step goals</string>
+</resources>

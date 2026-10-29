@@ -218,7 +218,25 @@ class AppDb {
     try {
       await db.execute('CREATE UNIQUE INDEX IF NOT EXISTS idx_goal_checkins ON goal_checkins(goal_id, period_key)');
     } catch (_) {}
+    await _ensureTodoTables(db);
     await _ensureDefaultMeasures(db);
+  }
+
+  static Future<void> _ensureTodoTables(DatabaseExecutor db) async {
+    await db.execute('''CREATE TABLE IF NOT EXISTS todos(
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      note TEXT,
+      created_at INTEGER NOT NULL,
+      due_date TEXT,
+      target_amount REAL,
+      done_at INTEGER,
+      manual_state TEXT,
+      sort_order INTEGER NOT NULL DEFAULT 0)''');
+    await db.execute('''CREATE TABLE IF NOT EXISTS todo_links(
+      todo_id INTEGER NOT NULL,
+      activity_id INTEGER NOT NULL,
+      PRIMARY KEY(todo_id, activity_id))''');
   }
 
   /// Doğal dilde yazılan birimlerin ("500 ml", "2 kg", "45 sn", "500 m") doğru ölçüye bağlanabilmesi için
@@ -388,5 +406,7 @@ class AppDb {
     'roadmaps',
     'roadmap_steps',
     'activity_properties',
+    'todos',
+    'todo_links',
   ];
 }

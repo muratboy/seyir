@@ -4,8 +4,10 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 import 'package:sqflite/sqflite.dart';
 
+import '../logic/activity_format_analysis.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/text_match.dart';
@@ -15,6 +17,7 @@ import '../services/backup_service.dart';
 import '../services/health_tracker_service.dart';
 import '../services/nl_parser.dart';
 import '../services/notification_service.dart';
+import '../widget_sync.dart';
 import 'db.dart';
 import 'models.dart';
 
@@ -194,6 +197,8 @@ class AppStore extends ChangeNotifier {
   List<Roadmap> get activeRoadmaps => roadmaps.where((r) => r.isActive).toList();
   List<ActivityReminder> activityReminders = [];
   List<Routine> routines = [];
+  List<Todo> todos = [];
+  final ValueNotifier<String?> todoCompletedNotifier = ValueNotifier<String?>(null);
   final Set<String> _goalCheckins = {};
   bool loaded = false;
 
@@ -467,10 +472,22 @@ class AppStore extends ChangeNotifier {
       return r;
     }).toList();
 
+    final todoRows = await d.query('todos', orderBy: 'sort_order ASC, created_at ASC, id ASC');
+    final todoLinkRows = await d.query('todo_links');
+    todos = todoRows.map((m) {
+      final t = Todo.fromMap(m);
+      t.linkedActivityIds = todoLinkRows
+          .where((l) => l['todo_id'] == t.id)
+          .map((l) => l['activity_id'] as int)
+          .toList();
+      return t;
+    }).toList();
+
     loaded = true;
     // Kayıtlar başka bir yerde değişmiş olabilir (başka bir isolate, geri yüklenen yedek): adımlar sessizce
     // kayıtlara uydurulur.
     await _syncLinkedSteps(announce: false);
+    await _syncTodos(announce: false);
     // Uygulama kapalıyken ya da arka plandayken süresi dolmuş geri sayımlar kaydedilir.
     await checkCompletedTimers();
     _ensureTimerTicker();
@@ -1315,6 +1332,7 @@ class AppStore extends ChangeNotifier {
     await d.transaction((tx) async {
       await tx.delete('entries', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('goal_links', where: 'activity_id=?', whereArgs: [id]);
+      await tx.delete('todo_links', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('quick_items', where: 'activity_id=?', whereArgs: [id]);
       await tx.delete('activity_properties', where: 'activity_id=?', whereArgs: [id]);
       await tx.update('roadmap_steps', {'linked_activity_id': null}, where: 'linked_activity_id=?', whereArgs: [id]);
@@ -1329,6 +1347,20 @@ class AppStore extends ChangeNotifier {
     }
     for (final g in goals) {
       g.links.removeWhere((l) => l.activityId == id);
+    }
+    final now = DateTime.now().millisecondsSinceEpoch;
+    for (final t in todos) {
+      if (t.linkedActivityIds.remove(id)) {
+        if (t.linkedActivityIds.isEmpty) {
+          final wasDone = t.doneAt != null || t.manualState == 'done';
+          t.manualState = null;
+          t.doneAt = wasDone ? (t.doneAt ?? now) : null;
+          await d.update('todos', {
+            'done_at': t.doneAt,
+            'manual_state': null,
+          }, where: 'id = ?', whereArgs: [t.id]);
+        }
+      }
     }
     quickItems.removeWhere((q) => q.activityId == id);
     if (_singleWidgetActivityId == id) {
@@ -1365,6 +1397,17 @@ class AppStore extends ChangeNotifier {
         } else if (hasFrom) {
           await tx.delete('goal_links',
               where: 'goal_id=? AND activity_id=?', whereArgs: [g.id, fromId]);
+        }
+      }
+      for (final t in todos) {
+        final hasFrom = t.linkedActivityIds.contains(fromId);
+        final hasInto = t.linkedActivityIds.contains(intoId);
+        if (hasFrom && !hasInto) {
+          await tx.update('todo_links', {'activity_id': intoId},
+              where: 'todo_id=? AND activity_id=?', whereArgs: [t.id, fromId]);
+        } else if (hasFrom) {
+          await tx.delete('todo_links',
+              where: 'todo_id=? AND activity_id=?', whereArgs: [t.id, fromId]);
         }
       }
       await tx.delete('activities', where: 'id=?', whereArgs: [fromId]);
@@ -1590,6 +1633,7 @@ class AppStore extends ChangeNotifier {
     _insertSorted(e);
     _changed();
     await _syncLinkedSteps();
+    await _syncTodos();
     final afterDone = _doneTargetGoalIds(activityId, time);
     final afterExceeded = _exceededLimitGoalIds(activityId, time);
     final achieved = goals.where((g) => afterDone.contains(g.id) && !beforeDone.contains(g.id)).toList();
@@ -1662,6 +1706,7 @@ class AppStore extends ChangeNotifier {
     await (await db).update('entries', e.toMap(), where: 'id=?', whereArgs: [e.id]);
     _changed();
     await _syncLinkedSteps();
+    await _syncTodos();
   }
 
   Future<void> deleteEntry(Entry e) async {
@@ -1669,6 +1714,7 @@ class AppStore extends ChangeNotifier {
     entries.removeWhere((x) => x.id == e.id);
     _changed();
     await _syncLinkedSteps();
+    await _syncTodos();
   }
 
   Future<void> restoreEntry(Entry e) async {
@@ -1678,6 +1724,7 @@ class AppStore extends ChangeNotifier {
     _insertSorted(e);
     _changed();
     await _syncLinkedSteps();
+    await _syncTodos();
   }
 
   // ---------------------------------------------------------------- kronometre
@@ -2047,6 +2094,7 @@ class AppStore extends ChangeNotifier {
     }
     _changed();
     await _syncLinkedSteps();
+    await _syncTodos();
 
     // Hedef henüz tamamlanmadan manuel bitirildiyse veya açıkça istenmişse alarmı iptal et.
     // Ancak süre bitip otomatik kaydedildiyse bildirim ekranda kalmaya devam etsin!
@@ -2208,6 +2256,10 @@ class AppStore extends ChangeNotifier {
     // Eğer kayıt birimliyse ve boyutu hedef boyutuyla aynıysa (örn: 200 ml vişne suyu -> Litre sıvı alımı hedefi),
     // doğrudan kayıt değeri baz alınır (özelliklere zorla yönlendirilmez).
     if (targetProp == null) {
+      if (gu.dim == 'time' && e.duration != null && e.duration!.inMilliseconds > 0) {
+        final mins = e.duration!.inMilliseconds / 60000.0;
+        return mins * (unit('dk').factor / gu.factor) * f * (link?.customRate ?? 1.0);
+      }
       if (e.unitId != null && e.value != null) {
         final eu = unit(e.unitId!);
         if (eu.dim == gu.dim) {
@@ -2216,7 +2268,7 @@ class AppStore extends ChangeNotifier {
         }
       } else if (gu.dim == 'count') {
         // Hedef adet/sayı boyutunda ve kayıt da ölçüsüz/sayı
-        return e.qty * f / gu.factor;
+        return (e.value ?? e.qty) * f / gu.factor;
       }
 
       // Kayıt doğrudan hedef boyutuna uymuyorsa (örn: kayıt 200 ml veya 1 adet, ama hedef Kalori/kcal veya C Vitamini/mg):
@@ -2306,7 +2358,10 @@ class AppStore extends ChangeNotifier {
 
     // 4. Klasik doğrudan birim/değer eşleşmesi
     if (e.unitId == null || e.value == null) {
-      if (gu.dim == 'count') return e.qty * f / gu.factor;
+      if (gu.dim == 'count') return (e.value ?? e.qty) * f / gu.factor;
+      if (e.unitId == null && (e.value != null || e.qty > 0) && (gu.dim == 'time' || activityBaseUnit(e.activityId) == gu.id)) {
+        return (e.value ?? e.qty) * f * (link?.customRate ?? 1.0);
+      }
       return null;
     }
     final eu = unit(e.unitId!);
@@ -3516,6 +3571,8 @@ class AppStore extends ChangeNotifier {
     'roadmaps': Roadmap.fromMap,
     'roadmap_steps': RoadmapStep.fromMap,
     'activity_properties': ActivityProperty.fromMap,
+    'todos': Todo.fromMap,
+    'todo_links': TodoLink.fromMap,
   };
 
   /// Yedeği veritabanına dokunmadan önce doğrular ve tablo başına satırları döner. load()'un okuyamayacağı
@@ -4028,5 +4085,544 @@ class AppStore extends ChangeNotifier {
       'completed_at': null,
     }, where: 'id = ?', whereArgs: [roadmapId]);
     _changed();
+  }
+
+  // ---------------------------------------------------------------- YAPILACAKLAR (TODOS)
+
+  /// Aktivitenin kayıt biçimini (süre, miktar, olay) döner.
+  ActivityFormat activityFormat(int activityId) {
+    final act = activity(activityId);
+    final actEntries = entriesForActivity(activityId);
+    if (actEntries.isNotEmpty) {
+      return ActivityFormatAnalysis.detectFormat(
+        activity: act,
+        entries: actEntries,
+        unitOf: unit,
+      );
+    }
+
+    // İstatistikte kayıtlı ana boyut varsa
+    final mainDim = stats[activityId]?.mainDim;
+    if (mainDim == 'time') return ActivityFormat.duration;
+    if (mainDim != null && mainDim != 'count' && mainDim != 'times') return ActivityFormat.quantity;
+
+    // Bağlı hedefler
+    final linkedGoals = goalsForActivity(activityId);
+    for (final (g, _) in linkedGoals) {
+      if (!g.isCount && g.unitId != null) {
+        final u = unit(g.unitId!);
+        if (u.dim == 'time') return ActivityFormat.duration;
+        if (u.dim != 'count') return ActivityFormat.quantity;
+      }
+    }
+
+    // Bağlı yol haritası adımları
+    for (final r in roadmaps) {
+      for (final step in r.steps) {
+        if (step.linkedActivityId == activityId && step.unit != null) {
+          final u = _unitNamed(step.unit);
+          if (u?.dim == 'time') return ActivityFormat.duration;
+          if (u != null && u.dim != 'count') return ActivityFormat.quantity;
+        }
+      }
+    }
+
+    // Aktivitenin tanımlı özellikleri
+    for (final p in activityProperties(activityId)) {
+      final u = unit(p.unitId);
+      if (u.dim == 'time') return ActivityFormat.duration;
+      if (u.dim != 'count') return ActivityFormat.quantity;
+    }
+
+    // Aktivitenin var olan kayıtlarındaki birimler
+    for (final e in entries.where((e) => e.activityId == activityId && e.unitId != null)) {
+      final u = unit(e.unitId!);
+      if (u.dim == 'time') return ActivityFormat.duration;
+      if (u.dim != 'count') return ActivityFormat.quantity;
+    }
+
+    // Daha önce bu aktiviteyle kullanılmış ölçüler
+    final (usedMeasures, _) = measuresFor(activityId);
+    for (final m in usedMeasures) {
+      final u = unit(m.unitId);
+      if (u.dim == 'time') return ActivityFormat.duration;
+      if (u.dim != 'count') return ActivityFormat.quantity;
+    }
+
+    // Adından akıllı çıkarım (koşu, yürüyüş, çalışma vb. süre odaklı; su, çay vb. miktar odaklı)
+    final norm = act.norm;
+    if (norm.contains('yuru') || norm.contains('kos') || norm.contains('spor') ||
+        norm.contains('calis') || norm.contains('ders') || norm.contains('uyku') ||
+        norm.contains('odak') || norm.contains('yuz') || norm.contains('bisiklet')) {
+      return ActivityFormat.duration;
+    }
+    if (norm.contains('su') || norm.contains('cay') || norm.contains('kahve') ||
+        norm.contains('sut') || norm.contains('ayran') || norm.contains('icecek')) {
+      return ActivityFormat.quantity;
+    }
+
+    return ActivityFormat.event;
+  }
+
+  /// Aktivitenin temel depolama birim kimliğini döner ('dk', 'l', 'g', 'adet' vb.).
+  String activityBaseUnit(int activityId) {
+    final format = activityFormat(activityId);
+    if (format == ActivityFormat.duration) return 'dk';
+
+    // Aktiviteye bağlı bir hedef varsa onun birimi önceliklidir
+    final linkedGoals = goalsForActivity(activityId);
+    for (final (g, _) in linkedGoals) {
+      if (!g.isCount && g.unitId != null && g.unitId!.isNotEmpty) {
+        return g.unitId!;
+      }
+    }
+
+    // Bağlı yol haritası adımları
+    for (final r in roadmaps) {
+      for (final step in r.steps) {
+        if (step.linkedActivityId == activityId && step.unit != null) {
+          final u = _unitNamed(step.unit);
+          if (u != null && u.dim != 'count') return u.id;
+        }
+      }
+    }
+
+    // Aktivitenin tanımlı özellikleri
+    for (final p in activityProperties(activityId)) {
+      final u = unit(p.unitId);
+      if (u.dim == 'volume') return 'l';
+      if (u.dim == 'mass') return u.factor >= 1000 ? 'kg' : 'g';
+      if (u.dim == 'distance') return u.factor >= 1000 ? 'km' : 'm';
+      if (u.dim == 'time') return 'dk';
+      if (u.dim != 'count') return p.unitId;
+    }
+
+    // Aktivitenin var olan kayıtlarındaki birimler
+    for (final e in entries.where((e) => e.activityId == activityId && e.unitId != null)) {
+      final u = unit(e.unitId!);
+      if (u.dim == 'volume') return 'l';
+      if (u.dim == 'mass') return u.factor >= 1000 ? 'kg' : 'g';
+      if (u.dim == 'distance') return u.factor >= 1000 ? 'km' : 'm';
+      if (u.dim == 'time') return 'dk';
+      if (u.dim != 'count') return e.unitId!;
+    }
+
+    // Daha önce bu aktiviteyle kullanılmış ölçüler
+    final (usedMeasures, _) = measuresFor(activityId);
+    for (final m in usedMeasures) {
+      final u = unit(m.unitId);
+      if (u.dim == 'volume') return 'l';
+      if (u.dim == 'mass') return u.factor >= 1000 ? 'kg' : 'g';
+      if (u.dim == 'distance') return u.factor >= 1000 ? 'km' : 'm';
+      if (u.dim == 'time') return 'dk';
+      if (u.dim != 'count') return m.unitId;
+    }
+
+    final norm = activity(activityId).norm;
+    if (norm.contains('su') || norm.contains('cay') || norm.contains('kahve') ||
+        norm.contains('sut') || norm.contains('ayran') || norm.contains('icecek')) {
+      return 'l';
+    }
+
+    return 'adet';
+  }
+
+  /// Aktivitenin gösterim birim sembolünü döner ('dk', 'L', 'kg' vb.).
+  String activityUnitSymbol(int activityId) {
+    final baseId = activityBaseUnit(activityId);
+    if (baseId == 'adet') return '';
+    return unit(baseId).symbol;
+  }
+
+  /// Yapılacağa karşılık gelen sanal Hedef nesnesini döner.
+  /// Bütün birim, dönüşüm ve ilerleme hesapları hedeflerin yardımcılarıyla ortaklaşır.
+  Goal todoGoal(Todo todo) {
+    final firstActId = todo.linkedActivityIds.firstOrNull;
+    Unit? titleUnit;
+    if (todo.targetAmount != null) {
+      final words = todo.title.split(RegExp(r'\s+'));
+      for (final w in words) {
+        final u = _unitNamed(w);
+        if (u != null) {
+          titleUnit = u;
+          break;
+        }
+      }
+    }
+
+    final format = firstActId != null ? activityFormat(firstActId) : ActivityFormat.event;
+    final baseUnitId = titleUnit != null
+        ? ((titleUnit.dim == 'volume')
+            ? 'l'
+            : (titleUnit.dim == 'time')
+                ? 'dk'
+                : (titleUnit.dim == 'distance')
+                    ? (titleUnit.factor >= 1000 ? 'km' : 'm')
+                    : (titleUnit.dim == 'mass')
+                        ? (titleUnit.factor >= 1000 ? 'kg' : 'g')
+                        : titleUnit.id)
+        : (firstActId != null ? activityBaseUnit(firstActId) : 'adet');
+
+    final isCount = (todo.targetAmount == null && format == ActivityFormat.event) ||
+        (format == ActivityFormat.event && baseUnitId == 'adet' && todo.targetAmount == null);
+
+    return Goal(
+      id: -todo.id,
+      name: todo.title,
+      mode: isCount ? 'count' : 'amount',
+      unitId: isCount ? null : baseUnitId,
+      target: todo.targetAmount ?? 1.0,
+      period: GoalPeriod.total,
+      startDate: todo.createdAt,
+      createdAt: todo.createdAt,
+      links: [
+        for (final actId in todo.linkedActivityIds)
+          GoalLink(activityId: actId, pct: 100),
+      ],
+    );
+  }
+
+  /// Yapılacağın hesaplanan ilerleme ve tamamlanma durumu.
+  TodoProgress todoProgress(Todo todo) {
+    if (!todo.isLinked) {
+      return TodoProgress(
+        todo: todo,
+        isCompleted: todo.doneAt != null,
+      );
+    }
+
+    final goal = todoGoal(todo);
+    final actIds = todo.linkedActivityIds.toSet();
+    final matchingEntries = entries.where((e) => e.ts >= todo.createdAt && actIds.contains(e.activityId)).toList();
+
+    double current = 0.0;
+    final contributing = <Entry>[];
+
+    if (todo.targetAmount != null) {
+      for (final e in matchingEntries) {
+        final c = contribution(goal, e, 100);
+        if (c != null && c > 0) {
+          current += c;
+          contributing.add(e);
+        }
+      }
+    } else {
+      current = matchingEntries.length.toDouble();
+      contributing.addAll(matchingEntries);
+    }
+
+    final derivedDone = (todo.targetAmount != null)
+        ? (current >= todo.targetAmount! - 1e-9)
+        : matchingEntries.isNotEmpty;
+
+    bool isDone;
+    if (todo.manualState == 'done') {
+      isDone = true;
+    } else if (todo.manualState == 'open') {
+      isDone = false;
+    } else {
+      isDone = derivedDone;
+    }
+
+    final unitSym = todo.targetAmount != null ? goalUnitSymbol(goal) : null;
+
+    return TodoProgress(
+      todo: todo,
+      isCompleted: isDone,
+      currentAmount: current,
+      targetAmount: todo.targetAmount,
+      unitSymbol: unitSym,
+      contributingEntries: contributing,
+    );
+  }
+
+  /// Bağlı bir yapılacağı tamamlarken ilgili miktar ve birimde kayıt açar.
+  /// Biçim ve birim hedeflerin temel birimiyle eşleşir.
+  Future<AddResult> completeTodoWithEntry(
+    Todo todo, {
+    int? activityId,
+    double? amount,
+    String? note,
+    DateTime? at,
+  }) async {
+    final actId = activityId ?? todo.linkedActivityIds.firstOrNull;
+    if (actId == null) {
+      await toggleTodo(todo.id, completed: true);
+      throw StateError('Todo has no linked activity');
+    }
+
+    final goal = todoGoal(todo);
+    final progress = todoProgress(todo);
+    final val = amount ?? (progress.remainingAmount > 0 ? progress.remainingAmount : (todo.targetAmount ?? 1.0));
+    final baseUnitId = goal.unitId ?? activityBaseUnit(actId);
+    final baseU = unit(baseUnitId);
+
+    AddResult result;
+    if (baseU.dim == 'time') {
+      result = await addEntry(
+        actId,
+        value: val,
+        unitId: 'dk',
+        note: note,
+        at: at,
+      );
+    } else if (baseU.dim == 'count') {
+      result = await addEntry(
+        actId,
+        qty: val,
+        value: val,
+        unitId: baseUnitId,
+        note: note,
+        at: at,
+      );
+    } else {
+      result = await addEntry(
+        actId,
+        value: val,
+        unitId: baseUnitId,
+        note: note,
+        at: at,
+      );
+    }
+
+    return result;
+  }
+
+  /// Kayıt değişimlerinde bağlı yapılacakların durumunu günceller.
+  Future<void> _syncTodos({bool announce = true}) async {
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final newlyCompleted = <Todo>[];
+    final d = await db;
+
+    for (final todo in todos) {
+      if (!todo.isLinked) continue;
+      final progress = todoProgress(todo);
+      final derivedDone = (todo.targetAmount != null)
+          ? (progress.currentAmount >= todo.targetAmount!)
+          : progress.contributingEntries.isNotEmpty;
+
+      // Elle durum türetilen durumla aynıysa manualState temizlenir
+      if (todo.manualState != null) {
+        if ((todo.manualState == 'done' && derivedDone) ||
+            (todo.manualState == 'open' && !derivedDone)) {
+          todo.manualState = null;
+          await d.update('todos', {'manual_state': null}, where: 'id = ?', whereArgs: [todo.id]);
+        }
+      }
+
+      final isNowDone = todo.manualState == 'done' || (todo.manualState == null && derivedDone);
+      if (isNowDone && todo.doneAt == null) {
+        todo.doneAt = now;
+        await d.update('todos', {'done_at': now}, where: 'id = ?', whereArgs: [todo.id]);
+        newlyCompleted.add(todo);
+      } else if (!isNowDone && todo.doneAt != null && todo.manualState != 'done') {
+        todo.doneAt = null;
+        await d.update('todos', {'done_at': null}, where: 'id = ?', whereArgs: [todo.id]);
+      }
+    }
+
+    if (announce && newlyCompleted.isNotEmpty) {
+      for (final t in newlyCompleted) {
+        todoCompletedNotifier.value = t.title;
+      }
+    }
+    _changed();
+  }
+
+  /// Yeni bir yapılacak ekler.
+  Future<Todo> createTodo(Todo todo, {List<int>? activityIds}) async {
+    final d = await db;
+    if (activityIds != null) todo.linkedActivityIds = List.from(activityIds);
+    final id = await d.insert('todos', todo.toMap());
+    todo.id = id;
+    for (final actId in todo.linkedActivityIds) {
+      await d.insert('todo_links', {'todo_id': id, 'activity_id': actId});
+    }
+    todos.add(todo);
+    await _syncTodos(announce: false);
+    WidgetSync.schedule();
+    _changed();
+    return todo;
+  }
+
+  /// Mevcut bir yapılacağı günceller.
+  Future<void> updateTodo(Todo todo, {List<int>? activityIds}) async {
+    final d = await db;
+    if (activityIds != null) todo.linkedActivityIds = List.from(activityIds);
+    await d.update('todos', todo.toMap(), where: 'id = ?', whereArgs: [todo.id]);
+    await d.delete('todo_links', where: 'todo_id = ?', whereArgs: [todo.id]);
+    for (final actId in todo.linkedActivityIds) {
+      await d.insert('todo_links', {'todo_id': todo.id, 'activity_id': actId});
+    }
+    final idx = todos.indexWhere((t) => t.id == todo.id);
+    if (idx >= 0) todos[idx] = todo;
+    await _syncTodos(announce: false);
+    WidgetSync.schedule();
+    _changed();
+  }
+
+  /// Yapılacağın tamamlanma durumunu değiştirir.
+  Future<void> toggleTodo(int id, {bool? completed}) async {
+    final todo = todos.where((t) => t.id == id).firstOrNull;
+    if (todo == null) return;
+    final now = DateTime.now().millisecondsSinceEpoch;
+    final d = await db;
+
+    if (!todo.isLinked) {
+      final target = completed ?? (todo.doneAt == null);
+      todo.doneAt = target ? now : null;
+      todo.manualState = null;
+      await d.update('todos', {
+        'done_at': todo.doneAt,
+        'manual_state': null,
+      }, where: 'id = ?', whereArgs: [id]);
+    } else {
+      final progress = todoProgress(todo);
+      final derivedDone = (todo.targetAmount != null)
+          ? (progress.currentAmount >= todo.targetAmount!)
+          : progress.contributingEntries.isNotEmpty;
+
+      final currentDone = todo.manualState == 'done' || (todo.manualState == null && derivedDone);
+      final target = completed ?? !currentDone;
+
+      if (target == derivedDone) {
+        todo.manualState = null;
+        todo.doneAt = target ? (todo.doneAt ?? now) : null;
+      } else {
+        todo.manualState = target ? 'done' : 'open';
+        todo.doneAt = target ? now : null;
+      }
+
+      await d.update('todos', {
+        'done_at': todo.doneAt,
+        'manual_state': todo.manualState,
+      }, where: 'id = ?', whereArgs: [id]);
+    }
+
+    _changed();
+    WidgetSync.schedule();
+  }
+
+  /// Yapılacağı bir sonraki güne erteler: yeni son gün = max(son gün, bugün) + 1 gün; tarihsizse yarın.
+  Future<void> postponeTodo(int id) async {
+    final todo = todos.where((t) => t.id == id).firstOrNull;
+    if (todo == null) return;
+    final now = DateTime.now();
+    DateTime baseDate;
+    if (todo.dueDate == null || todo.dueDate!.isEmpty) {
+      baseDate = now;
+    } else {
+      final cur = DateTime.tryParse(todo.dueDate!) ?? now;
+      final curDay = DateTime(cur.year, cur.month, cur.day);
+      final todayDay = DateTime(now.year, now.month, now.day);
+      baseDate = curDay.isAfter(todayDay) ? curDay : todayDay;
+    }
+    final nextDate = baseDate.add(const Duration(days: 1));
+    final nextDueDate = DateFormat('yyyy-MM-dd').format(nextDate);
+    todo.dueDate = nextDueDate;
+    await (await db).update('todos', {'due_date': nextDueDate}, where: 'id = ?', whereArgs: [id]);
+    _changed();
+    WidgetSync.schedule();
+  }
+
+  /// Yapılacağı siler ve geri alabilmek için silinen nesneyle bağlantılarını döner.
+  Future<(Todo, List<int>)?> deleteTodo(int id) async {
+    final todo = todos.where((t) => t.id == id).firstOrNull;
+    if (todo == null) return null;
+    final d = await db;
+    final links = List<int>.from(todo.linkedActivityIds);
+    await d.transaction((tx) async {
+      await tx.delete('todo_links', where: 'todo_id = ?', whereArgs: [id]);
+      await tx.delete('todos', where: 'id = ?', whereArgs: [id]);
+    });
+    todos.removeWhere((t) => t.id == id);
+    _changed();
+    WidgetSync.schedule();
+    return (todo, links);
+  }
+
+  /// Silinmiş bir yapılacağı geri yükler.
+  Future<void> restoreTodo(Todo todo, List<int> links) async {
+    final d = await db;
+    await d.transaction((tx) async {
+      await tx.insert('todos', todo.toMap());
+      for (final actId in links) {
+        await tx.insert('todo_links', {'todo_id': todo.id, 'activity_id': actId});
+      }
+    });
+    todo.linkedActivityIds = List.from(links);
+    todos.add(todo);
+    await _syncTodos(announce: false);
+    _changed();
+    WidgetSync.schedule();
+  }
+
+  /// Android ana ekran Todo widget'ı için veri paketi üretir.
+  Map<String, Object?> todoWidgetPayload({DateTime? at}) {
+    final now = at ?? DateTime.now();
+    final todayStr = DateFormat('yyyy-MM-dd').format(now);
+    final isTr = strings.value.isTr;
+
+    final openTodos = todos.where((t) => !todoProgress(t).isCompleted).toList();
+
+    final overdue = <Todo>[];
+    final today = <Todo>[];
+    final upcoming = <Todo>[];
+    final dateless = <Todo>[];
+
+    for (final t in openTodos) {
+      if (t.dueDate == null || t.dueDate!.isEmpty) {
+        dateless.add(t);
+      } else if (t.dueDate!.compareTo(todayStr) < 0) {
+        overdue.add(t);
+      } else if (t.dueDate == todayStr) {
+        today.add(t);
+      } else {
+        upcoming.add(t);
+      }
+    }
+
+    overdue.sort((a, b) {
+      final c = (a.dueDate ?? '').compareTo(b.dueDate ?? '');
+      return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
+    });
+    today.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+    upcoming.sort((a, b) {
+      final c = (a.dueDate ?? '').compareTo(b.dueDate ?? '');
+      return c != 0 ? c : a.createdAt.compareTo(b.createdAt);
+    });
+    dateless.sort((a, b) => a.createdAt.compareTo(b.createdAt));
+
+    final sorted = [...overdue, ...today, ...upcoming, ...dateless];
+
+    final items = <Map<String, Object?>>[];
+    for (final t in sorted) {
+      final p = todoProgress(t);
+      final isOverdue = t.dueDate != null && t.dueDate!.compareTo(todayStr) < 0;
+      String sub = '';
+      if (t.isLinked) {
+        if (t.targetAmount != null) {
+          sub = '${fmtNum(p.currentAmount)}/${fmtNum(t.targetAmount!)}';
+          if (p.unitSymbol != null && p.unitSymbol!.isNotEmpty) {
+            sub += ' ${p.unitSymbol}';
+          }
+        }
+      }
+
+      items.add({
+        'id': t.id,
+        't': t.title,
+        'due': t.dueDate ?? '',
+        'overdue': isOverdue,
+        'linked': t.isLinked,
+        'sub': sub,
+      });
+    }
+
+    return {
+      'count': openTodos.length,
+      'isTr': isTr,
+      'items': items,
+    };
   }
 }

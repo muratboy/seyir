@@ -6,25 +6,35 @@ import '../logic/format.dart';
 import '../logic/l10n.dart';
 import 'common.dart';
 import 'components/goal_edit_dialog.dart';
+import 'components/todo_quick_add_sheet.dart';
 import 'contribution_heatmap.dart';
 import 'tabs/habits_tab.dart';
 import 'tabs/roadmaps_tab.dart';
+import 'tabs/todos_tab.dart';
 import 'app_font.dart';
 
-enum GoalsPageTab { goals, habits, roadmaps }
+enum GoalsPageTab { goals, todos, habits, roadmaps }
 
 class GoalsPage extends StatefulWidget {
-  const GoalsPage({super.key});
+  final GoalsPageTab initialTab;
+
+  const GoalsPage({super.key, this.initialTab = GoalsPageTab.goals});
 
   @override
   State<GoalsPage> createState() => _GoalsPageState();
 }
 
 class _GoalsPageState extends State<GoalsPage> {
-  GoalsPageTab _currentTab = GoalsPageTab.goals;
+  late GoalsPageTab _currentTab;
   GoalPeriod? _filterPeriod;
   final Set<int> _expandedGoalHeatmapIds = {};
   bool _isReorderingGoals = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _currentTab = widget.initialTab;
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -40,15 +50,18 @@ class _GoalsPageState extends State<GoalsPage> {
         final habits = store.habitActivities;
         final totalHabitsCount = habits.length;
         final roadmapsCount = store.roadmaps.length;
+        final totalTodosCount = store.todos.where((t) => !store.todoProgress(t).isCompleted).length;
 
         return Scaffold(
           appBar: AppBar(
             title: Text(
               _currentTab == GoalsPageTab.goals
                   ? (s.isTr ? 'Hedefler' : 'Goals')
-                  : (_currentTab == GoalsPageTab.habits
-                      ? s.habitTitle
-                      : s.roadmapsTitle),
+                  : (_currentTab == GoalsPageTab.todos
+                      ? (s.isTr ? 'Yapılacaklar' : 'To-dos')
+                      : (_currentTab == GoalsPageTab.habits
+                          ? s.habitTitle
+                          : s.roadmapsTitle)),
               style: const TextStyle(fontWeight: FontWeight.bold),
             ),
             actions: [
@@ -64,64 +77,64 @@ class _GoalsPageState extends State<GoalsPage> {
           ),
           body: Column(
             children: [
-              // Segmented switcher: [ Hedefler | 🔥 Zinciri Kırma | 🗺️ Yol Haritası ]
-              Padding(
-                padding: const EdgeInsets.fromLTRB(6, 6, 6, 8),
-                child: SizedBox(
-                  width: double.infinity,
-                  child: SegmentedButton<GoalsPageTab>(
-                    showSelectedIcon: false,
-                    style: SegmentedButton.styleFrom(
-                      visualDensity: VisualDensity.compact,
-                      tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                      padding: const EdgeInsets.symmetric(horizontal: 0, vertical: 6),
-                    ),
-                    segments: [
-                      ButtonSegment(
-                        value: GoalsPageTab.goals,
-                        // Dar ekranda kesilmek yerine sığacak kadar küçülür.
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            s.isTr ? 'Hedefler' : 'Goals',
-                            style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w600, letterSpacing: -0.2),
-                            maxLines: 1,
-                          ),
-                        ),
-                        icon: const Icon(Icons.flag_outlined, size: 14),
-                      ),
-                      ButtonSegment(
-                        value: GoalsPageTab.habits,
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            totalHabitsCount == 0
-                                ? (s.isTr ? 'Zinciri Kırma' : 'Habits')
-                                : '${s.isTr ? "Zinciri Kırma" : "Habits"} ($totalHabitsCount)',
-                            style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w600, letterSpacing: -0.2),
-                            maxLines: 1,
-                          ),
-                        ),
-                        icon: const Icon(Icons.local_fire_department_rounded, size: 14),
-                      ),
-                      ButtonSegment(
-                        value: GoalsPageTab.roadmaps,
-                        label: FittedBox(
-                          fit: BoxFit.scaleDown,
-                          child: Text(
-                            roadmapsCount == 0
-                                ? s.tabRoadmaps
-                                : '${s.tabRoadmaps} ($roadmapsCount)',
-                            style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w600, letterSpacing: -0.2),
-                            maxLines: 1,
-                          ),
-                        ),
-                        icon: const Icon(Icons.alt_route_rounded, size: 14),
-                      ),
-                    ],
-                    selected: {_currentTab},
-                    onSelectionChanged: (set) => setState(() => _currentTab = set.first),
+              // Yatay kaydırılabilir sekme çubuğu (360 dp ve x1.3 yazı ölçeğinde tüm etiketler okunur kalır, FittedBox ile küçültülmez)
+              SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                child: SegmentedButton<GoalsPageTab>(
+                  showSelectedIcon: false,
+                  style: ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
+                    textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
                   ),
+                  segments: [
+                    ButtonSegment(
+                      value: GoalsPageTab.goals,
+                      label: Text(
+                        s.isTr ? 'Hedefler' : 'Goals',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                      ),
+                      icon: const Icon(Icons.flag_outlined, size: 16),
+                    ),
+                    ButtonSegment(
+                      value: GoalsPageTab.todos,
+                      label: Text(
+                        totalTodosCount == 0
+                            ? (s.isTr ? 'Yapılacaklar' : 'To-dos')
+                            : '${s.isTr ? "Yapılacaklar" : "To-dos"} ($totalTodosCount)',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                      ),
+                      icon: const Icon(Icons.checklist_rounded, size: 16),
+                    ),
+                    ButtonSegment(
+                      value: GoalsPageTab.habits,
+                      label: Text(
+                        totalHabitsCount == 0
+                            ? (s.isTr ? 'Zinciri Kırma' : 'Habits')
+                            : '${s.isTr ? "Zinciri Kırma" : "Habits"} ($totalHabitsCount)',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                      ),
+                      icon: const Icon(Icons.local_fire_department_rounded, size: 16),
+                    ),
+                    ButtonSegment(
+                      value: GoalsPageTab.roadmaps,
+                      label: Text(
+                        roadmapsCount == 0
+                            ? s.tabRoadmaps
+                            : '${s.tabRoadmaps} ($roadmapsCount)',
+                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
+                        maxLines: 1,
+                      ),
+                      icon: const Icon(Icons.alt_route_rounded, size: 16),
+                    ),
+                  ],
+                  selected: {_currentTab},
+                  onSelectionChanged: (set) => setState(() => _currentTab = set.first),
                 ),
               ),
 
@@ -221,6 +234,11 @@ class _GoalsPageState extends State<GoalsPage> {
                               },
                             )),
                 ),
+              ] else if (_currentTab == GoalsPageTab.todos) ...[
+                // Todos (Yapılacaklar) List
+                const Expanded(
+                  child: TodosView(showFab: false),
+                ),
               ] else if (_currentTab == GoalsPageTab.habits) ...[
                 // Habits (Zinciri Kırma) List
                 const Expanded(
@@ -234,22 +252,27 @@ class _GoalsPageState extends State<GoalsPage> {
               ],
             ],
           ),
-          floatingActionButton: _currentTab == GoalsPageTab.goals
-              ? FloatingActionButton(
-                  onPressed: () => GoalEditDialog.show(context),
-                  child: const Icon(Icons.add),
-                )
-              : (_currentTab == GoalsPageTab.habits
-                  ? FloatingActionButton.extended(
-                      onPressed: () => HabitsTab.pickAndAddHabit(context),
-                      icon: const Icon(Icons.add),
-                      label: Text(s.addHabit),
-                    )
-                  : FloatingActionButton.extended(
-                      onPressed: () => RoadmapsTab.showCreateOptions(context),
-                      icon: const Icon(Icons.add_road_rounded),
-                      label: Text(s.isTr ? 'Yol Haritası Ekle' : 'Add Roadmap'),
-                    )),
+          floatingActionButton: switch (_currentTab) {
+            GoalsPageTab.goals => FloatingActionButton(
+                onPressed: () => GoalEditDialog.show(context),
+                child: const Icon(Icons.add),
+              ),
+            GoalsPageTab.todos => FloatingActionButton(
+                onPressed: () => TodoQuickAddSheet.show(context),
+                tooltip: s.isTr ? 'Yeni Yapılacak' : 'New To-do',
+                child: const Icon(Icons.add),
+              ),
+            GoalsPageTab.habits => FloatingActionButton.extended(
+                onPressed: () => HabitsTab.pickAndAddHabit(context),
+                icon: const Icon(Icons.add),
+                label: Text(s.addHabit),
+              ),
+            GoalsPageTab.roadmaps => FloatingActionButton.extended(
+                onPressed: () => RoadmapsTab.showCreateOptions(context),
+                icon: const Icon(Icons.add_road_rounded),
+                label: Text(s.isTr ? 'Yol Haritası Ekle' : 'Add Roadmap'),
+              ),
+          },
         );
       },
     );

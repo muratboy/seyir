@@ -32,7 +32,7 @@ class AppStrings {
   String get quantity => isTr ? 'Miktar' : 'Quantity';
   String get noteHint => isTr ? 'Not (isteğe bağlı)...' : 'Note (optional)...';
   String get logButton => isTr ? 'Kaydet' : 'Log';
-  String get quickListTitle => isTr ? 'Sık Yapılanlar & Yapılacaklar' : 'Shortcuts & To-Dos';
+  String get quickListTitle => isTr ? 'Sık yapılanlar' : 'Shortcuts';
   String get quickListEmpty => isTr ? 'Henüz hızlı öğe eklenmedi. + ile ekleyebilirsin.' : 'No shortcuts yet. Tap + to add.';
   String get timelineTitle => isTr ? 'Günün Akışı' : "Today's Timeline";
   String get timelineEmpty => isTr ? 'Bugün henüz bir kayıt yok.' : 'No entries logged today.';

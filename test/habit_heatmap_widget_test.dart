@@ -73,7 +73,10 @@ void main() {
     expect(find.textContaining('Zinciri Kırma'), findsOneWidget);
 
     // Tap on Zinciri Kırma tab
-    await tester.tap(find.textContaining('Zinciri Kırma'));
+    final habitsFinder = find.textContaining('Zinciri Kırma');
+    await tester.ensureVisible(habitsFinder);
+    await tester.pumpAndSettle();
+    await tester.tap(habitsFinder);
     await tester.pumpAndSettle();
 
     // Verify HabitsTab is mounted and habit card for Kitap Okuma is shown
@@ -84,7 +87,10 @@ void main() {
     expect(find.byType(ContributionHeatmap), findsOneWidget);
 
     // Tap on Yol Haritası tab
-    await tester.tap(find.textContaining('Yol Haritası'));
+    final roadmapsFinder = find.textContaining('Yol Haritası');
+    await tester.ensureVisible(roadmapsFinder);
+    await tester.pumpAndSettle();
+    await tester.tap(roadmapsFinder);
     await tester.pumpAndSettle();
 
     // Verify RoadmapsTab is mounted

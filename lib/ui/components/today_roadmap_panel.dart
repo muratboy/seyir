@@ -10,7 +10,7 @@ import 'roadmap_step_progress.dart';
 import '../app_font.dart';
 
 /// Günün Akışı (TodayPage) üzerinde yer alan, aktif yol haritalarının SADECE sıradaki
-/// hedef veya aktivitelerini gösteren dinamik panel. Sık Yapılanlar ile Günün Akışı arasında konumlanır.
+/// hedef veya aktivitelerini gösteren dinamik panel. Sık yapılanlar ile Günün Akışı arasında konumlanır.
 class TodayRoadmapPanel extends StatelessWidget {
   final DateTime? currentDay;
   final Future<void> Function(Activity)? onStartTimer;

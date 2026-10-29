@@ -101,17 +101,21 @@ void main() {
     final act = Activity(id: 3, name: 'Baş Ağrısı', emoji: '🤕', createdAt: 0);
     final now = DateTime.now();
 
+    final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final t1 = startOfWeek.add(const Duration(hours: 4));
+    final t2 = startOfWeek.add(const Duration(hours: 10));
+
     seed([act], [
       Entry(
         id: 1,
         activityId: act.id,
-        ts: now.subtract(const Duration(days: 3)).millisecondsSinceEpoch,
+        ts: t1.millisecondsSinceEpoch,
         note: 'Şiddet 8/10 zonklama',
       ),
       Entry(
         id: 2,
         activityId: act.id,
-        ts: now.subtract(const Duration(days: 1)).millisecondsSinceEpoch,
+        ts: t2.millisecondsSinceEpoch,
         note: 'Hafif sızı 4/10',
       ),
     ]);

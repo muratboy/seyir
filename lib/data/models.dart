@@ -1061,4 +1061,134 @@ class CorrelationInsight {
   });
 }
 
+/// Yapılacak (Todo) ile aktivite arasındaki çoktan-çoğa bağlantı.
+class TodoLink {
+  int todoId;
+  int activityId;
+
+  TodoLink({required this.todoId, required this.activityId});
+
+  Map<String, Object?> toMap([int? id]) => {
+        'todo_id': id ?? todoId,
+        'activity_id': activityId,
+      };
+
+  factory TodoLink.fromMap(Map<String, Object?> m) => TodoLink(
+        todoId: m['todo_id'] as int,
+        activityId: m['activity_id'] as int,
+      );
+}
+
+/// Tek seferlik hedef / yapılacak öğesi.
+class Todo {
+  int id;
+  String title;
+  String? note;
+  int createdAt; // ms
+  String? dueDate; // YYYY-MM-DD
+  double? targetAmount;
+  int? doneAt; // ms
+  String? manualState; // null | 'done' | 'open'
+  int sortOrder;
+  List<int> linkedActivityIds;
+
+  Todo({
+    required this.id,
+    required this.title,
+    this.note,
+    required this.createdAt,
+    this.dueDate,
+    this.targetAmount,
+    this.doneAt,
+    this.manualState,
+    this.sortOrder = 0,
+    List<int>? linkedActivityIds,
+  }) : linkedActivityIds = linkedActivityIds ?? [];
+
+  bool get isLinked => linkedActivityIds.isNotEmpty;
+
+  Map<String, Object?> toMap() {
+    final m = <String, Object?>{
+      'title': title,
+      'note': note,
+      'created_at': createdAt,
+      'due_date': dueDate,
+      'target_amount': targetAmount,
+      'done_at': doneAt,
+      'manual_state': manualState,
+      'sort_order': sortOrder,
+    };
+    if (id > 0) m['id'] = id;
+    return m;
+  }
+
+  factory Todo.fromMap(Map<String, Object?> m) => Todo(
+        id: m['id'] as int,
+        title: m['title'] as String,
+        note: m['note'] as String?,
+        createdAt: m['created_at'] as int,
+        dueDate: m['due_date'] as String?,
+        targetAmount: (m['target_amount'] as num?)?.toDouble(),
+        doneAt: m['done_at'] as int?,
+        manualState: m['manual_state'] as String?,
+        sortOrder: (m['sort_order'] as int?) ?? 0,
+      );
+
+  Todo copyWith({
+    int? id,
+    String? title,
+    String? note,
+    int? createdAt,
+    String? dueDate,
+    double? targetAmount,
+    int? doneAt,
+    String? manualState,
+    int? sortOrder,
+    List<int>? linkedActivityIds,
+  }) {
+    return Todo(
+      id: id ?? this.id,
+      title: title ?? this.title,
+      note: note ?? this.note,
+      createdAt: createdAt ?? this.createdAt,
+      dueDate: dueDate ?? this.dueDate,
+      targetAmount: targetAmount ?? this.targetAmount,
+      doneAt: doneAt ?? this.doneAt,
+      manualState: manualState ?? this.manualState,
+      sortOrder: sortOrder ?? this.sortOrder,
+      linkedActivityIds: linkedActivityIds ?? List.from(this.linkedActivityIds),
+    );
+  }
+}
+
+/// Yapılacağın hesaplanan ilerleme ve tamamlanma durumu.
+class TodoProgress {
+  final Todo todo;
+  final bool isCompleted;
+  final double currentAmount;
+  final double? targetAmount;
+  final String? unitSymbol;
+  final List<Entry> contributingEntries;
+
+  const TodoProgress({
+    required this.todo,
+    required this.isCompleted,
+    this.currentAmount = 0.0,
+    this.targetAmount,
+    this.unitSymbol,
+    this.contributingEntries = const [],
+  });
+
+  double get ratio {
+    if (isCompleted) return 1.0;
+    if (targetAmount == null || targetAmount! <= 0) return 0.0;
+    return (currentAmount / targetAmount!).clamp(0.0, 1.0);
+  }
+
+  /// Kalan hedef miktarı. Hedef yoksa veya tamamlandıysa 0.0 döner.
+  double get remainingAmount => (targetAmount != null)
+      ? (targetAmount! - currentAmount).clamp(0.0, double.infinity)
+      : 0.0;
+}
+
 

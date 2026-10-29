@@ -13,6 +13,7 @@ import '../services/nl_parser.dart';
 import 'common.dart';
 import 'components/active_timer_card.dart';
 import 'components/today_summary_card.dart';
+import 'components/today_todos_card.dart';
 import 'components/today_health_panel.dart';
 import 'components/today_quick_shortcuts.dart';
 import 'components/today_routines_panel.dart';
@@ -169,6 +170,7 @@ class _TodayViewState extends State<_TodayView> {
     super.initState();
     widget.focusRequest.addListener(_onFocusRequested);
     widget.voiceRequest?.addListener(_onVoiceRequested);
+    store.todoCompletedNotifier.addListener(_onTodoCompleted);
     // Öneriler giriş kutusu odaklanınca da gösterilir.
     _inputFocus.addListener(_onFocusChanged);
   }
@@ -177,11 +179,27 @@ class _TodayViewState extends State<_TodayView> {
   void dispose() {
     widget.focusRequest.removeListener(_onFocusRequested);
     widget.voiceRequest?.removeListener(_onVoiceRequested);
+    store.todoCompletedNotifier.removeListener(_onTodoCompleted);
     _inputFocus.removeListener(_onFocusChanged);
     _inputFocus.dispose();
     _textController.dispose();
     _noteController.dispose();
     super.dispose();
+  }
+
+  void _onTodoCompleted() {
+    final title = store.todoCompletedNotifier.value;
+    if (title != null && mounted) {
+      final isTr = strings.value.isTr;
+      final sm = ScaffoldMessenger.of(context);
+      sm.hideCurrentSnackBar();
+      sm.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 4),
+          content: Text(isTr ? '✓ Tamamlandı: $title' : '✓ Completed: $title'),
+        ),
+      );
+    }
   }
 
   void _onVoiceRequested() {
@@ -655,7 +673,7 @@ class _TodayViewState extends State<_TodayView> {
                 const SizedBox(height: 6),
               ],
 
-              if (plan != null)
+              if (plan != null) ...[
                 _ComposerPreview(
                   startsTimer: startsTimer,
                   text: _planText(plan),
@@ -664,6 +682,45 @@ class _TodayViewState extends State<_TodayView> {
                   onToggleOptions: () => setState(() => _showOptions = !_showOptions),
                   optionsOpen: _showOptions,
                 ),
+                Builder(builder: (c) {
+                  if (plan.existing == null || startsTimer) return const SizedBox.shrink();
+                  final openLinked = store.todos.where(
+                    (t) => t.isLinked && !store.todoProgress(t).isCompleted && t.linkedActivityIds.contains(plan.existing!.id),
+                  );
+                  Todo? willComplete;
+                  for (final t in openLinked) {
+                    final curProg = store.todoProgress(t);
+                    final m = plan.measureId != null ? store.measureById(plan.measureId!) : null;
+                    final val = (m != null) ? (plan.qty * m.amount) : plan.qty;
+                    if (t.targetAmount == null || (curProg.currentAmount + val) >= t.targetAmount!) {
+                      willComplete = t;
+                      break;
+                    }
+                  }
+                  if (willComplete == null) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.only(left: 6, bottom: 4),
+                    child: Row(
+                      children: [
+                        Icon(Icons.check_circle_outline, size: 14, color: Theme.of(c).colorScheme.primary),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            s.isTr
+                                ? 'Bu kayıt "${willComplete.title}" yapılacağını tamamlar'
+                                : 'This entry completes "${willComplete.title}"',
+                            style: TextStyle(
+                              fontSize: AppFont.micro,
+                              color: Theme.of(c).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                }),
+              ],
 
               Row(
                 children: [
@@ -751,7 +808,7 @@ class _TodayViewState extends State<_TodayView> {
           builder: (context, constraints) => Scaffold(
             appBar: AppBar(
               automaticallyImplyLeading: false,
-              titleSpacing: 4,
+              titleSpacing: 0,
               title: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -763,7 +820,7 @@ class _TodayViewState extends State<_TodayView> {
                     constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
                     onPressed: () => setState(() => _currentDay = subDays(_currentDay, 1)),
                   ),
-                  Flexible(
+                  Expanded(
                     child: InkWell(
                       borderRadius: BorderRadius.circular(10),
                       onTap: () async {
@@ -864,6 +921,7 @@ class _TodayViewState extends State<_TodayView> {
                     currentDay: _currentDay,
                     onStartTimer: _startTimerForActivity,
                   ),
+                  const TodayTodosCard(),
                   TodayHealthPanel(
                     currentDay: _currentDay,
                     onRefresh: () => setState(() {}),

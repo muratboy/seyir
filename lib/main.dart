@@ -13,6 +13,9 @@ import 'ui/manage_page.dart';
 import 'ui/startup_recovery_page.dart';
 import 'ui/stats_page.dart';
 import 'ui/today_page.dart';
+import 'ui/todos_page.dart';
+import 'ui/components/todo_complete_sheet.dart';
+import 'ui/components/todo_quick_add_sheet.dart';
 import 'services/notification_service.dart';
 import 'services/store_sync.dart';
 import 'widget_sync.dart';
@@ -140,19 +143,37 @@ class _HomeShellState extends State<HomeShell> with WidgetsBindingObserver {
 
   void _onWidgetLaunch(Uri? uri) {
     if (uri == null || !mounted) return;
-    setState(() => _tab = 0);
-    if (uri.host == 'add') {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _focusComposer.value++);
-    } else if (uri.host == 'voice') {
-      WidgetsBinding.instance.addPostFrameCallback((_) => _voiceRequest.value++);
-    } else if (uri.host == 'quick_repeat') {
-      final lastActId = store.entries.lastOrNull?.activityId;
-      if (lastActId != null) {
-        store.repeatLastEntry(lastActId).then((msg) {
-          if (msg != null && mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+    if (uri.host == 'todo_add') {
+      WidgetsBinding.instance.addPostFrameCallback((_) => TodoQuickAddSheet.show(context));
+    } else if (uri.host == 'todos') {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const TodosPage()));
+      });
+    } else if (uri.host == 'todo_preview') {
+      final id = int.tryParse(uri.queryParameters['id'] ?? '');
+      if (id != null) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          final todo = store.todos.where((t) => t.id == id).firstOrNull;
+          if (todo != null && mounted) {
+            TodoCompleteSheet.show(context, todo);
           }
         });
+      }
+    } else {
+      setState(() => _tab = 0);
+      if (uri.host == 'add') {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _focusComposer.value++);
+      } else if (uri.host == 'voice') {
+        WidgetsBinding.instance.addPostFrameCallback((_) => _voiceRequest.value++);
+      } else if (uri.host == 'quick_repeat') {
+        final lastActId = store.entries.lastOrNull?.activityId;
+        if (lastActId != null) {
+          store.repeatLastEntry(lastActId).then((msg) {
+            if (msg != null && mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+            }
+          });
+        }
       }
     }
   }

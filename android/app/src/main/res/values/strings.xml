@@ -9,4 +9,6 @@
     <string name="shortcut_add_long">Yeni kayıt ekle</string>
     <string name="tile_quick_add">Hızlı Kayıt</string>
     <string name="tile_quick_add_label">Seyir • Hızlı Kayıt</string>
+    <string name="todo_widget_name">Yapılacaklar</string>
+    <string name="todo_widget_description">Yapılacak işlerinizi ve görevlerinizi takip edin</string>
 </resources>

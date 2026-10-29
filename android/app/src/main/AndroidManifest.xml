@@ -58,6 +58,18 @@
                 android:resource="@xml/takip_single_widget_info" />
         </receiver>
 
+        <!-- Todo Home Screen Widget Provider -->
+        <receiver
+            android:name=".TodoWidgetProvider"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/todo_widget_info" />
+        </receiver>
+
         <!-- Takip 1x1 Widget Configure Activity -->
         <activity
             android:name=".SingleWidgetConfigureActivity"

@@ -10,6 +10,8 @@ import 'package:takip/logic/l10n.dart';
 import 'package:takip/main.dart';
 import 'package:takip/services/roadmap_parser.dart';
 import 'package:takip/ui/manage_page.dart';
+import 'package:takip/ui/components/todo_complete_sheet.dart';
+import 'package:takip/ui/components/todo_quick_add_sheet.dart';
 
 import 'support/fonts.dart';
 import 'support/real_db.dart';
@@ -108,6 +110,36 @@ Future<void> seedSampleData() async {
   final stopwatch = await store.startTimer(gitar.id);
   await store.pauseTimer(stopwatch.id);
   await store.startTimer(yuruyus.id, mode: 'countdown', targetMs: 45 * 60000);
+
+  final yesterdayStr = DateFormat('yyyy-MM-dd').format(now.subtract(const Duration(days: 1)));
+  final todayStr = DateFormat('yyyy-MM-dd').format(now);
+  await store.createTodo(
+    Todo(
+      id: 0,
+      title: 'Dün yapılması gereken önemli proje teslimi ve sunum hazırlığı',
+      createdAt: ms - 86400000 * 2,
+      dueDate: yesterdayStr,
+    ),
+  );
+  await store.createTodo(
+    Todo(
+      id: 0,
+      title: 'Çok uzun başlık: haftalık toplantı notlarını düzenle, sunum slaytlarını hazırla ve ekip liderine e-posta gönder',
+      createdAt: ms - 3600000,
+      dueDate: todayStr,
+      targetAmount: 50,
+    ),
+    activityIds: [ders.id],
+  );
+  await store.createTodo(
+    Todo(
+      id: 0,
+      title: 'Su içme görevi',
+      createdAt: ms - 1800000,
+      dueDate: todayStr,
+    ),
+    activityIds: [su.id],
+  );
 }
 
 /// Texts that break inside a word, the way "Pomodor/o" or "Siste/m" did on a small phone with large text:
@@ -208,6 +240,15 @@ void main() {
 
         // Today: compact and expanded timers, the composer with its options, every panel.
         await expectClean('today');
+
+        // Tek satırlık boş kart kontrolü
+        final savedTodos = List<Todo>.from(store.todos);
+        store.todos.clear();
+        await tester.pump(const Duration(milliseconds: 200));
+        await expectClean('today, empty todos card');
+        store.todos.addAll(savedTodos);
+        await tester.pump(const Duration(milliseconds: 200));
+
         await tester.tap(find.text('Gitar').first);
         await expectClean('today, timer expanded');
         await tester.enterText(find.byType(TextField).last, 'su');
@@ -217,15 +258,37 @@ void main() {
         await tester.tap(find.byTooltip(tr ? 'Temizle' : 'Clear'));
         await scrollThrough('today', steps: 6);
 
-        // Goals, habits and roadmaps.
+        // Goals, todos, habits and roadmaps.
         await openTab(s.tabGoals);
         await tester.tap(find.textContaining(tr ? 'Isı Haritası' : 'Heatmap').first);
         await expectClean('goals, heatmap open');
         await scrollThrough('goals', steps: 6);
-        await tester.tap(find.textContaining(tr ? 'Zinciri Kırma (' : 'Habits ('));
+
+        // Yapılacaklar sekmesi (Tam liste)
+        final todosTabFinder = find.textContaining(tr ? 'Yapılacaklar (' : 'To-dos (');
+        await tester.ensureVisible(todosTabFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(todosTabFinder);
+        await expectClean('todos tab, full list');
+        await scrollThrough('todos tab', steps: 3);
+
+        // Bir yapılacağa dokunarak Düzenleme sayfasını test et
+        await tester.tap(find.textContaining('Çok uzun başlık').first);
+        await tester.pump(const Duration(milliseconds: 400));
+        await expectClean('todo edit page');
+        await back();
+
+        final habitsTabFinder = find.textContaining(tr ? 'Zinciri Kırma (' : 'Habits (');
+        await tester.ensureVisible(habitsTabFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(habitsTabFinder);
         await expectClean('habits');
         await scrollThrough('habits', steps: 3);
-        await tester.tap(find.textContaining(tr ? 'Yol Haritası (' : 'Roadmaps ('));
+
+        final roadmapsTabFinder = find.textContaining(tr ? 'Yol Haritası (' : 'Roadmaps (');
+        await tester.ensureVisible(roadmapsTabFinder);
+        await tester.pumpAndSettle();
+        await tester.tap(roadmapsTabFinder);
         await expectClean('roadmaps');
         await tester.tap(find.text('Flutter ile uygulama geliştirme'));
         await expectClean('roadmap detail');
@@ -256,6 +319,20 @@ void main() {
         await tester.tap(find.textContaining(tr ? 'Yapay Zekâ Kalıbıyla' : 'Import with AI'));
         await settleSheet();
         await expectClean('roadmap from the AI template');
+        await closeDialog();
+
+        // Hızlı Todo ekleme sheet'i
+        final navContext = tester.element(find.byType(Navigator).first);
+        TodoQuickAddSheet.show(navContext);
+        await settleSheet();
+        await expectClean('todo quick add sheet');
+        await closeDialog();
+
+        // Tamamlama önizlemesi sheet'i
+        final sampleLinkedTodo = store.todos.firstWhere((t) => t.isLinked);
+        TodoCompleteSheet.show(navContext, sampleLinkedTodo);
+        await settleSheet();
+        await expectClean('todo complete sheet');
         await closeDialog();
 
         // Statistics in every range.

@@ -11,6 +11,7 @@ import 'services/store_sync.dart';
 
 const widgetProviderName = 'dev.takip.takip.TakipWidgetProvider';
 const singleWidgetProviderName = 'dev.takip.takip.TakipSingleWidgetProvider';
+const todoWidgetProviderName = 'dev.takip.takip.TodoWidgetProvider';
 
 /// Ana ekran widget'ına veri gönderir.
 class WidgetSync {
@@ -26,6 +27,7 @@ class WidgetSync {
     try {
       await HomeWidget.saveWidgetData<String>('payload', jsonEncode(store.widgetPayload()));
       await HomeWidget.saveWidgetData<int>('single_act_id_global', store.singleWidgetActivityId ?? 0);
+      await HomeWidget.saveWidgetData<String>('todo_payload', jsonEncode(store.todoWidgetPayload()));
       await HomeWidget.updateWidget(
         name: 'TakipWidgetProvider',
         androidName: 'TakipWidgetProvider',
@@ -35,6 +37,11 @@ class WidgetSync {
         name: 'TakipSingleWidgetProvider',
         androidName: 'TakipSingleWidgetProvider',
         qualifiedAndroidName: singleWidgetProviderName,
+      );
+      await HomeWidget.updateWidget(
+        name: 'TodoWidgetProvider',
+        androidName: 'TodoWidgetProvider',
+        qualifiedAndroidName: todoWidgetProviderName,
       );
     } catch (e) {
       debugPrint('Widget güncellenemedi: $e');
@@ -100,6 +107,12 @@ Future<void> widgetBackgroundCallback(Uri? uri) async {
     final actId = int.tryParse(uri.queryParameters['actId'] ?? '');
     if (actId != null && actId > 0) {
       await store.repeatLastEntry(actId);
+      StoreSync.notifyChanged();
+    }
+  } else if (uri.host == 'todo_toggle') {
+    final id = int.tryParse(uri.queryParameters['id'] ?? '');
+    if (id != null) {
+      await store.toggleTodo(id);
       StoreSync.notifyChanged();
     }
   } else if (uri.host == 'quick_text') {
