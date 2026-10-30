@@ -2,12 +2,153 @@ import 'dart:math';
 
 import '../data/models.dart';
 import '../logic/text_match.dart';
+import '../logic/time_parser.dart';
+import '../logic/todo_parser.dart';
 
 enum NlActionType {
   addEntry,
   startStopwatch,
   startPomodoro,
   startCountdown,
+}
+
+sealed class ParsedItem {
+  String get rawText;
+}
+
+class EntryParsedItem extends ParsedItem {
+  @override
+  final String rawText;
+  final NlParseResult parseResult;
+  final Activity? activity;
+  final String activityName;
+  final Measure? measure;
+  final double quantity;
+  final DateTime at;
+  final bool hasExplicitTime;
+  final bool hasExplicitDate;
+  final bool isExplicitFuture;
+  final bool isRelative;
+  final String? timeKeyword;
+  final bool isNewActivity;
+  final ({String mode, int targetMs})? timerCommand;
+  final Todo? willCompleteTodo;
+
+  EntryParsedItem({
+    required this.rawText,
+    required this.parseResult,
+    this.activity,
+    required this.activityName,
+    this.measure,
+    required this.quantity,
+    required this.at,
+    this.hasExplicitTime = false,
+    this.hasExplicitDate = false,
+    this.isExplicitFuture = false,
+    this.isRelative = false,
+    this.timeKeyword,
+    this.isNewActivity = false,
+    this.timerCommand,
+    this.willCompleteTodo,
+  });
+
+  TodoParsedItem toTodoItem() {
+    return TodoParsedItem(
+      rawText: rawText,
+      title: activity?.name ?? activityName,
+      dueDate: at,
+      dateKeyword: timeKeyword,
+      suggestedActivity: activity,
+      suggestedAmount: quantity > 0 ? quantity : null,
+      suggestedUnit: measure?.unitId ?? measure?.name ?? activity?.name,
+    );
+  }
+
+  EntryParsedItem copyWith({
+    Activity? activity,
+    String? activityName,
+    Measure? measure,
+    double? quantity,
+    DateTime? at,
+    bool? hasExplicitTime,
+    bool? hasExplicitDate,
+    bool? isExplicitFuture,
+    bool? isRelative,
+    String? timeKeyword,
+    bool? isNewActivity,
+    Todo? willCompleteTodo,
+  }) =>
+      EntryParsedItem(
+        rawText: rawText,
+        parseResult: parseResult,
+        activity: activity ?? this.activity,
+        activityName: activityName ?? this.activityName,
+        measure: measure ?? this.measure,
+        quantity: quantity ?? this.quantity,
+        at: at ?? this.at,
+        hasExplicitTime: hasExplicitTime ?? this.hasExplicitTime,
+        hasExplicitDate: hasExplicitDate ?? this.hasExplicitDate,
+        isExplicitFuture: isExplicitFuture ?? this.isExplicitFuture,
+        isRelative: isRelative ?? this.isRelative,
+        timeKeyword: timeKeyword ?? this.timeKeyword,
+        isNewActivity: isNewActivity ?? this.isNewActivity,
+        timerCommand: timerCommand,
+        willCompleteTodo: willCompleteTodo ?? this.willCompleteTodo,
+      );
+}
+
+class TodoParsedItem extends ParsedItem {
+  @override
+  final String rawText;
+  final String title;
+  final DateTime? dueDate;
+  final String? dateKeyword;
+  final Activity? suggestedActivity;
+  final double? suggestedAmount;
+  final String? suggestedUnit;
+
+  TodoParsedItem({
+    required this.rawText,
+    required this.title,
+    this.dueDate,
+    this.dateKeyword,
+    this.suggestedActivity,
+    this.suggestedAmount,
+    this.suggestedUnit,
+  });
+
+  TodoParsedItem copyWith({
+    String? title,
+    DateTime? dueDate,
+    String? dateKeyword,
+    Activity? suggestedActivity,
+    double? suggestedAmount,
+    String? suggestedUnit,
+  }) =>
+      TodoParsedItem(
+        rawText: rawText,
+        title: title ?? this.title,
+        dueDate: dueDate ?? this.dueDate,
+        dateKeyword: dateKeyword ?? this.dateKeyword,
+        suggestedActivity: suggestedActivity ?? this.suggestedActivity,
+        suggestedAmount: suggestedAmount ?? this.suggestedAmount,
+        suggestedUnit: suggestedUnit ?? this.suggestedUnit,
+      );
+}
+
+class MultiParseResult {
+  final String rawText;
+  final bool isTodoMode;
+  final List<ParsedItem> items;
+
+  const MultiParseResult({
+    required this.rawText,
+    this.isTodoMode = false,
+    required this.items,
+  });
+
+  List<EntryParsedItem> get entryItems => items.whereType<EntryParsedItem>().toList();
+  List<TodoParsedItem> get todoItems => items.whereType<TodoParsedItem>().toList();
 }
 
 class NlParseResult {
@@ -17,6 +158,7 @@ class NlParseResult {
   final Measure? matchedMeasure;
   final double quantity;
   final bool hasExplicitQuantity;
+  final bool hasExplicitMeasure;
   final NlActionType actionType;
   final int? targetMinutes;
   final double confidence; // 0.0 - 1.0
@@ -28,6 +170,7 @@ class NlParseResult {
     this.matchedMeasure,
     required this.quantity,
     this.hasExplicitQuantity = false,
+    this.hasExplicitMeasure = false,
     required this.actionType,
     this.targetMinutes,
     required this.confidence,
@@ -96,15 +239,26 @@ class NaturalLanguageParser {
     'ondort': 14,
     'onbeş': 15,
     'onbes': 15,
+    'onaltı': 16,
+    'onalti': 16,
+    'onyedi': 17,
+    'onsekiz': 18,
+    'ondokuz': 19,
     'yirmi': 20,
+    'yirmibir': 21,
+    'yirmiiki': 22,
     'yirmibeş': 25,
     'yirmibes': 25,
     'otuz': 30,
+    'otuzbeş': 35,
+    'otuzbes': 35,
     'kırk': 40,
     'kirk': 40,
     'kırkbeş': 45,
     'kirkbes': 45,
     'elli': 50,
+    'ellibeş': 55,
+    'ellibes': 55,
     'altmış': 60,
     'altmis': 60,
     'yetmiş': 70,
@@ -113,6 +267,37 @@ class NaturalLanguageParser {
     'doksan': 90,
     'yüz': 100,
     'yuz': 100,
+    'zero': 0,
+    'half': 0.5,
+    'quarter': 0.25,
+    'one': 1,
+    'two': 2,
+    'three': 3,
+    'four': 4,
+    'five': 5,
+    'six': 6,
+    'seven': 7,
+    'eight': 8,
+    'nine': 9,
+    'ten': 10,
+    'eleven': 11,
+    'twelve': 12,
+    'thirteen': 13,
+    'fourteen': 14,
+    'fifteen': 15,
+    'sixteen': 16,
+    'seventeen': 17,
+    'eighteen': 18,
+    'nineteen': 19,
+    'twenty': 20,
+    'thirty': 30,
+    'forty': 40,
+    'fifty': 50,
+    'sixty': 60,
+    'seventy': 70,
+    'eighty': 80,
+    'ninety': 90,
+    'hundred': 100,
   };
 
   static const List<String> _timerKeywords = [
@@ -181,6 +366,8 @@ class NaturalLanguageParser {
     'koştum',
     'yurudum',
     'yürüdüm',
+    'uyudum',
+    'uyuduk',
     'cozdum',
     'çözdüm',
     'ettim',
@@ -191,6 +378,9 @@ class NaturalLanguageParser {
     'defa',
     'kere',
     'adet',
+    'sayfa',
+    'page',
+    'pages',
     'of',
     'for',
   ];
@@ -212,6 +402,37 @@ class NaturalLanguageParser {
   /// Sayıya yapışık yazılmış birimi ayırır ("45dk" -> "dk").
   static String _unitToken(String word) => word.replaceFirst(RegExp(r'^\d+([.,]\d+)?'), '');
 
+  static const Map<String, String> _verbToActivityRoot = {
+    'yurudum': 'yuru',
+    'yuruduk': 'yuru',
+    'yurumek': 'yuru',
+    'yurume': 'yuru',
+    'yürüdüm': 'yuru',
+    'yürüdük': 'yuru',
+    'yürümek': 'yuru',
+    'yürüme': 'yuru',
+    'kostum': 'kos',
+    'kostuk': 'kos',
+    'kosmak': 'kos',
+    'kosma': 'kos',
+    'koştum': 'kos',
+    'koştuk': 'kos',
+    'koşmak': 'kos',
+    'koşma': 'kos',
+    'uyudum': 'uyu',
+    'uyuduk': 'uyu',
+    'uyumak': 'uyu',
+    'uyuma': 'uyu',
+    'okudum': 'oku',
+    'okuduk': 'oku',
+    'okumak': 'oku',
+    'okuma': 'oku',
+    'ictim': 'ic',
+    'içtim': 'ic',
+    'yaptim': 'yap',
+    'yaptım': 'yap',
+  };
+
   /// Parses natural Turkish input like:
   /// - "2 kupa filtre kahve"
   /// - "bir buçuk litre su"
@@ -227,6 +448,7 @@ class NaturalLanguageParser {
     required List<Activity> activities,
     required List<Measure> measures,
     bool allowCommands = true,
+    Measure? Function(int activityId)? defaultMeasureFor,
   }) {
     final cleanInput = input.trim();
     if (cleanInput.isEmpty) {
@@ -283,22 +505,33 @@ class NaturalLanguageParser {
       quantity = baseVal + 0.5;
       foundExplicitQty = true;
     } else {
-      // Check for standalone numbers (digits)
-      final digitMatch = RegExp(r'(\d+([.,]\d+)?)').firstMatch(lower);
-      if (digitMatch != null) {
-        final numStr = digitMatch.group(1)!.replaceAll(',', '.');
-        final val = double.tryParse(numStr);
-        if (val != null) {
-          quantity = val;
-          foundExplicitQty = true;
-        }
+      // Check for compound numbers: "yirmi iki", "on bir", "twenty five" etc.
+      final compoundMatch = RegExp(
+        r'\b(on|yirmi|otuz|kırk|kirk|elli|altmış|altmis|yetmiş|yetmis|seksen|doksan|twenty|thirty|forty|fifty)\s+(bir|iki|üç|uc|dört|dort|beş|bes|altı|alti|yedi|sekiz|dokuz|one|two|three|four|five|six|seven|eight|nine)\b',
+      ).firstMatch(lower);
+      if (compoundMatch != null) {
+        final tens = _turkishWordNumbers[compoundMatch.group(1)!] ?? 0.0;
+        final ones = _turkishWordNumbers[compoundMatch.group(2)!] ?? 0.0;
+        quantity = tens + ones;
+        foundExplicitQty = true;
       } else {
-        // Check for words like "yarım", "çeyrek", "bir", "iki", "üç"
-        for (final word in words) {
-          if (_turkishWordNumbers.containsKey(word)) {
-            quantity = _turkishWordNumbers[word]!;
+        // Check for standalone numbers (digits)
+        final digitMatch = RegExp(r'(\d+([.,]\d+)?)').firstMatch(lower);
+        if (digitMatch != null) {
+          final numStr = digitMatch.group(1)!.replaceAll(',', '.');
+          final val = double.tryParse(numStr);
+          if (val != null) {
+            quantity = val;
             foundExplicitQty = true;
-            break;
+          }
+        } else {
+          // Check for words like "yarım", "çeyrek", "bir", "iki", "üç"
+          for (final word in words) {
+            if (_turkishWordNumbers.containsKey(word)) {
+              quantity = _turkishWordNumbers[word]!;
+              foundExplicitQty = true;
+              break;
+            }
           }
         }
       }
@@ -351,28 +584,57 @@ class NaturalLanguageParser {
     }
 
     String extractedActivity = remainingWords.join(' ').trim();
-    if (extractedActivity.isEmpty) {
-      extractedActivity = cleanInput;
-    }
 
     // 5. Match with Existing Activities
-    final (matchedActivity, confidence) = _matchActivity(extractedActivity, remainingWords, activities);
-    // Yeni aktivite adı özgün yazımdan kurulur; normalize hâl "Çay"ı "Cay" olarak kaydederdi.
-    final newActivityName = remainingRawWords.isEmpty ? cleanInput : remainingRawWords.join(' ');
-    final finalActivityName = matchedActivity?.name ?? trCapitalize(newActivityName);
+    var (matchedActivity, confidence) = _matchActivity(extractedActivity, remainingWords, activities);
 
-    // If still no measure, but activity has a default measure or only one measure
-    if (matchedMeasure == null && matchedActivity != null) {
-      // try default measure from store if available
+    // Fiil çekimleri ve kök eşleşmesi yalnızca geriye başka bir isim kalmadığında çalışır (örn: "30 dk yurudum" -> Yürüyüş)
+    if (matchedActivity == null && (remainingWords.isEmpty || remainingWords.every((w) => _verbToActivityRoot.containsKey(w)))) {
+      for (final w in words) {
+        final root = _verbToActivityRoot[w];
+        if (root != null) {
+          final found = activities.where((a) {
+            final an = normalizeTr(a.name).toLowerCase();
+            return an.startsWith(root) ||
+                   (root == 'yuru' && an.contains('yuru')) ||
+                   (root == 'kos' && an.contains('kos')) ||
+                   (root == 'uyu' && an.contains('uyku')) ||
+                   (root == 'oku' && (an.contains('kitap') || an.contains('oku')));
+          }).firstOrNull;
+          if (found != null) {
+            matchedActivity = found;
+            confidence = 0.9;
+            break;
+          }
+        }
+      }
+    }
+
+    // Yeni aktivite adı özgün yazımdan kurulur; normalize hâl "Çay"ı "Cay" olarak kaydederdi.
+    String finalActivityName;
+    if (matchedActivity != null) {
+      finalActivityName = matchedActivity.name;
+    } else {
+      final newActivityName = remainingRawWords.isNotEmpty
+          ? remainingRawWords.join(' ')
+          : cleanInput;
+      finalActivityName = trCapitalize(newActivityName);
+    }
+
+    // Ölçü belirtilmemişse ve aktivite biliniyorsa varsayılan ölçü kullanılır
+    var effectiveMeasure = matchedMeasure;
+    if (effectiveMeasure == null && matchedActivity != null && defaultMeasureFor != null) {
+      effectiveMeasure = defaultMeasureFor(matchedActivity.id);
     }
 
     return NlParseResult(
       rawText: cleanInput,
       activityName: finalActivityName,
       matchedActivity: matchedActivity,
-      matchedMeasure: matchedMeasure,
+      matchedMeasure: effectiveMeasure,
       quantity: foundExplicitQty ? quantity : 1.0,
       hasExplicitQuantity: foundExplicitQty,
+      hasExplicitMeasure: matchedMeasure != null,
       actionType: actionType,
       targetMinutes: targetMinutes,
       confidence: confidence,
@@ -577,5 +839,336 @@ class NaturalLanguageParser {
       if (matches) return i;
     }
     return -1;
+  }
+
+  /// Girdiyi güçlü ve zayıf ayırıcılarla parçalara böler.
+  /// - Güçlü: "ve", ",", ";", "ayrıca", " + ", "and".
+  /// - Zayıf: "sonra", "daha sonra", "then" (yalnızca iki taraf da kayıtlı aktiviteye uyuyorsa).
+  /// - Bölünmeyen yerler: Aktivite adlarının içi, rakam arası virgül ("1,5 l").
+  static List<String> splitSentence(
+    String input, {
+    required List<Activity> activities,
+    required List<Measure> measures,
+  }) {
+    final cleanInput = input.trim();
+    if (cleanInput.isEmpty) return const [];
+
+    // 1. Bölünmesi yasak olan aralıkları belirle [start, end)
+    final protectedRanges = <(int, int)>[];
+
+    // Rakam arası virgül ("1,5 l", "0,5 kg")
+    for (final m in RegExp(r'\d+,\d+').allMatches(cleanInput)) {
+      protectedRanges.add((m.start, m.end));
+    }
+
+    // Bilinen aktivite adları (en uzun olanlar önce)
+    final sortedActs = List.of(activities)..sort((a, b) => b.name.length.compareTo(a.name.length));
+    final lowerNorm = normalizeTr(cleanInput).toLowerCase();
+
+    for (final act in sortedActs) {
+      if (act.name.trim().isEmpty) continue;
+      final actNorm = normalizeTr(act.name).toLowerCase();
+      // Yalnızca ayırıcı sözcük içeren adlar aralık korur ("Yoga ve meditasyon" gibi)
+      if (!actNorm.contains('ve') &&
+          !actNorm.contains(',') &&
+          !actNorm.contains(';') &&
+          !actNorm.contains('and') &&
+          !actNorm.contains('+') &&
+          !actNorm.contains('sonra') &&
+          !actNorm.contains('then')) {
+        continue;
+      }
+
+      int startIdx = 0;
+      while (startIdx < lowerNorm.length) {
+        final at = lowerNorm.indexOf(actNorm, startIdx);
+        if (at == -1) break;
+        protectedRanges.add((at, at + actNorm.length));
+        startIdx = at + actNorm.length;
+      }
+    }
+
+    bool isProtected(int index) {
+      for (final (start, end) in protectedRanges) {
+        if (index >= start && index < end) return true;
+      }
+      return false;
+    }
+
+    // 2. Güçlü ayırıcılar
+    final strongSeparatorRegex = RegExp(
+      r'(?<sep>,|;|\s*\+\s+|\b(ve|ayrıca|ayrica|and)\b)',
+      caseSensitive: false,
+    );
+
+    final splitPoints = <(int, int)>[];
+    for (final m in strongSeparatorRegex.allMatches(cleanInput)) {
+      if (!isProtected(m.start)) {
+        splitPoints.add((m.start, m.end));
+      }
+    }
+
+    final strongChunks = <String>[];
+    int lastEnd = 0;
+    for (final (start, end) in splitPoints) {
+      final chunk = cleanInput.substring(lastEnd, start).trim();
+      if (chunk.isNotEmpty) {
+        strongChunks.add(chunk);
+      }
+      lastEnd = end;
+    }
+    final finalChunk = cleanInput.substring(lastEnd).trim();
+    if (finalChunk.isNotEmpty) {
+      strongChunks.add(finalChunk);
+    }
+
+    if (strongChunks.isEmpty) {
+      strongChunks.add(cleanInput);
+    }
+
+    // 3. Zayıf ayırıcılar ("sonra", "daha sonra", "then")
+    final weakSeparatorRegex = RegExp(
+      r'\b(daha\s+sonra|sonra|then)\b',
+      caseSensitive: false,
+    );
+
+    final finalPieces = <String>[];
+    for (final chunk in strongChunks) {
+      final weakMatches = weakSeparatorRegex.allMatches(chunk).toList();
+      if (weakMatches.isEmpty) {
+        finalPieces.add(chunk);
+        continue;
+      }
+
+      bool didSplit = false;
+      for (final wm in weakMatches) {
+        if (isProtected(wm.start)) continue;
+        final left = chunk.substring(0, wm.start).trim();
+        final right = chunk.substring(wm.end).trim();
+        if (left.isEmpty || right.isEmpty) continue;
+
+        final leftParse = parse(left, activities: activities, measures: measures, allowCommands: false);
+        final rightParse = parse(right, activities: activities, measures: measures, allowCommands: false);
+
+        if (leftParse.matchedActivity != null && rightParse.matchedActivity != null) {
+          finalPieces.add(left);
+          finalPieces.add(right);
+          didSplit = true;
+          break;
+        }
+      }
+
+      if (!didSplit) {
+        finalPieces.add(chunk);
+      }
+    }
+
+    return finalPieces;
+  }
+
+  /// Yapılacak kipini ve olası baştaki tarih kelimesini tespit eder.
+  static (bool isTodo, String? prefixDateKeyword, String content) _detectTodoMode(
+    String input, {
+    DateTime? now,
+  }) {
+    final trimmed = input.trim();
+
+    // 1. "yapılacak", "yapilacak", "todo", "to-do" (iki noktalı veya iki noktasız)
+    final todoPrefixRegex = RegExp(
+      r'^(yapılacak|yapilacak|todo|to-do)(\s*:|\s+)',
+      caseSensitive: false,
+    );
+    final match = todoPrefixRegex.firstMatch(trimmed);
+    if (match != null) {
+      final content = trimmed.substring(match.end).trim();
+      return (true, null, content);
+    }
+
+    // 2. Bir tarih kelimesi ve iki nokta: "yarın: dişçiyi ara", "cuma: fatura"
+    final dateColonRegex = RegExp(
+      r'^(?<date>bugün|bugun|dün|dun|yarın|yarin|öbür\s+gün|obur\s+gun|haftaya|hafta\s*sonu|haftasonu|pazartesi|salı|sali|çarşamba|carsamba|perşembe|persembe|cuma|cumartesi|pazar|today|yesterday|tomorrow|next\s+week|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*:\s*(?<content>.+)',
+      caseSensitive: false,
+    );
+    final dcMatch = dateColonRegex.firstMatch(trimmed);
+    if (dcMatch != null) {
+      final dateWord = dcMatch.namedGroup('date')!.trim();
+      final content = dcMatch.namedGroup('content')!.trim();
+      return (true, dateWord, content);
+    }
+
+    return (false, null, trimmed);
+  }
+
+  /// Birden fazla kayıt veya yapılacak içeren serbest metni ayrıştırır.
+  /// Zaman paylaşımı, geçmiş yönlü çözümleme ve kutudan yapılacak modunu destekler.
+  static MultiParseResult parseMulti(
+    String input, {
+    required List<Activity> activities,
+    required List<Measure> measures,
+    List<Todo> openTodos = const [],
+    DateTime? now,
+    DateTime? fallbackDay,
+    Measure? Function(int activityId)? defaultMeasureFor,
+  }) {
+    final cleanInput = input.trim();
+    if (cleanInput.isEmpty) {
+      return const MultiParseResult(rawText: '', items: []);
+    }
+
+    final (isTodo, prefixDateWord, content) = _detectTodoMode(cleanInput, now: now);
+    if (isTodo) {
+      DateTime? sharedDueDate;
+      String? sharedDateKeyword = prefixDateWord;
+
+      if (prefixDateWord != null) {
+        final parsedDate = TimeParser.parse(
+          prefixDateWord,
+          direction: TemporalDirection.future,
+          now: now,
+        );
+        if (parsedDate.hasExplicitDate) {
+          sharedDueDate = parsedDate.dateTime;
+        }
+      }
+
+      String workingContent = content;
+      if (sharedDueDate == null) {
+        final leadTime = TimeParser.parse(
+          workingContent,
+          direction: TemporalDirection.future,
+          now: now,
+        );
+        final normWork = normalizeTr(workingContent).toLowerCase();
+        final normLead = normalizeTr(leadTime.rawMatchedText).toLowerCase();
+        if (leadTime.hasExplicitDate && normLead.isNotEmpty && normWork.startsWith(normLead)) {
+          sharedDueDate = leadTime.dateTime;
+          sharedDateKeyword = leadTime.dateKeyword;
+          workingContent = leadTime.cleanedText;
+        }
+      }
+
+      final pieces = splitSentence(workingContent, activities: activities, measures: measures);
+      final todoItems = <TodoParsedItem>[];
+
+      for (final piece in pieces) {
+        if (piece.trim().isEmpty) continue;
+        final todoParsed = TodoInputParser.parse(
+          piece,
+          activities: activities,
+          measures: measures,
+          now: now,
+        );
+
+        final dueDate = todoParsed.date ?? sharedDueDate;
+        final dateKeyword = todoParsed.dateKeyword ?? sharedDateKeyword;
+
+        todoItems.add(
+          TodoParsedItem(
+            rawText: piece,
+            title: todoParsed.cleanTitle.isNotEmpty ? todoParsed.cleanTitle : piece,
+            dueDate: dueDate,
+            dateKeyword: dateKeyword,
+            suggestedActivity: todoParsed.suggestedActivity,
+            suggestedAmount: todoParsed.suggestedAmount,
+            suggestedUnit: todoParsed.suggestedUnit,
+          ),
+        );
+      }
+
+      return MultiParseResult(
+        rawText: cleanInput,
+        isTodoMode: true,
+        items: todoItems,
+      );
+    }
+
+    // Kayıt modu (Record mode)
+    TimeParseResult? sharedTime;
+    String workingInput = cleanInput;
+
+    final leadTime = TimeParser.parse(
+      workingInput,
+      direction: TemporalDirection.past,
+      now: now,
+      fallbackDay: fallbackDay,
+    );
+
+    final normInput = normalizeTr(workingInput).toLowerCase();
+    final normLead = normalizeTr(leadTime.rawMatchedText).toLowerCase();
+    if (normLead.isNotEmpty && (normInput.startsWith(normLead) || normInput.startsWith('$normLead '))) {
+      sharedTime = leadTime;
+      workingInput = leadTime.cleanedText;
+    }
+
+    final pieces = splitSentence(workingInput, activities: activities, measures: measures);
+    final items = <ParsedItem>[];
+
+    for (final piece in pieces) {
+      if (piece.trim().isEmpty) continue;
+
+      final pieceTime = TimeParser.parse(
+        piece,
+        direction: TemporalDirection.past,
+        now: now,
+        fallbackDay: fallbackDay,
+      );
+
+      final hasOwnTime = pieceTime.hasExplicitDate || pieceTime.hasExplicitTime || pieceTime.isRelative;
+      final effectiveTime = hasOwnTime ? pieceTime : (sharedTime ?? pieceTime);
+      final textToParse = hasOwnTime ? pieceTime.cleanedText : piece;
+
+      final singleParse = parse(
+        textToParse,
+        activities: activities,
+        measures: measures,
+        allowCommands: pieces.length == 1,
+        defaultMeasureFor: defaultMeasureFor,
+      );
+
+      Todo? willComplete;
+      final act = singleParse.matchedActivity;
+      if (act != null && openTodos.isNotEmpty) {
+        final openLinked = openTodos.where(
+          (t) => t.isLinked && !t.isCompleted && t.linkedActivityIds.contains(act.id),
+        );
+        for (final t in openLinked) {
+          // Yapılacağın oluşturulmasından önceki kayıtlar sayılmaz
+          if (effectiveTime.dateTime.millisecondsSinceEpoch < t.createdAt) continue;
+
+          final m = singleParse.matchedMeasure;
+          final val = (m != null) ? (singleParse.quantity * m.amount) : singleParse.quantity;
+          if (t.targetAmount == null || val >= t.targetAmount!) {
+            willComplete = t;
+            break;
+          }
+        }
+      }
+
+      items.add(
+        EntryParsedItem(
+          rawText: piece,
+          parseResult: singleParse,
+          activity: singleParse.matchedActivity,
+          activityName: singleParse.activityName,
+          measure: singleParse.matchedMeasure,
+          quantity: singleParse.quantity,
+          at: effectiveTime.dateTime,
+          hasExplicitTime: effectiveTime.hasExplicitTime,
+          hasExplicitDate: effectiveTime.hasExplicitDate,
+          isExplicitFuture: effectiveTime.isExplicitFuture,
+          isRelative: effectiveTime.isRelative,
+          timeKeyword: effectiveTime.dateKeyword,
+          isNewActivity: singleParse.matchedActivity == null,
+          timerCommand: singleParse.timerCommand,
+          willCompleteTodo: willComplete,
+        ),
+      );
+    }
+
+    return MultiParseResult(
+      rawText: cleanInput,
+      isTodoMode: false,
+      items: items,
+    );
   }
 }

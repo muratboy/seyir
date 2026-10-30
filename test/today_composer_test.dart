@@ -117,7 +117,7 @@ void main() {
 
     await tester.enterText(composerField, '2 kahve');
     await tester.pump();
-    expect(previewOf(tester), '☕ Kahve: 2 kez eklenecek');
+    expect(previewOf(tester), anyOf('☕ Kahve: 2 Fincan · 160 ml eklenecek', '☕ Kahve: 2 Fincan · 0,16 L eklenecek'));
 
     // One single tap logs it immediately!
     await tester.tap(submitButton);

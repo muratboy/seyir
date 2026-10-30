@@ -332,6 +332,56 @@ class Entry {
       );
 }
 
+class BatchEntryInput {
+  final int activityId;
+  final int? measureId;
+  final double qty;
+  final DateTime at;
+  final DateTime? endAt;
+  final String? note;
+
+  const BatchEntryInput({
+    required this.activityId,
+    this.measureId,
+    this.qty = 1.0,
+    required this.at,
+    this.endAt,
+    this.note,
+  });
+}
+
+class BatchTodoInput {
+  final String title;
+  final DateTime? dueDate;
+  final int? linkedActivityId;
+  final double? targetAmount;
+  final String? targetUnit;
+
+  const BatchTodoInput({
+    required this.title,
+    this.dueDate,
+    this.linkedActivityId,
+    this.targetAmount,
+    this.targetUnit,
+  });
+}
+
+class BatchSaveResult {
+  final List<Entry> entries;
+  final List<Todo> todos;
+  final List<Goal> achievedGoals;
+  final List<Goal> exceededGoals;
+  final Future<void> Function() undo;
+
+  const BatchSaveResult({
+    required this.entries,
+    required this.todos,
+    this.achievedGoals = const [],
+    this.exceededGoals = const [],
+    required this.undo,
+  });
+}
+
 enum GoalPeriod { day, week, month, total }
 
 const periodNames = <GoalPeriod, String>{
@@ -1105,6 +1155,7 @@ class Todo {
   }) : linkedActivityIds = linkedActivityIds ?? [];
 
   bool get isLinked => linkedActivityIds.isNotEmpty;
+  bool get isCompleted => doneAt != null || manualState == 'done';
 
   Map<String, Object?> toMap() {
     final m = <String, Object?>{

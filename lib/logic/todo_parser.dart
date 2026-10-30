@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 
 import '../data/models.dart';
 import '../logic/text_match.dart';
+import '../logic/time_parser.dart';
 import '../services/nl_parser.dart';
 
 /// Hızlı Todo ekleme sırasında metinden çıkarılan tarih ve aktivite önerileri.
@@ -28,34 +29,6 @@ class TodoParsedResult {
 }
 
 class TodoInputParser {
-  /// Haftanın gün adları haritası (1 = Pazartesi, 7 = Pazar).
-  static const Map<String, int> _weekdays = {
-    'pazartesi': 1,
-    'monday': 1,
-    'mon': 1,
-    'salı': 2,
-    'sali': 2,
-    'tuesday': 2,
-    'tue': 2,
-    'çarşamba': 3,
-    'carsamba': 3,
-    'wednesday': 3,
-    'wed': 3,
-    'perşembe': 4,
-    'persembe': 4,
-    'thursday': 4,
-    'thu': 4,
-    'cuma': 5,
-    'friday': 5,
-    'fri': 5,
-    'cumartesi': 6,
-    'saturday': 6,
-    'sat': 6,
-    'pazar': 7,
-    'sunday': 7,
-    'sun': 7,
-  };
-
   /// Metinden tarih ifadesini, bağlı aktiviteyi ve hedef miktarı ayrıştırır.
   static TodoParsedResult parse(
     String input, {
@@ -64,88 +37,23 @@ class TodoInputParser {
     DateTime? now,
   }) {
     final currentNow = now ?? DateTime.now();
-    final today = DateTime(currentNow.year, currentNow.month, currentNow.day);
 
     final raw = input.trim();
     if (raw.isEmpty) {
       return const TodoParsedResult(cleanTitle: '');
     }
 
-    DateTime? detectedDate;
-    String? matchedKeyword;
+    final timeResult = TimeParser.parse(
+      raw,
+      direction: TemporalDirection.future,
+      now: currentNow,
+    );
 
-    // 1. Çok kelimeli tarih ifadeleri ("öbür gün", "hafta sonu", "day after tomorrow", vb.)
-    final multiWordPatterns = <(RegExp, int Function(DateTime), String)>[
-      (
-        RegExp(r'(^|\s)(öbür\s+gün|obur\s+gun|oburgun|day\s+after\s+tomorrow)($|\s)', caseSensitive: false),
-        (d) => 2,
-        'öbür gün',
-      ),
-      (
-        RegExp(r'(^|\s)(hafta\s*sonu|haftasonu|weekend)($|\s)', caseSensitive: false),
-        (d) {
-          final wd = d.weekday;
-          if (wd == 6 || wd == 7) return 0;
-          return 6 - wd;
-        },
-        'hafta sonu',
-      ),
-      (
-        RegExp(r'(^|\s)(haftaya|next\s+week)($|\s)', caseSensitive: false),
-        (d) => 7,
-        'haftaya',
-      ),
-    ];
-
-    String workingText = raw;
-    for (final (regex, getOffset, keyword) in multiWordPatterns) {
-      final match = regex.firstMatch(workingText);
-      if (match != null) {
-        matchedKeyword = keyword;
-        detectedDate = today.add(Duration(days: getOffset(today)));
-        final captured = match.group(2)!;
-        workingText = workingText.replaceFirst(captured, ' ').trim();
-        break;
-      }
-    }
-
-    // 2. Tek kelimeli tarih ifadeleri ("bugün", "yarın", "today", "tomorrow" ve gün adları)
-    final words = workingText.split(RegExp(r'\s+'));
-    final remainingWords = <String>[];
-
-    for (var i = 0; i < words.length; i++) {
-      final w = words[i];
-      final norm = normalizeTr(w).toLowerCase();
-
-      if (detectedDate == null) {
-        if (norm == 'bugun' || norm == 'bugün' || norm == 'today') {
-          detectedDate = today;
-          matchedKeyword = 'bugün';
-          continue;
-        } else if (norm == 'yarin' || norm == 'yarın' || norm == 'tomorrow') {
-          detectedDate = today.add(const Duration(days: 1));
-          matchedKeyword = 'yarın';
-          continue;
-        } else if (_weekdays.containsKey(norm)) {
-          final targetWeekday = _weekdays[norm]!;
-          final currentWeekday = today.weekday;
-          int offset;
-          if (targetWeekday == currentWeekday) {
-            offset = 0; // Bugünün adıysa bugün!
-          } else if (targetWeekday > currentWeekday) {
-            offset = targetWeekday - currentWeekday;
-          } else {
-            offset = 7 - (currentWeekday - targetWeekday);
-          }
-          detectedDate = today.add(Duration(days: offset));
-          matchedKeyword = norm;
-          continue;
-        }
-      }
-      remainingWords.add(w);
-    }
-
-    String cleaned = remainingWords.join(' ').trim();
+    final detectedDate = timeResult.hasExplicitDate
+        ? DateTime(timeResult.dateTime.year, timeResult.dateTime.month, timeResult.dateTime.day)
+        : null;
+    final matchedKeyword = timeResult.dateKeyword;
+    String cleaned = timeResult.cleanedText;
     if (cleaned.isEmpty) {
       cleaned = raw;
     }

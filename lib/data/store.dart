@@ -1663,11 +1663,11 @@ class AppStore extends ChangeNotifier {
 
   /// Henüz kaydedilmemiş bir kaydın miktar yazımı (giriş kutusunun önizlemesi). Kayıt eklendiğinde
   /// [entryDetail] aynı metni gösterir.
-  String amountDetail(int? measureId, double qty) {
-    final m = measureById(measureId);
+  String amountDetail(int? measureId, double qty, {int? activityId}) {
+    final m = measureById(measureId) ?? (measureId == null && activityId != null ? defaultMeasureFor(activityId) : null);
     return entryDetail(Entry(
       id: 0,
-      activityId: 0,
+      activityId: activityId ?? 0,
       ts: 0,
       measureId: m?.id,
       qty: qty,
@@ -1749,6 +1749,216 @@ class AppStore extends ChangeNotifier {
     final exceeded = goals.where((g) => afterExceeded.contains(g.id) && !beforeExceeded.contains(g.id)).toList();
     _notifyGoalChanges(achieved, exceeded);
     return AddResult(e, achieved, exceeded: exceeded);
+  }
+
+  /// Aktivite için varsayılan ölçüyü döner (kısayol, son kullanım veya birim boyutundan).
+  Measure? defaultMeasureFor(int activityId) {
+    if (!activities.containsKey(activityId)) return null;
+
+    // 1. Kısayollar (QuickItems): kullanıcının bu aktivite için özellikle seçtiği ölçü
+    for (final q in quickItems) {
+      if (q.activityId == activityId && q.measureId != null) {
+        final m = measureById(q.measureId);
+        if (m != null) return m;
+      }
+    }
+
+    // 2. Son kullanılan ölçü (stats.lastMeasureId)
+    final lastMId = stats[activityId]?.lastMeasureId;
+    if (lastMId != null) {
+      final m = measureById(lastMId);
+      if (m != null) return m;
+    }
+
+    // 3. Daha önce bu aktiviteyle kullanılmış ölçüler (en sık kullanılan)
+    final (usedMeasures, otherMeasures) = measuresFor(activityId);
+    if (usedMeasures.isNotEmpty) return usedMeasures.first;
+
+    // 4. Aktivitenin özelliklerine veya birimine/boyutuna göre uygun ilk ölçü
+    final baseUnit = activityBaseUnit(activityId);
+    final targetDim = unit(baseUnit).dim;
+    final actNorm = activity(activityId).norm;
+
+    if (actNorm.contains('kahve')) {
+      final coffeeM = measures.where((m) {
+        final mn = normalizeTr(m.name);
+        return mn.contains('fincan') || mn.contains('kupa');
+      }).firstOrNull;
+      if (coffeeM != null) return coffeeM;
+    }
+    if (actNorm.contains('cay')) {
+      final teaM = measures.where((m) => normalizeTr(m.name).contains('cay')).firstOrNull;
+      if (teaM != null) return teaM;
+    }
+    if (actNorm == 'su' || actNorm.startsWith('su ') || actNorm.endsWith(' su')) {
+      final waterM = measures.where((m) {
+        final mn = normalizeTr(m.name);
+        return mn.contains('su bardag') || mn == 'bardak';
+      }).firstOrNull;
+      if (waterM != null) return waterM;
+    }
+
+    for (final m in measures) {
+      if (unit(m.unitId).dim == targetDim) return m;
+    }
+
+    if (targetDim == 'count') {
+      final adetM = measures.where((m) => m.unitId == 'adet').firstOrNull;
+      if (adetM != null) return adetM;
+    }
+
+    return otherMeasures.firstOrNull ?? measures.firstOrNull;
+  }
+
+  /// Çoklu kayıt ve yapılacakları tek bir SQLite transaction'ında yazar.
+  /// Bildirim ve widget senkronizasyonu tek bir kez çalışır.
+  Future<BatchSaveResult> saveBatch({
+    List<BatchEntryInput> entries = const [],
+    List<BatchTodoInput> todos = const [],
+    List<int> createdActivityIds = const [],
+  }) async {
+    final d = await db;
+    final createdEntries = <Entry>[];
+    final createdTodos = <Todo>[];
+
+    // Önceki hedef durumları
+    final beforeDoneMap = <int, Set<int>>{};
+    final beforeExceededMap = <int, Set<int>>{};
+    for (final input in entries) {
+      beforeDoneMap[input.activityId] = _doneTargetGoalIds(input.activityId, input.at);
+      beforeExceededMap[input.activityId] = _exceededLimitGoalIds(input.activityId, input.at);
+    }
+
+    await d.transaction((tx) async {
+      for (final input in entries) {
+        final time = input.at;
+        final m = measureById(input.measureId);
+        final finalUnitId = m?.unitId;
+        final finalValue = m != null ? m.amount * input.qty : null;
+
+        int? calculatedEndTs = input.endAt?.millisecondsSinceEpoch;
+        if (calculatedEndTs == null &&
+            (finalUnitId == 'dk' || finalUnitId == 'sa' || finalUnitId == 'sn') &&
+            finalValue != null &&
+            finalValue > 0) {
+          final durationSecs =
+              (finalValue * (finalUnitId == 'sa' ? 3600 : (finalUnitId == 'dk' ? 60 : 1))).round();
+          calculatedEndTs = time.add(Duration(seconds: durationSecs)).millisecondsSinceEpoch;
+        }
+
+        final e = Entry(
+          id: 0,
+          activityId: input.activityId,
+          ts: time.millisecondsSinceEpoch,
+          endTs: calculatedEndTs,
+          measureId: m?.id,
+          qty: input.qty,
+          value: finalValue,
+          unitId: finalUnitId,
+          note: (input.note?.trim().isEmpty ?? true) ? null : input.note!.trim(),
+        );
+
+        e.id = await tx.insert('entries', e.toMap()..remove('id'));
+        createdEntries.add(e);
+      }
+
+      for (final tInput in todos) {
+        final dueStr = tInput.dueDate != null ? DateFormat('yyyy-MM-dd').format(tInput.dueDate!) : null;
+        final actIds = tInput.linkedActivityId != null ? [tInput.linkedActivityId!] : <int>[];
+        String? targetUnit = tInput.targetUnit;
+        if (tInput.targetAmount != null && (targetUnit == null || targetUnit.isEmpty)) {
+          final firstActId = actIds.firstOrNull;
+          targetUnit = firstActId != null ? activityBaseUnit(firstActId) : 'adet';
+        }
+
+        final todo = Todo(
+          id: 0,
+          title: tInput.title,
+          dueDate: dueStr,
+          targetAmount: tInput.targetAmount,
+          targetUnit: targetUnit,
+          createdAt: DateTime.now().millisecondsSinceEpoch,
+          linkedActivityIds: actIds,
+        );
+
+        todo.id = await tx.insert('todos', todo.toMap()..remove('id'));
+        for (final actId in actIds) {
+          await tx.insert('todo_links', {'todo_id': todo.id, 'activity_id': actId});
+        }
+        createdTodos.add(todo);
+      }
+    });
+
+    for (final e in createdEntries) {
+      _insertSorted(e);
+    }
+    this.todos.addAll(createdTodos);
+
+    _changed();
+    await _syncLinkedSteps();
+    await _syncTodos(announce: false);
+    WidgetSync.schedule();
+
+    // Hedef değişimleri
+    final achieved = <Goal>[];
+    final exceeded = <Goal>[];
+    for (final e in createdEntries) {
+      final afterDone = _doneTargetGoalIds(e.activityId, e.time);
+      final afterExceeded = _exceededLimitGoalIds(e.activityId, e.time);
+      final beforeDone = beforeDoneMap[e.activityId] ?? const {};
+      final beforeExceeded = beforeExceededMap[e.activityId] ?? const {};
+
+      for (final g in goals) {
+        if (afterDone.contains(g.id) && !beforeDone.contains(g.id) && !achieved.any((a) => a.id == g.id)) {
+          achieved.add(g);
+        }
+        if (afterExceeded.contains(g.id) && !beforeExceeded.contains(g.id) && !exceeded.any((x) => x.id == g.id)) {
+          exceeded.add(g);
+        }
+      }
+    }
+    _notifyGoalChanges(achieved, exceeded);
+
+    Future<void> undo() async {
+      await d.transaction((tx) async {
+        for (final e in createdEntries) {
+          await tx.delete('entries', where: 'id = ?', whereArgs: [e.id]);
+        }
+        for (final t in createdTodos) {
+          await tx.delete('todo_links', where: 'todo_id = ?', whereArgs: [t.id]);
+          await tx.delete('todos', where: 'id = ?', whereArgs: [t.id]);
+        }
+      });
+
+      for (final e in createdEntries) {
+        this.entries.removeWhere((x) => x.id == e.id);
+      }
+      for (final t in createdTodos) {
+        this.todos.removeWhere((x) => x.id == t.id);
+      }
+
+      if (createdActivityIds.isNotEmpty) {
+        for (final actId in createdActivityIds) {
+          final hasOtherEntries = this.entries.any((e) => e.activityId == actId);
+          if (!hasOtherEntries && activities.containsKey(actId)) {
+            await deleteActivity(actId);
+          }
+        }
+      }
+
+      _changed();
+      await _syncLinkedSteps();
+      await _syncTodos(announce: false);
+      WidgetSync.schedule();
+    }
+
+    return BatchSaveResult(
+      entries: createdEntries,
+      todos: createdTodos,
+      achievedGoals: achieved,
+      exceededGoals: exceeded,
+      undo: undo,
+    );
   }
 
   /// Kayıt düzenleme penceresindeki ölçü seçicinin bildirdiği (ölçü, miktar) seçimini [updateEntry]'ye
@@ -2132,7 +2342,7 @@ class AppStore extends ChangeNotifier {
       final totalMs = isCompletedCountdown ? timer.targetMs : timer.elapsedMs;
       final (finalUnitId, finalQty, measureId) = _calculateTimerUnitAndQty(totalMs);
       final recordTime = splitChoice == MidnightSplitChoice.endDay ? endTime : startTime;
-      final m = measureById(measureId);
+      final m = measureById(measureId) ?? (measureId == null ? defaultMeasureFor(actId) : null);
       final calculatedEndTs = isCompletedCountdown
           ? startTime.add(Duration(milliseconds: timer.targetMs)).millisecondsSinceEpoch
           : endTime.millisecondsSinceEpoch;

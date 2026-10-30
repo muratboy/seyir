@@ -274,6 +274,18 @@ void main() {
         await tester.tap(find.widgetWithText(ActionChip, 'Su'));
         await expectClean('today, composer options');
         await tester.tap(find.byTooltip(tr ? 'Temizle' : 'Clear'));
+
+        // Çok öğeli önizleme: uzun adlar, zaman çipleri, ipucu satırları
+        await tester.enterText(
+          find.byType(TextField).last,
+          tr
+              ? 'dün 500 ml su ve 2 saat ders çalış ve yarın dişçiyi ara'
+              : 'yesterday 500 ml water and 2 hours study and tomorrow dentist',
+        );
+        await tester.pump(const Duration(milliseconds: 200));
+        await expectClean('today, multi-item preview');
+        await tester.tap(find.byTooltip(tr ? 'Temizle' : 'Clear'));
+        await tester.pump(const Duration(milliseconds: 200));
         await scrollThrough('today', steps: 6);
 
         // Arama sayfası (TakipSearchDelegate)

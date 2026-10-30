@@ -3,12 +3,14 @@ import 'dart:math';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:intl/intl.dart';
 
 import '../data/models.dart';
 import '../data/store.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/text_match.dart';
+import '../logic/time_parser.dart';
 import '../services/nl_parser.dart';
 import 'common.dart';
 import 'components/active_timer_card.dart';
@@ -70,6 +72,7 @@ class _ComposerPreview extends StatelessWidget {
   final VoidCallback onOther;
   final VoidCallback? onToggleOptions;
   final bool optionsOpen;
+  final Widget? timeChip;
 
   const _ComposerPreview({
     required this.startsTimer,
@@ -78,6 +81,7 @@ class _ComposerPreview extends StatelessWidget {
     required this.onOther,
     this.onToggleOptions,
     this.optionsOpen = false,
+    this.timeChip,
   });
 
   @override
@@ -108,6 +112,10 @@ class _ComposerPreview extends StatelessWidget {
               ),
             ),
           ),
+          if (timeChip != null) ...[
+            const SizedBox(width: 4),
+            timeChip!,
+          ],
           if (onToggleOptions != null && !startsTimer)
             IconButton(
               icon: Icon(
@@ -165,6 +173,9 @@ class _TodayViewState extends State<_TodayView> {
   bool _measureTouched = false;
   bool _qtyTouched = false;
 
+  List<ParsedItem>? _customItems;
+  final _previewScrollController = ScrollController();
+
   @override
   void initState() {
     super.initState();
@@ -173,6 +184,13 @@ class _TodayViewState extends State<_TodayView> {
     store.todoCompletedNotifier.addListener(_onTodoCompleted);
     // Öneriler giriş kutusu odaklanınca da gösterilir.
     _inputFocus.addListener(_onFocusChanged);
+    _textController.addListener(_onTextChanged);
+  }
+
+  void _onTextChanged() {
+    if (_customItems != null) {
+      setState(() => _customItems = null);
+    }
   }
 
   @override
@@ -181,9 +199,11 @@ class _TodayViewState extends State<_TodayView> {
     widget.voiceRequest?.removeListener(_onVoiceRequested);
     store.todoCompletedNotifier.removeListener(_onTodoCompleted);
     _inputFocus.removeListener(_onFocusChanged);
+    _textController.removeListener(_onTextChanged);
     _inputFocus.dispose();
     _textController.dispose();
     _noteController.dispose();
+    _previewScrollController.dispose();
     super.dispose();
   }
 
@@ -232,6 +252,7 @@ class _TodayViewState extends State<_TodayView> {
       _asEntry = false;
       _measureTouched = false;
       _qtyTouched = false;
+      _customItems = null;
     });
     _inputFocus.unfocus();
   }
@@ -249,7 +270,26 @@ class _TodayViewState extends State<_TodayView> {
       _asEntry = false;
       _measureTouched = false;
       _qtyTouched = false;
+      _customItems = null;
     });
+  }
+
+  /// Serbest metinden ayrıştırılan öğelerin güncel listesi.
+  List<ParsedItem> _currentItems() {
+    if (_customItems != null) return _customItems!;
+    final text = _textController.text.trim();
+    if (_selectedActivity != null || text.isEmpty) return const [];
+
+    final multi = NaturalLanguageParser.parseMulti(
+      text,
+      activities: _forceNew ? const [] : store.activities.values.toList(),
+      measures: store.measures,
+      openTodos: store.todos,
+      now: DateTime.now(),
+      fallbackDay: _currentDay,
+      defaultMeasureFor: store.defaultMeasureFor,
+    );
+    return multi.items;
   }
 
   /// Kutuya yazılanın gönder düğmesine basılınca neye dönüşeceği; aktivite listeden seçildiyse ya da kutu
@@ -258,34 +298,169 @@ class _TodayViewState extends State<_TodayView> {
     final text = _textController.text.trim();
     if (_selectedActivity != null || text.isEmpty) return null;
 
-    // "Yeni Olarak Ekle" bir kayıt isteğidir: benzer adlı aktiviteye bağlanılmaz, komut da aranmaz.
+    final items = _currentItems();
+    if (items.length != 1 || items.first is! EntryParsedItem) return null;
+    final firstItem = items.first as EntryParsedItem;
+
     final activities = _forceNew ? const <Activity>[] : store.activities.values.toList();
     NlParseResult read({required bool commands}) => NaturalLanguageParser.parse(
-          text,
+          firstItem.rawText,
           activities: activities,
           measures: store.measures,
           allowCommands: commands,
+          defaultMeasureFor: store.defaultMeasureFor,
         );
     final withCommands = read(commands: !_forceNew);
     final canBeCommand = withCommands.timerCommand != null;
     final parsed = canBeCommand && _asEntry ? read(commands: false) : withCommands;
 
+    final hasExplicitAmount = parsed.hasExplicitQuantity || parsed.matchedMeasure != null;
+    final existingAct = firstItem.activity ?? store.exactMatch(firstItem.activityName);
+    final defMeasureId = (existingAct != null && hasExplicitAmount)
+        ? store.defaultMeasureFor(existingAct.id)?.id
+        : null;
+    final effMeasureId = _measureTouched
+        ? _selectedMeasureId
+        : (parsed.matchedMeasure?.id ?? defMeasureId ?? _selectedMeasureId);
+
     return _ComposerPlan(
       parsed: parsed,
-      existing: parsed.matchedActivity ?? store.exactMatch(parsed.activityName),
-      measureId: _measureTouched ? _selectedMeasureId : (parsed.matchedMeasure?.id ?? _selectedMeasureId),
+      existing: existingAct,
+      measureId: effMeasureId,
       qty: _qtyTouched ? _qty : (parsed.quantity > 0 ? parsed.quantity : _qty),
       canBeCommand: canBeCommand,
     );
   }
 
+  void _removeItem(int index) {
+    setState(() {
+      final items = List<ParsedItem>.from(_currentItems());
+      if (index >= 0 && index < items.length) {
+        items.removeAt(index);
+        _customItems = items;
+      }
+    });
+  }
+
+  void _convertToTodo(int index) {
+    setState(() {
+      final items = List<ParsedItem>.from(_currentItems());
+      if (index >= 0 && index < items.length) {
+        final item = items[index];
+        if (item is EntryParsedItem) {
+          items[index] = item.toTodoItem();
+          _customItems = items;
+        }
+      }
+    });
+  }
+
+  Future<void> _pickDateTime(int index, DateTime current) async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (pickedDate == null || !mounted) return;
+
+    final pickedTime = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay(hour: current.hour, minute: current.minute),
+    );
+    if (!mounted) return;
+
+    final h = pickedTime?.hour ?? current.hour;
+    final m = pickedTime?.minute ?? current.minute;
+    final newDt = DateTime(pickedDate.year, pickedDate.month, pickedDate.day, h, m);
+
+    setState(() {
+      final items = List<ParsedItem>.from(_currentItems());
+      if (index >= 0 && index < items.length) {
+        final item = items[index];
+        if (item is EntryParsedItem) {
+          items[index] = item.copyWith(
+            at: newDt,
+            hasExplicitDate: true,
+            hasExplicitTime: true,
+            isExplicitFuture: newDt.isAfter(DateTime.now()),
+          );
+          _customItems = items;
+        }
+      }
+    });
+  }
+
+  Future<void> _pickTodoDate(int index, DateTime current) async {
+    final pickedDate = await showDatePicker(
+      context: context,
+      initialDate: current,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+    );
+    if (pickedDate == null || !mounted) return;
+
+    setState(() {
+      final items = List<ParsedItem>.from(_currentItems());
+      if (index >= 0 && index < items.length) {
+        final item = items[index];
+        if (item is TodoParsedItem) {
+          items[index] = item.copyWith(dueDate: pickedDate);
+          _customItems = items;
+        }
+      }
+    });
+  }
+
+  String _formatTimeChip(DateTime dt, {required bool isTr}) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDay = DateTime(dt.year, dt.month, dt.day);
+    final diffDays = targetDay.difference(today).inDays;
+    final timeStr = DateFormat('HH:mm').format(dt);
+
+    if (diffDays == 0) {
+      return timeStr;
+    } else if (diffDays == -1) {
+      return isTr ? 'Dün $timeStr' : 'Yesterday $timeStr';
+    } else if (diffDays == -2) {
+      return isTr ? 'Önceki gün $timeStr' : '2 days ago $timeStr';
+    } else if (diffDays == 1) {
+      return isTr ? 'Yarın $timeStr' : 'Tomorrow $timeStr';
+    } else {
+      final d = DateFormat('d MMM', isTr ? 'tr' : 'en').format(dt);
+      return '$d $timeStr';
+    }
+  }
+
+  String _formatDateChip(DateTime dt, {required bool isTr}) {
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final targetDay = DateTime(dt.year, dt.month, dt.day);
+    final diffDays = targetDay.difference(today).inDays;
+
+    if (diffDays == 0) {
+      return isTr ? 'Bugün' : 'Today';
+    } else if (diffDays == 1) {
+      return isTr ? 'Yarın' : 'Tomorrow';
+    } else if (diffDays == -1) {
+      return isTr ? 'Dün' : 'Yesterday';
+    } else {
+      return DateFormat('d MMM', isTr ? 'tr' : 'en').format(dt);
+    }
+  }
+
   /// Metin hiçbir kayıtlı aktiviteye bağlanmasaydı açılacak aktivitenin adı ("Yeni Olarak Ekle" bunu açar).
-  String _nameAsNew(String text) => NaturalLanguageParser.parse(
-        text,
-        activities: const [],
-        measures: store.measures,
-        allowCommands: false,
-      ).activityName;
+  String _nameAsNew(String text) {
+    final timeParsed = TimeParser.parse(text, direction: TemporalDirection.past);
+    final cleanTimeText = timeParsed.cleanedText.isNotEmpty ? timeParsed.cleanedText : text;
+    return NaturalLanguageParser.parse(
+      cleanTimeText,
+      activities: const [],
+      measures: store.measures,
+      allowCommands: false,
+    ).activityName;
+  }
 
   /// Önizleme satırının metni: "💧 Su: 2 Su bardağı · 400 ml eklenecek", "🎸 Gitar: kronometre başlayacak".
   String _planText(_ComposerPlan plan) {
@@ -309,7 +484,10 @@ class _TodayViewState extends State<_TodayView> {
       return '$who: $what';
     }
 
-    final amount = store.amountDetail(plan.measureId, plan.qty);
+    final hasAmountInText = plan.parsed.hasExplicitQuantity || plan.parsed.hasExplicitMeasure || _measureTouched || _qtyTouched;
+    final amount = hasAmountInText
+        ? store.amountDetail(plan.measureId, plan.qty, activityId: act?.id)
+        : '';
     final verb = s.isTr ? 'eklenecek' : 'will be added';
     return amount.isEmpty ? '$who $verb' : '$who: $amount $verb';
   }
@@ -328,65 +506,176 @@ class _TodayViewState extends State<_TodayView> {
   /// ya da seçenekler paneli açıksa, çift onay istenmeden tek dokunuşla doğrudan kaydedilir.
   /// Miktar/ölçü belirtilmemişse önce seçenekler paneli açılarak kullanıcının seçmesi sağlanır.
   void _onSubmitPressed() {
-    final plan = _plan();
-    final hasExplicitAmount = plan != null &&
-        (plan.parsed.hasExplicitQuantity || plan.parsed.matchedMeasure != null);
-    if (!_showOptions && plan != null && plan.timer == null && !hasExplicitAmount) {
-      setState(() => _showOptions = true);
-    } else {
+    final items = _currentItems();
+    if (_selectedActivity != null) {
       _submitEntry();
+      return;
     }
+
+    if (items.isEmpty) return;
+
+    if (items.length == 1 && items.first is EntryParsedItem) {
+      final entryItem = items.first as EntryParsedItem;
+      if (!entryItem.isExplicitFuture) {
+        final plan = _plan();
+        final hasExplicitAmount = plan != null &&
+            (plan.parsed.hasExplicitQuantity || plan.parsed.hasExplicitMeasure);
+        if (!_showOptions && plan != null && plan.timer == null && !hasExplicitAmount) {
+          setState(() => _showOptions = true);
+          return;
+        }
+      }
+    }
+
+    _submitEntry();
   }
 
   Future<void> _submitEntry() async {
     final s = strings.value;
-    final plan = _plan();
-    if (plan == null && _selectedActivity == null) return;
+    final items = _currentItems();
+    if (items.isEmpty && _selectedActivity == null) return;
 
-    Activity act;
-    double finalQty = _qty;
-    int? finalMeasureId = _selectedMeasureId;
-
-    if (plan == null) {
-      act = _selectedActivity!;
+    // Tek seçili aktivite akışı (seçenekler panelinden tıklanmışsa)
+    if (_selectedActivity != null) {
+      final act = _selectedActivity!;
       await _applyDraftEmoji(act);
-    } else {
-      act = plan.existing ?? await store.addActivity(plan.parsed.activityName, emoji: _draftEmoji);
-      await _applyDraftEmoji(act);
+      final entryTime = sameDay(_currentDay, DateTime.now())
+          ? DateTime.now()
+          : DateTime(_currentDay.year, _currentDay.month, _currentDay.day, 12, 0);
 
-      // "kronometre", "pomodoro" ya da "geri sayım" yazıldıysa kayıt eklemek yerine sayaç başlar
-      final command = plan.timer;
+      final res = await store.addEntry(
+        act.id,
+        measureId: _selectedMeasureId,
+        qty: _qty,
+        at: entryTime,
+        note: _noteController.text,
+      );
+
+      if (mounted) {
+        final actName = act.emoji != null ? '${act.emoji} ${act.name}' : act.name;
+        final msg = '$actName ${s.isTr ? "eklendi" : "logged"}';
+        showSnack(
+          context,
+          msg,
+          achieved: res.achieved,
+          exceeded: res.exceeded,
+          undo: () => store.deleteEntry(res.entry),
+        );
+      }
+
+      _resetComposer();
+      return;
+    }
+
+    // Gelecek zaman kontrolü
+    final hasUnconvertedFuture = items.any((i) => i is EntryParsedItem && i.isExplicitFuture);
+    if (hasUnconvertedFuture) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+            s.isTr
+                ? 'Gelecek zamanlı kayıtlar eklenemez. Lütfen "Yapılacak olarak ekle"ye dokunun.'
+                : 'Future entries cannot be logged. Please tap "Add as to-do".',
+          ),
+          duration: const Duration(seconds: 3),
+        ),
+      );
+      return;
+    }
+
+    // Tek öğeli sayaç komutuysa sayaç başlar (kullanıcı kayıt olarak eklemeyi seçmediyse)
+    if (!_asEntry && items.length == 1 && items.first is EntryParsedItem) {
+      final item = items.first as EntryParsedItem;
+      final plan = _plan();
+      final command = plan?.timer ?? item.timerCommand;
       if (command != null) {
+        final act = plan?.existing ?? await store.addActivity(item.activityName, emoji: _draftEmoji);
+        await _applyDraftEmoji(act);
         await _startTimer(act, mode: command.mode, targetMs: command.targetMs, note: _noteController.text);
         _resetComposer();
         return;
       }
-
-      finalMeasureId = plan.measureId;
-      finalQty = plan.qty;
     }
 
-    final entryTime = sameDay(_currentDay, DateTime.now())
-        ? DateTime.now()
-        : DateTime(_currentDay.year, _currentDay.month, _currentDay.day, 12, 0);
+    final entriesToSave = <BatchEntryInput>[];
+    final todosToSave = <BatchTodoInput>[];
+    final createdActivityIds = <int>[];
 
-    final res = await store.addEntry(
-      act.id,
-      measureId: finalMeasureId,
-      qty: finalQty,
-      at: entryTime,
-      note: _noteController.text,
+    for (final item in items) {
+      if (item is EntryParsedItem) {
+        Activity act;
+        if (item.activity != null) {
+          act = item.activity!;
+        } else {
+          act = await store.addActivity(item.activityName, emoji: _draftEmoji);
+          createdActivityIds.add(act.id);
+        }
+        await _applyDraftEmoji(act);
+
+        final defMeasureId = store.defaultMeasureFor(act.id)?.id;
+        final mId = _measureTouched && items.length == 1
+            ? _selectedMeasureId
+            : (item.measure?.id ?? defMeasureId);
+        final q = _qtyTouched && items.length == 1 ? _qty : item.quantity;
+
+        entriesToSave.add(
+          BatchEntryInput(
+            activityId: act.id,
+            measureId: mId,
+            qty: q,
+            at: item.at,
+            note: _noteController.text,
+          ),
+        );
+      } else if (item is TodoParsedItem) {
+        todosToSave.add(
+          BatchTodoInput(
+            title: item.title,
+            dueDate: item.dueDate,
+            linkedActivityId: item.suggestedActivity?.id,
+            targetAmount: item.suggestedAmount,
+            targetUnit: item.suggestedUnit,
+          ),
+        );
+      }
+    }
+
+    if (entriesToSave.isEmpty && todosToSave.isEmpty) return;
+
+    final batchRes = await store.saveBatch(
+      entries: entriesToSave,
+      todos: todosToSave,
+      createdActivityIds: createdActivityIds,
     );
 
     if (mounted) {
-      final actName = act.emoji != null ? '${act.emoji} ${act.name}' : act.name;
-      final msg = '$actName ${s.isTr ? "eklendi" : "logged"}';
+      final eCount = batchRes.entries.length;
+      final tCount = batchRes.todos.length;
+      String msg;
+      if (eCount > 0 && tCount > 0) {
+        msg = s.isTr
+            ? '$eCount kayıt, $tCount yapılacak eklendi'
+            : '$eCount ${eCount == 1 ? "entry" : "entries"}, $tCount ${tCount == 1 ? "to-do" : "to-dos"} added';
+      } else if (eCount > 0) {
+        if (eCount == 1) {
+          final act = store.activities[batchRes.entries.first.activityId];
+          final actName = act?.emoji != null ? '${act!.emoji} ${act.name}' : (act?.name ?? '');
+          msg = '$actName ${s.isTr ? "eklendi" : "logged"}';
+        } else {
+          msg = s.isTr ? '$eCount kayıt eklendi' : '$eCount entries added';
+        }
+      } else {
+        msg = s.isTr
+            ? '$tCount yapılacak eklendi'
+            : '$tCount ${tCount == 1 ? "to-do" : "to-dos"} added';
+      }
+
       showSnack(
         context,
         msg,
-        achieved: res.achieved,
-        exceeded: res.exceeded,
-        undo: () => store.deleteEntry(res.entry),
+        achieved: batchRes.achievedGoals,
+        exceeded: batchRes.exceededGoals,
+        undo: batchRes.undo,
       );
     }
 
@@ -433,6 +722,262 @@ class _TodayViewState extends State<_TodayView> {
           );
         }
       },
+      onComplexInput: (spokenText) {
+        setState(() {
+          _textController.text = spokenText;
+          _showOptions = false;
+        });
+        _inputFocus.requestFocus();
+      },
+    );
+  }
+
+  Widget _buildMultiItemPreview(List<ParsedItem> items) {
+    final s = strings.value;
+    final scheme = Theme.of(context).colorScheme;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 6),
+      constraints: const BoxConstraints(maxHeight: 140),
+      decoration: BoxDecoration(
+        color: scheme.surfaceContainerHighest.withValues(alpha: 0.35),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.5)),
+      ),
+      child: Scrollbar(
+        controller: _previewScrollController,
+        thumbVisibility: items.length > 2,
+        child: ListView.separated(
+          controller: _previewScrollController,
+          shrinkWrap: true,
+          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+          itemCount: items.length,
+          separatorBuilder: (_, index) => Divider(height: 1, color: scheme.outlineVariant.withValues(alpha: 0.3)),
+          itemBuilder: (ctx, idx) {
+            final item = items[idx];
+            if (item is EntryParsedItem) {
+              return _buildEntryItemRow(item, idx, scheme, s);
+            } else if (item is TodoParsedItem) {
+              return _buildTodoItemRow(item, idx, scheme, s);
+            }
+            return const SizedBox.shrink();
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEntryItemRow(EntryParsedItem item, int idx, ColorScheme scheme, AppStrings s) {
+    final act = item.activity;
+    final emoji = act?.emoji ?? (item.timerCommand != null ? '⏱️' : '📝');
+    final isNew = act == null || item.isNewActivity;
+    final actName = isNew ? '${item.activityName} (${s.newActivityMark})' : act.name;
+    final effectiveMId = item.measure?.id ?? (act != null ? store.defaultMeasureFor(act.id)?.id : null);
+    final amountStr = store.amountDetail(effectiveMId, item.quantity, activityId: act?.id);
+    final isTr = s.isTr;
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Text(emoji, style: const TextStyle(fontSize: 16)),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 2,
+                  children: [
+                    Text(
+                      actName,
+                      style: const TextStyle(fontSize: AppFont.body, fontWeight: FontWeight.bold),
+                    ),
+                    if (amountStr.isNotEmpty)
+                      Text(
+                        amountStr,
+                        style: TextStyle(fontSize: AppFont.small, color: scheme.onSurfaceVariant),
+                      ),
+                    if (item.isExplicitFuture) ...[
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: scheme.errorContainer,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          isTr ? 'Gelecek zaman' : 'Future time',
+                          style: TextStyle(
+                            fontSize: AppFont.micro,
+                            color: scheme.onErrorContainer,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ),
+                      InkWell(
+                        onTap: () => _convertToTodo(idx),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: scheme.primaryContainer,
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.add_task, size: 12, color: scheme.primary),
+                              const SizedBox(width: 3),
+                              Text(
+                                isTr ? 'Yapılacak olarak ekle' : 'Add as to-do',
+                                style: TextStyle(
+                                  fontSize: AppFont.micro,
+                                  color: scheme.primary,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ] else if (item.hasExplicitDate || item.hasExplicitTime || item.isRelative) ...[
+                      InkWell(
+                        onTap: () => _pickDateTime(idx, item.at),
+                        borderRadius: BorderRadius.circular(6),
+                        child: Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: scheme.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.access_time, size: 12, color: scheme.primary),
+                              const SizedBox(width: 3),
+                              Text(
+                                _formatTimeChip(item.at, isTr: isTr),
+                                style: TextStyle(
+                                  fontSize: AppFont.micro,
+                                  color: scheme.primary,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 16),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                onPressed: () => _removeItem(idx),
+              ),
+            ],
+          ),
+          if (item.willCompleteTodo != null) ...[
+            Padding(
+              padding: const EdgeInsets.only(left: 24, top: 2),
+              child: Row(
+                children: [
+                  Icon(Icons.check_circle_outline, size: 12, color: scheme.primary),
+                  const SizedBox(width: 4),
+                  Expanded(
+                    child: Text(
+                      isTr
+                          ? 'Bu kayıt "${item.willCompleteTodo!.title}" yapılacağını tamamlar'
+                          : 'This entry completes "${item.willCompleteTodo!.title}"',
+                      style: TextStyle(
+                        fontSize: AppFont.micro,
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTodoItemRow(TodoParsedItem item, int idx, ColorScheme scheme, AppStrings s) {
+    final isTr = s.isTr;
+    final dateText = item.dueDate != null ? _formatDateChip(item.dueDate!, isTr: isTr) : (isTr ? 'Tarihsiz' : 'No date');
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Icon(Icons.check_circle_outline, size: 18, color: scheme.primary),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Wrap(
+              crossAxisAlignment: WrapCrossAlignment.center,
+              spacing: 6,
+              runSpacing: 2,
+              children: [
+                Text(
+                  item.title,
+                  style: const TextStyle(fontSize: AppFont.body, fontWeight: FontWeight.bold),
+                ),
+                InkWell(
+                  onTap: () => _pickTodoDate(idx, item.dueDate ?? DateTime.now()),
+                  borderRadius: BorderRadius.circular(6),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: scheme.primary.withValues(alpha: 0.12),
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.calendar_today, size: 12, color: scheme.primary),
+                        const SizedBox(width: 3),
+                        Text(
+                          dateText,
+                          style: TextStyle(fontSize: AppFont.micro, color: scheme.primary, fontWeight: FontWeight.w600),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+                if (item.suggestedActivity != null)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${item.suggestedActivity!.emoji ?? ""} ${item.suggestedActivity!.name}'.trim(),
+                      style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          IconButton(
+            icon: const Icon(Icons.close, size: 16),
+            visualDensity: VisualDensity.compact,
+            padding: EdgeInsets.zero,
+            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+            onPressed: () => _removeItem(idx),
+          ),
+        ],
+      ),
     );
   }
 
@@ -525,13 +1070,25 @@ class _TodayViewState extends State<_TodayView> {
     final showSuggestions = _selectedActivity == null && (q.isNotEmpty || _inputFocus.hasFocus);
     // Hiç aktivite yokken ne yazılabileceğini örnekler gösterir.
     final examples = showSuggestions && q.isEmpty && store.activities.isEmpty ? s.composerExamples : const <String>[];
+    final items = _currentItems();
+    final isSingleEntry = items.length == 1 && items.first is EntryParsedItem;
+    final singleEntry = isSingleEntry ? (items.first as EntryParsedItem) : null;
     final plan = _plan();
     final startsTimer = plan?.timer != null;
-    // "Yeni Olarak Ekle": metin kayıtlı bir aktiviteye kayıt olarak bağlanacakken, yazılan adla yenisini açma
-    // seçeneği. Zaten yeni bir aktivite açılacaksa bunu önizleme söyler; sayaç komutunda ise önce "kayıt
-    // olarak ekle" seçilir, aynı anda üç ayrı okuma sunulmaz.
-    final newName = plan?.existing == null || startsTimer ? null : _nameAsNew(q);
-    final canAddNew = newName != null && store.exactMatch(newName) == null;
+    final matchedAct = plan?.existing;
+    // "Yeni Olarak Ekle": metin kayıtlı bir aktiviteye bağlanmışken (örn: "Kitap okuma"),
+    // kullanıcının yazdığı farklı adla (örn: "Kitap") yeni bir aktivite açma seçeneği.
+    // Metin zaten kendi adına eşlendiyse ("dun gece 500 ml su" -> Su) veya eşleşen yoksa çıkmaz.
+    String? newName;
+    if (matchedAct != null && !startsTimer && q.isNotEmpty) {
+      final candidate = _nameAsNew(q);
+      if (candidate.isNotEmpty &&
+          normalizeTr(candidate) != normalizeTr(matchedAct.name) &&
+          store.exactMatch(candidate) == null) {
+        newName = candidate;
+      }
+    }
+    final canAddNew = newName != null && !suggestions.any((a) => normalizeTr(a.name) == normalizeTr(newName!));
     // Seçici, kaydedilecek olanı gösterir: metinden okunan ölçü ve miktar ya da kullanıcının değiştirdiği.
     final shownMeasureId = plan?.measureId ?? _selectedMeasureId;
     final shownQty = plan?.qty ?? _qty;
@@ -673,53 +1230,97 @@ class _TodayViewState extends State<_TodayView> {
                 const SizedBox(height: 6),
               ],
 
-              if (plan != null) ...[
-                _ComposerPreview(
-                  startsTimer: startsTimer,
-                  text: _planText(plan),
-                  otherLabel: plan.canBeCommand ? (startsTimer ? s.previewAsEntry : s.previewAsTimer) : null,
-                  onOther: () => setState(() => _asEntry = !_asEntry),
-                  onToggleOptions: () => setState(() => _showOptions = !_showOptions),
-                  optionsOpen: _showOptions,
-                ),
-                Builder(builder: (c) {
-                  if (plan.existing == null || startsTimer) return const SizedBox.shrink();
-                  final openLinked = store.todos.where(
-                    (t) => t.isLinked && !store.todoProgress(t).isCompleted && t.linkedActivityIds.contains(plan.existing!.id),
-                  );
-                  Todo? willComplete;
-                  for (final t in openLinked) {
-                    final curProg = store.todoProgress(t);
-                    final m = plan.measureId != null ? store.measureById(plan.measureId!) : null;
-                    final val = (m != null) ? (plan.qty * m.amount) : plan.qty;
-                    if (t.targetAmount == null || (curProg.currentAmount + val) >= t.targetAmount!) {
-                      willComplete = t;
-                      break;
-                    }
-                  }
-                  if (willComplete == null) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.only(left: 6, bottom: 4),
+              if (items.length > 1 || (items.isNotEmpty && items.first is TodoParsedItem)) ...[
+                _buildMultiItemPreview(items),
+              ] else if (plan != null) ...[
+                if (singleEntry != null && singleEntry.isExplicitFuture) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(left: 6, bottom: 6),
                     child: Row(
                       children: [
-                        Icon(Icons.check_circle_outline, size: 14, color: Theme.of(c).colorScheme.primary),
+                        Icon(Icons.warning_amber_rounded, size: 16, color: Theme.of(context).colorScheme.error),
                         const SizedBox(width: 6),
-                        Expanded(
-                          child: Text(
-                            s.isTr
-                                ? 'Bu kayıt "${willComplete.title}" yapılacağını tamamlar'
-                                : 'This entry completes "${willComplete.title}"',
-                            style: TextStyle(
-                              fontSize: AppFont.micro,
-                              color: Theme.of(c).colorScheme.primary,
-                              fontWeight: FontWeight.w600,
-                            ),
+                        Text(
+                          s.isTr ? 'Gelecek zaman' : 'Future time',
+                          style: TextStyle(
+                            fontSize: AppFont.small,
+                            color: Theme.of(context).colorScheme.error,
+                            fontWeight: FontWeight.bold,
                           ),
+                        ),
+                        const SizedBox(width: 8),
+                        ActionChip(
+                          avatar: const Icon(Icons.add_task, size: 14),
+                          label: Text(s.isTr ? 'Yapılacak olarak ekle' : 'Add as to-do'),
+                          onPressed: () => _convertToTodo(0),
                         ),
                       ],
                     ),
-                  );
-                }),
+                  ),
+                ] else ...[
+                  _ComposerPreview(
+                    startsTimer: startsTimer,
+                    text: _planText(plan),
+                    otherLabel: plan.canBeCommand ? (startsTimer ? s.previewAsEntry : s.previewAsTimer) : null,
+                    onOther: () => setState(() => _asEntry = !_asEntry),
+                    onToggleOptions: () => setState(() => _showOptions = !_showOptions),
+                    optionsOpen: _showOptions,
+                    timeChip: singleEntry != null &&
+                            (singleEntry.hasExplicitDate || singleEntry.hasExplicitTime || singleEntry.isRelative)
+                        ? InkWell(
+                            onTap: () => _pickDateTime(0, singleEntry.at),
+                            borderRadius: BorderRadius.circular(6),
+                            child: Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                              decoration: BoxDecoration(
+                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                                borderRadius: BorderRadius.circular(6),
+                              ),
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Icon(Icons.access_time, size: 12, color: Theme.of(context).colorScheme.primary),
+                                  const SizedBox(width: 3),
+                                  Text(
+                                    _formatTimeChip(singleEntry.at, isTr: s.isTr),
+                                    style: TextStyle(
+                                      fontSize: AppFont.micro,
+                                      color: Theme.of(context).colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          )
+                        : null,
+                  ),
+                  Builder(builder: (c) {
+                    final willComplete = singleEntry?.willCompleteTodo;
+                    if (willComplete == null || startsTimer) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(left: 6, bottom: 4),
+                      child: Row(
+                        children: [
+                          Icon(Icons.check_circle_outline, size: 14, color: Theme.of(c).colorScheme.primary),
+                          const SizedBox(width: 6),
+                          Expanded(
+                            child: Text(
+                              s.isTr
+                                  ? 'Bu kayıt "${willComplete.title}" yapılacağını tamamlar'
+                                  : 'This entry completes "${willComplete.title}"',
+                              style: TextStyle(
+                                fontSize: AppFont.micro,
+                                color: Theme.of(c).colorScheme.primary,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }),
+                ],
               ],
 
               Row(

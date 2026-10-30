@@ -9,19 +9,21 @@ import 'app_font.dart';
 Future<void> showVoiceInputDialog(
   BuildContext context, {
   required void Function(NlParseResult result) onConfirmed,
+  void Function(String complexText)? onComplexInput,
 }) async {
   await showModalBottomSheet(
     context: context,
     isScrollControlled: true,
     backgroundColor: Colors.transparent,
-    builder: (ctx) => _VoiceInputModal(onConfirmed: onConfirmed),
+    builder: (ctx) => _VoiceInputModal(onConfirmed: onConfirmed, onComplexInput: onComplexInput),
   );
 }
 
 class _VoiceInputModal extends StatefulWidget {
   final void Function(NlParseResult result) onConfirmed;
+  final void Function(String complexText)? onComplexInput;
 
-  const _VoiceInputModal({required this.onConfirmed});
+  const _VoiceInputModal({required this.onConfirmed, this.onComplexInput});
 
   @override
   State<_VoiceInputModal> createState() => _VoiceInputModalState();
@@ -132,7 +134,24 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
   void _confirmAndApply() {
     if (_parsedResult == null) return;
     Navigator.of(context).pop();
-    widget.onConfirmed(_parsedResult!);
+
+    final multi = NaturalLanguageParser.parseMulti(
+      _spokenText,
+      activities: store.activities.values.toList(),
+      measures: store.measures,
+    );
+    final isComplex = multi.items.length > 1 ||
+        multi.isTodoMode ||
+        (multi.entryItems.isNotEmpty &&
+            (multi.entryItems[0].hasExplicitDate ||
+                multi.entryItems[0].hasExplicitTime ||
+                multi.entryItems[0].isExplicitFuture));
+
+    if (isComplex && widget.onComplexInput != null) {
+      widget.onComplexInput!(_spokenText);
+    } else {
+      widget.onConfirmed(_parsedResult!);
+    }
   }
 
   @override
