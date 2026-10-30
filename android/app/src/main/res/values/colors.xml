@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Default / System (Light) -->
+    <color name="widget_bg">#F7F9FE</color>
+    <color name="widget_border">#DCE3EE</color>
+    <color name="widget_title">#3D6FE0</color>
+    <color name="widget_text_primary">#1E293B</color>
+    <color name="widget_text_secondary">#556070</color>
+    <color name="widget_divider">#E5EAF2</color>
+    <color name="widget_empty">#64748B</color>
+    <color name="widget_item_bg">#FFFFFF</color>
+    <color name="widget_item_border">#E0E6F0</color>
+    <color name="widget_item_done_bg">#E8F5E9</color>
+    <color name="widget_item_done_border">#4CAF50</color>
+    <color name="widget_button_bg">#3D6FE0</color>
+    <color name="widget_button_text">#FFFFFF</color>
+    <color name="todo_check_ring">#94A3B8</color>
+    <color name="todo_check_ring_overdue">#EF4444</color>
+    <color name="todo_sub">#64748B</color>
+    <color name="todo_sub_overdue">#E53935</color>
+
+    <!-- Forced Light Mode -->
+    <color name="widget_bg_light">#F7F9FE</color>
+    <color name="widget_border_light">#DCE3EE</color>
+    <color name="widget_title_light">#3D6FE0</color>
+    <color name="widget_text_primary_light">#1E293B</color>
+    <color name="widget_text_secondary_light">#556070</color>
+    <color name="widget_divider_light">#E5EAF2</color>
+    <color name="widget_empty_light">#64748B</color>
+    <color name="widget_item_bg_light">#FFFFFF</color>
+    <color name="widget_item_border_light">#E0E6F0</color>
+    <color name="widget_item_done_bg_light">#E8F5E9</color>
+    <color name="widget_item_done_border_light">#4CAF50</color>
+    <color name="widget_button_bg_light">#3D6FE0</color>
+    <color name="widget_button_text_light">#FFFFFF</color>
+    <color name="todo_check_ring_light">#94A3B8</color>
+    <color name="todo_check_ring_overdue_light">#EF4444</color>
+    <color name="todo_sub_light">#64748B</color>
+    <color name="todo_sub_overdue_light">#E53935</color>
+
+    <!-- Forced Dark Mode (Material 3 Dark Palette: seed #3D6FE0) -->
+    <color name="widget_bg_dark">#1A1B21</color>
+    <color name="widget_border_dark">#45464F</color>
+    <color name="widget_title_dark">#B2C5FF</color>
+    <color name="widget_text_primary_dark">#E3E2E9</color>
+    <color name="widget_text_secondary_dark">#C5C6D0</color>
+    <color name="widget_divider_dark">#45464F</color>
+    <color name="widget_empty_dark">#C5C6D0</color>
+    <color name="widget_item_bg_dark">#292A2F</color>
+    <color name="widget_item_border_dark">#45464F</color>
+    <color name="widget_item_done_bg_dark">#16291C</color>
+    <color name="widget_item_done_border_dark">#81C784</color>
+    <color name="widget_button_bg_dark">#B2C5FF</color>
+    <color name="widget_button_text_dark">#182E60</color>
+    <color name="todo_check_ring_dark">#8F909A</color>
+    <color name="todo_check_ring_overdue_dark">#FFB4AB</color>
+    <color name="todo_sub_dark">#C5C6D0</color>
+    <color name="todo_sub_overdue_dark">#FFB4AB</color>
+</resources>

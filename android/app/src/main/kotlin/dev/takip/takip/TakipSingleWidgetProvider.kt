@@ -41,9 +41,22 @@ class TakipSingleWidgetProvider : HomeWidgetProvider() {
             widgetId: Int,
             widgetData: SharedPreferences
         ) {
-            val views = RemoteViews(context.packageName, R.layout.takip_single_widget)
-
             val payloadStr = widgetData.getString("payload", null)
+            var theme = widgetData.getString("widget_theme", "system") ?: "system"
+            if (payloadStr != null) {
+                try {
+                    val json = JSONObject(payloadStr)
+                    val t = json.optString("theme", "")
+                    if (t.isNotEmpty()) theme = t
+                } catch (_: Exception) {}
+            }
+
+            val layoutId = when (theme) {
+                "dark" -> R.layout.takip_single_widget_dark
+                "light" -> R.layout.takip_single_widget_light
+                else -> R.layout.takip_single_widget
+            }
+            val views = RemoteViews(context.packageName, layoutId)
             var title = "Seyir"
             var sub = ""
             var emoji = "⚡"
@@ -120,10 +133,15 @@ class TakipSingleWidgetProvider : HomeWidgetProvider() {
             views.setTextViewText(R.id.single_widget_emoji, emoji)
             views.setTextViewText(R.id.single_widget_title, if (done) "✓ $title" else title)
             views.setTextViewText(R.id.single_widget_sub, sub)
+            val containerBg = when (theme) {
+                "dark" -> if (done) R.drawable.widget_item_done_bg_dark else R.drawable.widget_bg_dark
+                "light" -> if (done) R.drawable.widget_item_done_bg_light else R.drawable.widget_bg_light
+                else -> if (done) R.drawable.widget_item_done_bg else R.drawable.widget_bg
+            }
             views.setInt(
                 R.id.single_widget_container,
                 "setBackgroundResource",
-                if (done) R.drawable.widget_item_done_bg else R.drawable.widget_bg
+                containerBg
             )
 
             val pendingIntent = if (actId > 0) {

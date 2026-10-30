@@ -26,14 +26,22 @@
         android:layout_weight="1"
         android:ellipsize="end"
         android:maxLines="1"
-        android:textColor="#1E293B"
+        android:textColor="@color/widget_text_primary"
         android:textSize="13sp" />
 
     <TextView
         android:id="@+id/todo_item_sub"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
-        android:textColor="#64748B"
+        android:textColor="@color/todo_sub"
         android:textSize="11sp" />
+
+    <TextView
+        android:id="@+id/todo_item_sub_overdue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/todo_sub_overdue"
+        android:textSize="11sp"
+        android:visibility="gone" />
 
 </LinearLayout>

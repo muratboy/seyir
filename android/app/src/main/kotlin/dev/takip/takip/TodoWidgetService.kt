@@ -28,12 +28,13 @@ internal data class TodoWidgetItem(
 
 class TodoRemoteViewsFactory(
     private val context: Context,
-    intent: Intent
+    private val intent: Intent
 ) : RemoteViewsService.RemoteViewsFactory {
 
     private val items = ArrayList<TodoWidgetItem>()
     private var isTr = true
     private var locale = Locale("tr", "TR")
+    private var theme = "system"
 
     override fun onCreate() {
         loadData()
@@ -46,10 +47,13 @@ class TodoRemoteViewsFactory(
     private fun loadData() {
         items.clear()
         val prefs = context.getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
+        theme = intent.getStringExtra("theme") ?: prefs.getString("widget_theme", "system") ?: "system"
         val payloadStr = prefs.getString("todo_payload", null) ?: return
 
         try {
             val json = JSONObject(payloadStr)
+            val t = json.optString("theme", "")
+            if (t.isNotEmpty()) theme = t
             isTr = json.optBoolean("isTr", true)
             locale = if (isTr) Locale("tr", "TR") else Locale.ENGLISH
 
@@ -82,7 +86,12 @@ class TodoRemoteViewsFactory(
         if (position < 0 || position >= items.size) return null
         val item = items[position]
 
-        val views = RemoteViews(context.packageName, R.layout.todo_widget_item)
+        val itemLayoutId = when (theme) {
+            "dark" -> R.layout.todo_widget_item_dark
+            "light" -> R.layout.todo_widget_item_light
+            else -> R.layout.todo_widget_item
+        }
+        val views = RemoteViews(context.packageName, itemLayoutId)
         views.setTextViewText(R.id.todo_item_title, item.title)
 
         val todayFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
@@ -96,15 +105,26 @@ class TodoRemoteViewsFactory(
             else -> dueText
         }
 
-        views.setTextViewText(R.id.todo_item_sub, fullSub)
-        val subColor = if (isOverdue) 0xFFE53935.toInt() else 0xFF64748B.toInt()
-        views.setTextColor(R.id.todo_item_sub, subColor)
+        if (isOverdue) {
+            views.setTextViewText(R.id.todo_item_sub_overdue, fullSub)
+            views.setViewVisibility(R.id.todo_item_sub_overdue, View.VISIBLE)
+            views.setViewVisibility(R.id.todo_item_sub, View.GONE)
+        } else {
+            views.setTextViewText(R.id.todo_item_sub, fullSub)
+            views.setViewVisibility(R.id.todo_item_sub, View.VISIBLE)
+            views.setViewVisibility(R.id.todo_item_sub_overdue, View.GONE)
+        }
 
-        // İçi boş onay halkası (gecikmişte kırmızı kontur)
+        // İçi boş onay halkası (gecikmişte kırmızı kontur, temaya uygun halka)
+        val ringDrawable = when (theme) {
+            "dark" -> if (isOverdue) R.drawable.todo_check_ring_overdue_dark else R.drawable.todo_check_ring_dark
+            "light" -> if (isOverdue) R.drawable.todo_check_ring_overdue_light else R.drawable.todo_check_ring_light
+            else -> if (isOverdue) R.drawable.todo_check_ring_overdue else R.drawable.todo_check_ring
+        }
         views.setInt(
             R.id.todo_item_check,
             "setBackgroundResource",
-            if (isOverdue) R.drawable.todo_check_ring_overdue else R.drawable.todo_check_ring
+            ringDrawable
         )
         views.setTextViewText(R.id.todo_item_check, "")
 
@@ -136,7 +156,7 @@ class TodoRemoteViewsFactory(
 
     override fun getLoadingView(): RemoteViews? = null
 
-    override fun getViewTypeCount(): Int = 1
+    override fun getViewTypeCount(): Int = 3
 
     override fun getItemId(position: Int): Long = position.toLong()
 

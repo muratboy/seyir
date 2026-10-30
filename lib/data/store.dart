@@ -187,6 +187,7 @@ class AppStore extends ChangeNotifier {
   List<QuickItem> quickItems = [];
   Map<int, ActivityStats> stats = {};
   ThemeMode themeMode = ThemeMode.system;
+  String get themeModeString => themeMode == ThemeMode.dark ? 'dark' : (themeMode == ThemeMode.light ? 'light' : 'system');
   AppLanguage language = AppLanguage.tr;
   final appThemeNotifier = ValueNotifier<ThemeMode>(ThemeMode.system);
   final appLanguageNotifier = ValueNotifier<AppLanguage>(AppLanguage.tr);
@@ -579,6 +580,7 @@ class AppStore extends ChangeNotifier {
     final val = mode == ThemeMode.dark ? 'dark' : (mode == ThemeMode.light ? 'light' : 'system');
     await d.insert('settings', {'key': 'theme', 'value': val}, conflictAlgorithm: ConflictAlgorithm.replace);
     notifyListeners();
+    unawaited(WidgetSync.push());
   }
 
   Future<void> setLanguage(AppLanguage lang) async {
@@ -3616,6 +3618,7 @@ class AppStore extends ChangeNotifier {
     }
     return {
       'date': dayKey(now),
+      'theme': themeModeString,
       'isTr': isTr,
       'items': items,
       'goals': goalParts.isEmpty ? '' : '🎯 ${goalParts.join('  ·  ')}',
@@ -4759,6 +4762,7 @@ bool isTargetReached(double current, double target, {double epsilon = 1e-9}) =>
 
     return {
       'count': openTodos.length,
+      'theme': themeModeString,
       'isTr': isTr,
       'items': items,
     };

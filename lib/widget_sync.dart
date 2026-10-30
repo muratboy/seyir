@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:home_widget/home_widget.dart';
 import 'package:intl/date_symbol_data_local.dart';
 
@@ -25,6 +26,8 @@ class WidgetSync {
   static Future<void> push() async {
     if (defaultTargetPlatform != TargetPlatform.android) return;
     try {
+      final themeStr = store.themeModeString;
+      await HomeWidget.saveWidgetData<String>('widget_theme', themeStr);
       await HomeWidget.saveWidgetData<String>('payload', jsonEncode(store.widgetPayload()));
       await HomeWidget.saveWidgetData<int>('single_act_id_global', store.singleWidgetActivityId ?? 0);
       await HomeWidget.saveWidgetData<String>('todo_payload', jsonEncode(store.todoWidgetPayload()));
@@ -115,6 +118,16 @@ Future<void> widgetBackgroundCallback(Uri? uri) async {
       await store.toggleTodo(id);
       StoreSync.notifyChanged();
     }
+  } else if (uri.host == 'theme') {
+    final mode = uri.queryParameters['mode'];
+    if (mode == 'dark') {
+      await store.setThemeMode(ThemeMode.dark);
+    } else if (mode == 'light') {
+      await store.setThemeMode(ThemeMode.light);
+    } else if (mode == 'system') {
+      await store.setThemeMode(ThemeMode.system);
+    }
+    StoreSync.notifyChanged();
   } else if (uri.host == 'quick_text') {
     final text = uri.queryParameters['text'] ?? '';
     if (text.trim().isNotEmpty) {

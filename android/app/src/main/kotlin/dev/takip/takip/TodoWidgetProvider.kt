@@ -62,8 +62,30 @@ class TodoWidgetProvider : HomeWidgetProvider() {
         appWidgetIds: IntArray,
         widgetData: SharedPreferences
     ) {
+        val payloadStr = widgetData.getString("todo_payload", null)
+        var theme = widgetData.getString("widget_theme", "system") ?: "system"
+        var count = 0
+        var isTr = true
+        if (payloadStr != null) {
+            try {
+                val json = JSONObject(payloadStr)
+                val t = json.optString("theme", "")
+                if (t.isNotEmpty()) theme = t
+                count = json.optInt("count", 0)
+                isTr = json.optBoolean("isTr", true)
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        val layoutId = when (theme) {
+            "dark" -> R.layout.todo_widget_dark
+            "light" -> R.layout.todo_widget_light
+            else -> R.layout.todo_widget
+        }
+
         appWidgetIds.forEach { widgetId ->
-            val views = RemoteViews(context.packageName, R.layout.todo_widget)
+            val views = RemoteViews(context.packageName, layoutId)
 
             // [+] Butonu doğrudan hızlı eklemeyi açar
             val addUri = Uri.parse("takip://todo_add")
@@ -84,19 +106,6 @@ class TodoWidgetProvider : HomeWidgetProvider() {
             views.setOnClickPendingIntent(R.id.todo_widget_title, listPendingIntent)
             views.setOnClickPendingIntent(R.id.todo_widget_empty, addPendingIntent)
 
-            val payloadStr = widgetData.getString("todo_payload", null)
-            var count = 0
-            var isTr = true
-            if (payloadStr != null) {
-                try {
-                    val json = JSONObject(payloadStr)
-                    count = json.optInt("count", 0)
-                    isTr = json.optBoolean("isTr", true)
-                } catch (e: Exception) {
-                    e.printStackTrace()
-                }
-            }
-
             val prefix = if (isTr) "Yapılacaklar" else "To-dos"
             val titleText = if (count > 0) "$prefix · $count" else prefix
             views.setTextViewText(R.id.todo_widget_title, titleText)
@@ -105,7 +114,8 @@ class TodoWidgetProvider : HomeWidgetProvider() {
             // RemoteAdapter ile kaydırılabilir ListView bağla
             val serviceIntent = Intent(context, TodoWidgetService::class.java).apply {
                 putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
-                data = Uri.parse(toUri(Intent.URI_INTENT_SCHEME))
+                putExtra("theme", theme)
+                data = Uri.parse("takip://todo_service/$widgetId?theme=$theme")
             }
             views.setRemoteAdapter(R.id.todo_list_view, serviceIntent)
             views.setEmptyView(R.id.todo_list_view, R.id.todo_widget_empty)

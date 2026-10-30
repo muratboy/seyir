@@ -19,8 +19,24 @@ class TakipWidgetProvider : HomeWidgetProvider() {
         appWidgetIds: IntArray,
         widgetData: SharedPreferences
     ) {
+        var theme = widgetData.getString("widget_theme", "system") ?: "system"
+        val payloadStr = widgetData.getString("payload", null)
+        if (payloadStr != null) {
+            try {
+                val json = JSONObject(payloadStr)
+                val t = json.optString("theme", "")
+                if (t.isNotEmpty()) theme = t
+            } catch (_: Exception) {}
+        }
+
+        val layoutId = when (theme) {
+            "dark" -> R.layout.takip_widget_dark
+            "light" -> R.layout.takip_widget_light
+            else -> R.layout.takip_widget
+        }
+
         appWidgetIds.forEach { widgetId ->
-            val views = RemoteViews(context.packageName, R.layout.takip_widget)
+            val views = RemoteViews(context.packageName, layoutId)
             views.setTextViewText(R.id.widget_title, "Seyir")
 
             // Quick Add button opens app directly into composer
@@ -73,10 +89,15 @@ class TakipWidgetProvider : HomeWidgetProvider() {
 
                                 val label = if (done) "✓ $title" else (if (sub.isNotEmpty()) "$title ($sub)" else title)
                                 views.setTextViewText(viewId, label)
+                                val itemBgRes = when (theme) {
+                                    "dark" -> if (done) R.drawable.widget_item_done_bg_dark else R.drawable.widget_item_bg_dark
+                                    "light" -> if (done) R.drawable.widget_item_done_bg_light else R.drawable.widget_item_bg_light
+                                    else -> if (done) R.drawable.widget_item_done_bg else R.drawable.widget_item_bg
+                                }
                                 views.setInt(
                                     viewId,
                                     "setBackgroundResource",
-                                    if (done) R.drawable.widget_item_done_bg else R.drawable.widget_item_bg
+                                    itemBgRes
                                 )
                                 views.setViewVisibility(viewId, View.VISIBLE)
 

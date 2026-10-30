@@ -4,5 +4,5 @@
     <solid android:color="@android:color/transparent" />
     <stroke
         android:width="2dp"
-        android:color="#EF4444" />
+        android:color="@color/todo_check_ring_overdue" />
 </shape>

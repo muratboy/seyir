@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/todo_item_row"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:gravity="center_vertical"
+    android:orientation="horizontal"
+    android:paddingStart="4dp"
+    android:paddingEnd="4dp"
+    android:paddingTop="3dp"
+    android:paddingBottom="3dp">
+
+    <TextView
+        android:id="@+id/todo_item_check"
+        android:layout_width="22dp"
+        android:layout_height="22dp"
+        android:background="@drawable/todo_check_ring_dark"
+        android:gravity="center" />
+
+    <TextView
+        android:id="@+id/todo_item_title"
+        android:layout_width="0dp"
+        android:layout_height="wrap_content"
+        android:layout_marginStart="8dp"
+        android:layout_marginEnd="6dp"
+        android:layout_weight="1"
+        android:ellipsize="end"
+        android:maxLines="1"
+        android:textColor="@color/widget_text_primary_dark"
+        android:textSize="13sp" />
+
+    <TextView
+        android:id="@+id/todo_item_sub"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/todo_sub_dark"
+        android:textSize="11sp" />
+
+    <TextView
+        android:id="@+id/todo_item_sub_overdue"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:textColor="@color/todo_sub_overdue_dark"
+        android:textSize="11sp"
+        android:visibility="gone" />
+
+</LinearLayout>

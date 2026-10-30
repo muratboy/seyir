@@ -20,7 +20,7 @@
             android:layout_height="wrap_content"
             android:layout_weight="1"
             android:text="Yapılacaklar"
-            android:textColor="#3D6FE0"
+            android:textColor="@color/widget_title"
             android:textSize="15sp"
             android:textStyle="bold" />
 
@@ -34,7 +34,7 @@
             android:paddingTop="3dp"
             android:paddingBottom="3dp"
             android:text="+"
-            android:textColor="#FFFFFF"
+            android:textColor="@color/widget_button_text"
             android:textSize="15sp"
             android:textStyle="bold" />
     </LinearLayout>
@@ -44,7 +44,7 @@
         android:layout_height="1dp"
         android:layout_marginTop="5dp"
         android:layout_marginBottom="4dp"
-        android:background="#E5EAF2" />
+        android:background="@color/widget_divider" />
 
     <!-- Empty State -->
     <TextView
@@ -53,7 +53,7 @@
         android:layout_height="match_parent"
         android:gravity="center"
         android:text="Yapılacak yok · + Ekle"
-        android:textColor="#64748B"
+        android:textColor="@color/widget_empty"
         android:textSize="13sp"
         android:visibility="gone" />
 

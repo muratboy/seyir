@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Default / System in Night Mode -->
+    <color name="widget_bg">#1A1B21</color>
+    <color name="widget_border">#45464F</color>
+    <color name="widget_title">#B2C5FF</color>
+    <color name="widget_text_primary">#E3E2E9</color>
+    <color name="widget_text_secondary">#C5C6D0</color>
+    <color name="widget_divider">#45464F</color>
+    <color name="widget_empty">#C5C6D0</color>
+    <color name="widget_item_bg">#292A2F</color>
+    <color name="widget_item_border">#45464F</color>
+    <color name="widget_item_done_bg">#16291C</color>
+    <color name="widget_item_done_border">#81C784</color>
+    <color name="widget_button_bg">#B2C5FF</color>
+    <color name="widget_button_text">#182E60</color>
+    <color name="todo_check_ring">#8F909A</color>
+    <color name="todo_check_ring_overdue">#FFB4AB</color>
+    <color name="todo_sub">#C5C6D0</color>
+    <color name="todo_sub_overdue">#FFB4AB</color>
+</resources>
