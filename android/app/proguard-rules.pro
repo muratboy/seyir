@@ -16,3 +16,8 @@
 
 -keep,allowobfuscation,allowshrinking class com.google.gson.reflect.TypeToken
 -keep,allowobfuscation,allowshrinking class * extends com.google.gson.reflect.TypeToken
+
+# Todo Widget RemoteViews Service & Action Receiver
+-keep class dev.takip.takip.TodoWidgetService { *; }
+-keep class dev.takip.takip.TodoWidgetActionReceiver { *; }
+-keep class dev.takip.takip.TodoRemoteViewsFactory { *; }

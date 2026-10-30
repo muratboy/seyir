@@ -13,6 +13,8 @@ import 'package:takip/ui/manage_page.dart';
 import 'package:takip/ui/activity_merge_page.dart';
 import 'package:takip/ui/components/todo_complete_sheet.dart';
 import 'package:takip/ui/components/todo_quick_add_sheet.dart';
+import 'package:takip/ui/components/today_routines_panel.dart';
+import 'package:takip/ui/components/today_roadmap_panel.dart';
 
 import 'support/fonts.dart';
 import 'support/real_db.dart';
@@ -239,8 +241,23 @@ void main() {
           await tester.pump(const Duration(milliseconds: 400));
         }
 
-        // Today: compact and expanded timers, the composer with its options, every panel.
-        await expectClean('today');
+        // Today: compact and expanded timers, the composer with its options, every panel (hem kapalı hem açık).
+        await expectClean('today, panels collapsed');
+
+        // Panelleri açarak yerleşim kontrolü
+        final routinesHeader = find.byType(TodayRoutinesPanel);
+        if (routinesHeader.evaluate().isNotEmpty) {
+          await tester.ensureVisible(routinesHeader);
+          await tester.tap(routinesHeader, warnIfMissed: false);
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+        final roadmapHeader = find.byType(TodayRoadmapPanel);
+        if (roadmapHeader.evaluate().isNotEmpty) {
+          await tester.ensureVisible(roadmapHeader);
+          await tester.tap(roadmapHeader, warnIfMissed: false);
+          await tester.pump(const Duration(milliseconds: 300));
+        }
+        await expectClean('today, panels expanded');
 
         // Tek satırlık boş kart kontrolü
         final savedTodos = List<Todo>.from(store.todos);

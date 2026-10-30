@@ -68,10 +68,10 @@ class _TodayTodosCardState extends State<TodayTodosCard> {
         today.sort((a, b) => a.createdAt.compareTo(b.createdAt));
         dateless.sort((a, b) => a.createdAt.compareTo(b.createdAt));
 
-        // En çok 4 satır: gecikmişler + bugünküler; yer kalırsa tarihsizler
+        // En çok 3 satır: gecikmişler + bugünküler; yer kalırsa tarihsizler
         final displayList = <Todo>[...overdue, ...today];
-        if (displayList.length < 4) {
-          displayList.addAll(dateless.take(4 - displayList.length));
+        if (displayList.length < 3) {
+          displayList.addAll(dateless.take(3 - displayList.length));
         }
 
         // Rozet metni ve stili
@@ -85,7 +85,7 @@ class _TodayTodosCardState extends State<TodayTodosCard> {
         final totalOpen = openTodos.length;
 
         return Card(
-          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          margin: const EdgeInsets.symmetric(horizontal: 14, vertical: 4),
           elevation: 0,
           color: scheme.surface,
           shape: RoundedRectangleBorder(
@@ -93,7 +93,7 @@ class _TodayTodosCardState extends State<TodayTodosCard> {
             side: BorderSide(color: scheme.outlineVariant.withValues(alpha: 0.35)),
           ),
           child: Padding(
-            padding: const EdgeInsets.all(12),
+            padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -182,14 +182,15 @@ class _TodayTodosCardState extends State<TodayTodosCard> {
                     ],
                   ),
 
-                  const SizedBox(height: 8),
+                  const SizedBox(height: 4),
 
-                  // Satırlar (en çok 4 satır, Bugün kartı olduğu için 'bugün' çipi gizlenir)
-                  for (final item in displayList.take(4))
+                  // Satırlar (en çok 3 satır, Bugün kartı olduğu için 'bugün' çipi gizlenir, satır aralıkları sıkı)
+                  for (final item in displayList.take(3))
                     TodoTile(
                       key: ValueKey('today_todo_${item.id}'),
                       todo: item,
                       hiddenDueDiffs: const {0},
+                      dense: true,
                     ),
 
                   const SizedBox(height: 4),

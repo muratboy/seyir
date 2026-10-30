@@ -77,65 +77,14 @@ class _GoalsPageState extends State<GoalsPage> {
           ),
           body: Column(
             children: [
-              // Yatay kaydırılabilir sekme çubuğu (360 dp ve x1.3 yazı ölçeğinde tüm etiketler okunur kalır, FittedBox ile küçültülmez)
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                child: SegmentedButton<GoalsPageTab>(
-                  showSelectedIcon: false,
-                  style: ButtonStyle(
-                    visualDensity: VisualDensity.compact,
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                    padding: WidgetStateProperty.all(const EdgeInsets.symmetric(horizontal: 8, vertical: 6)),
-                    textStyle: WidgetStateProperty.all(const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600)),
-                  ),
-                  segments: [
-                    ButtonSegment(
-                      value: GoalsPageTab.goals,
-                      label: Text(
-                        s.isTr ? 'Hedefler' : 'Goals',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                        maxLines: 1,
-                      ),
-                      icon: const Icon(Icons.flag_outlined, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: GoalsPageTab.todos,
-                      label: Text(
-                        totalTodosCount == 0
-                            ? (s.isTr ? 'Yapılacaklar' : 'To-dos')
-                            : '${s.isTr ? "Yapılacaklar" : "To-dos"} ($totalTodosCount)',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                        maxLines: 1,
-                      ),
-                      icon: const Icon(Icons.checklist_rounded, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: GoalsPageTab.habits,
-                      label: Text(
-                        totalHabitsCount == 0
-                            ? (s.isTr ? 'Zinciri Kırma' : 'Habits')
-                            : '${s.isTr ? "Zinciri Kırma" : "Habits"} ($totalHabitsCount)',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                        maxLines: 1,
-                      ),
-                      icon: const Icon(Icons.local_fire_department_rounded, size: 16),
-                    ),
-                    ButtonSegment(
-                      value: GoalsPageTab.roadmaps,
-                      label: Text(
-                        roadmapsCount == 0
-                            ? s.tabRoadmaps
-                            : '${s.tabRoadmaps} ($roadmapsCount)',
-                        style: const TextStyle(fontSize: 12.5, fontWeight: FontWeight.w600),
-                        maxLines: 1,
-                      ),
-                      icon: const Icon(Icons.alt_route_rounded, size: 16),
-                    ),
-                  ],
-                  selected: {_currentTab},
-                  onSelectionChanged: (set) => setState(() => _currentTab = set.first),
-                ),
+              // 4 sekme (Hedefler, Yapılacaklar, Zinciri Kırma, Yol Haritaları)
+              // 360 dp ve x1.0'da kaydırmadan sığar; x1.3'te kaydırılabilir kenar solmasıyla gösterilir.
+              _GoalsTabBar(
+                currentTab: _currentTab,
+                onTabChanged: (tab) => setState(() => _currentTab = tab),
+                todosCount: totalTodosCount,
+                habitsCount: totalHabitsCount,
+                roadmapsCount: roadmapsCount,
               ),
 
               if (_currentTab == GoalsPageTab.goals) ...[
@@ -846,6 +795,184 @@ class _GoalsPageState extends State<GoalsPage> {
         ],
       ),
     );
+  }
+}
+
+class _GoalsTabBar extends StatefulWidget {
+  final GoalsPageTab currentTab;
+  final ValueChanged<GoalsPageTab> onTabChanged;
+  final int todosCount;
+  final int habitsCount;
+  final int roadmapsCount;
+
+  const _GoalsTabBar({
+    required this.currentTab,
+    required this.onTabChanged,
+    required this.todosCount,
+    required this.habitsCount,
+    required this.roadmapsCount,
+  });
+
+  @override
+  State<_GoalsTabBar> createState() => _GoalsTabBarState();
+}
+
+class _GoalsTabBarState extends State<_GoalsTabBar> {
+  final _scrollController = ScrollController();
+  bool _canScrollLeft = false;
+  bool _canScrollRight = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scrollController.addListener(_updateScrollFades);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateScrollFades());
+  }
+
+  @override
+  void didUpdateWidget(covariant _GoalsTabBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _updateScrollFades());
+  }
+
+  @override
+  void dispose() {
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  void _updateScrollFades() {
+    if (!_scrollController.hasClients) return;
+    final max = _scrollController.position.maxScrollExtent;
+    final cur = _scrollController.position.pixels;
+    final canLeft = cur > 2;
+    final canRight = cur < max - 2;
+    if (canLeft != _canScrollLeft || canRight != _canScrollRight) {
+      if (mounted) {
+        setState(() {
+          _canScrollLeft = canLeft;
+          _canScrollRight = canRight;
+        });
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final s = strings.value;
+    final scheme = Theme.of(context).colorScheme;
+
+    final tabs = [
+      (
+        tab: GoalsPageTab.goals,
+        icon: Icons.flag_outlined,
+        label: s.isTr ? 'Hedefler' : 'Goals',
+      ),
+      (
+        tab: GoalsPageTab.todos,
+        icon: Icons.checklist_rounded,
+        label: widget.todosCount == 0
+            ? (s.isTr ? 'Yapılacaklar' : 'To-dos')
+            : '${s.isTr ? "Yapılacaklar" : "To-dos"} (${widget.todosCount})',
+      ),
+      (
+        tab: GoalsPageTab.habits,
+        icon: Icons.local_fire_department_rounded,
+        label: widget.habitsCount == 0
+            ? (s.isTr ? 'Zinciri Kırma' : 'Habits')
+            : '${s.isTr ? "Zinciri Kırma" : "Habits"} (${widget.habitsCount})',
+      ),
+      (
+        tab: GoalsPageTab.roadmaps,
+        icon: Icons.alt_route_rounded,
+        label: widget.roadmapsCount == 0
+            ? s.tabRoadmaps
+            : '${s.tabRoadmaps} (${widget.roadmapsCount})',
+      ),
+    ];
+
+    Widget content = SingleChildScrollView(
+      controller: _scrollController,
+      scrollDirection: Axis.horizontal,
+      physics: const BouncingScrollPhysics(),
+      padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+      child: ConstrainedBox(
+        constraints: BoxConstraints(
+          minWidth: MediaQuery.of(context).size.width - 8,
+        ),
+        child: Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: tabs.map((t) {
+            final isSelected = widget.currentTab == t.tab;
+            return Semantics(
+              selected: isSelected,
+              button: true,
+              label: t.label,
+              child: InkWell(
+                onTap: () => widget.onTabChanged(t.tab),
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  constraints: const BoxConstraints(minHeight: 48, minWidth: 68),
+                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: isSelected
+                        ? scheme.primaryContainer.withValues(alpha: 0.45)
+                        : Colors.transparent,
+                    borderRadius: BorderRadius.circular(12),
+                    border: isSelected
+                        ? Border.all(color: scheme.primary.withValues(alpha: 0.4))
+                        : null,
+                  ),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(
+                        t.icon,
+                        size: 18,
+                        color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        t.label,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+                          color: isSelected ? scheme.primary : scheme.onSurfaceVariant,
+                        ),
+                        maxLines: 1,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            );
+          }).toList(),
+        ),
+      ),
+    );
+
+    if (_canScrollLeft || _canScrollRight) {
+      content = ShaderMask(
+        shaderCallback: (Rect bounds) {
+          return LinearGradient(
+            begin: Alignment.centerLeft,
+            end: Alignment.centerRight,
+            colors: [
+              _canScrollLeft ? Colors.transparent : Colors.white,
+              Colors.white,
+              Colors.white,
+              _canScrollRight ? Colors.transparent : Colors.white,
+            ],
+            stops: const [0.0, 0.05, 0.93, 1.0],
+          ).createShader(bounds);
+        },
+        blendMode: BlendMode.dstIn,
+        child: content,
+      );
+    }
+
+    return content;
   }
 }
 

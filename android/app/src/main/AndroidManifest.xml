@@ -70,6 +70,17 @@
                 android:resource="@xml/todo_widget_info" />
         </receiver>
 
+        <!-- Todo Widget RemoteViews Service for ListView -->
+        <service
+            android:name=".TodoWidgetService"
+            android:permission="android.permission.BIND_REMOTEVIEWS"
+            android:exported="false" />
+
+        <!-- Todo Widget Action Receiver for list items -->
+        <receiver
+            android:name=".TodoWidgetActionReceiver"
+            android:exported="false" />
+
         <!-- Takip 1x1 Widget Configure Activity -->
         <activity
             android:name=".SingleWidgetConfigureActivity"

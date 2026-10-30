@@ -68,8 +68,8 @@ void main() {
 
     await tester.pumpAndSettle();
 
-    // Verify both tab segments exist
-    expect(find.byType(SegmentedButton<GoalsPageTab>), findsOneWidget);
+    // Verify tab headers exist
+    expect(find.descendant(of: find.byType(InkWell), matching: find.text('Hedefler')), findsOneWidget);
     expect(find.textContaining('Zinciri Kırma'), findsOneWidget);
 
     // Tap on Zinciri Kırma tab

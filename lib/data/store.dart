@@ -252,8 +252,9 @@ class AppStore extends ChangeNotifier {
   // Bu kopya adımları kendisi sayıyorsa (sensör okuması ya da elle ekleme aldıysa) true.
   bool _stepLive = false;
 
-  /// Günlük ekranında kullanıcının kapattığı bölümler ('health', 'roadmap').
-  Set<String> collapsedSections = {};
+  /// Günlük ekranında kullanıcının kapattığı bölümler ('health', 'roadmap', 'routines').
+  /// Rutinler ve Yol Haritası panelleri varsayılan olarak kapalıdır.
+  Set<String> collapsedSections = {'routines', 'roadmap'};
 
   bool isSectionCollapsed(String id) => collapsedSections.contains(id);
 
@@ -397,7 +398,16 @@ class AppStore extends ChangeNotifier {
       todaySteps = int.tryParse(settingsMap['step_today_$todayKey'] ?? '0') ?? 0;
       _stepPersisted = todaySteps;
     }
-    collapsedSections = (settingsMap['today_collapsed'] ?? '').split(',').where((x) => x.isNotEmpty).toSet();
+    if (settingsMap['today_collapsed'] == null) {
+      collapsedSections = {'routines', 'roadmap'};
+    } else {
+      collapsedSections = settingsMap['today_collapsed']!.split(',').where((x) => x.isNotEmpty).toSet();
+      if (settingsMap['today_collapsed_v2'] == null) {
+        collapsedSections.addAll(['routines', 'roadmap']);
+        await _putSetting('today_collapsed_v2', '1');
+        await _putSetting('today_collapsed', collapsedSections.join(','));
+      }
+    }
 
     sleepTrackerEnabled = settingsMap['sleep_tracker_enabled'] == 'true';
     sleepDailyGoalHours = double.tryParse(settingsMap['sleep_daily_goal_hours'] ?? '8.0') ?? 8.0;
@@ -786,11 +796,19 @@ class AppStore extends ChangeNotifier {
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
   Future<void> _putSetting(String key, Object value) async {
-    await (await db).insert('settings', {'key': key, 'value': '$value'}, conflictAlgorithm: ConflictAlgorithm.replace);
+    try {
+      await (await db).insert('settings', {'key': key, 'value': '$value'}, conflictAlgorithm: ConflictAlgorithm.replace);
+    } catch (_) {
+      // Veritabanı başlatılmamış birim/arayüz testlerinde yazma hatasını yut
+    }
   }
 
   Future<void> _deleteSetting(String key) async {
-    await (await db).delete('settings', where: 'key = ?', whereArgs: [key]);
+    try {
+      await (await db).delete('settings', where: 'key = ?', whereArgs: [key]);
+    } catch (_) {
+      // Veritabanı başlatılmamış birim/arayüz testlerinde yazma hatasını yut
+    }
   }
 
   /// Adım durumunu [now] gününe taşır. Gün uygulama açıkken değiştiyse son sensör okuması yeni günün

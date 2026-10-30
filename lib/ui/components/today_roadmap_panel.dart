@@ -31,39 +31,102 @@ class TodayRoadmapPanel extends StatelessWidget {
     final scheme = Theme.of(context).colorScheme;
     final collapsed = store.isSectionCollapsed('roadmap');
 
+    final firstRoadmap = roadmapsWithStep.firstOrNull;
+    final firstStep = firstRoadmap?.currentPendingStep;
+    String roadmapSummary = '';
+    if (firstRoadmap != null && firstStep != null) {
+      final p = store.stepProgress(firstRoadmap, firstStep);
+      final pct = (p != null && (firstStep.target ?? 0) > 0) ? ' %${(p.ratio * 100).round()}' : '';
+      final nextPrefix = s.isTr ? 'Sıradaki' : 'Next';
+      roadmapSummary = ' · $nextPrefix: ${firstStep.title}$pct';
+    }
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 8),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          SectionTitle(
-            s.activeRoadmapTargets,
-            trailing: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                if (roadmapsWithStep.length > 1 || collapsed)
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: scheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(10),
-                    ),
-                    child: Text(
-                      '${roadmapsWithStep.length} ${s.isTr ? "Aktif Harita" : "Active"}',
-                      style: TextStyle(
-                        fontSize: AppFont.micro,
-                        fontWeight: FontWeight.bold,
-                        color: scheme.primary,
+          Semantics(
+            button: true,
+            toggled: !collapsed,
+            label: s.activeRoadmapTargets,
+            hint: collapsed
+                ? (s.isTr ? 'Genişletmek için dokunun' : 'Tap to expand')
+                : (s.isTr ? 'Daraltmak için dokunun' : 'Tap to collapse'),
+            child: InkWell(
+              onTap: () => store.toggleSection('roadmap'),
+              borderRadius: BorderRadius.circular(10),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(minHeight: 48),
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+                  child: Row(
+                    children: [
+                      Expanded(
+                        child: Text.rich(
+                          TextSpan(
+                            children: [
+                              TextSpan(
+                                text: collapsed ? (s.isTr ? 'Yol haritası' : 'Roadmap') : s.activeRoadmapTargets,
+                                style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                      color: scheme.primary,
+                                      fontWeight: FontWeight.w700,
+                                    ),
+                              ),
+                              if (collapsed && roadmapSummary.isNotEmpty)
+                                TextSpan(
+                                  text: roadmapSummary,
+                                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                        color: scheme.onSurfaceVariant,
+                                        fontWeight: FontWeight.w600,
+                                      ),
+                                ),
+                            ],
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
                       ),
-                    ),
+                      if (!collapsed && roadmapsWithStep.length > 1) ...[
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                          decoration: BoxDecoration(
+                            color: scheme.primary.withValues(alpha: 0.12),
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                          child: Text(
+                            '${roadmapsWithStep.length} ${s.isTr ? "Aktif Harita" : "Active"}',
+                            style: TextStyle(
+                              fontSize: AppFont.micro,
+                              fontWeight: FontWeight.bold,
+                              color: scheme.primary,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                      ],
+                      const SectionToggle('roadmap'),
+                    ],
                   ),
-                const SectionToggle('roadmap'),
-              ],
+                ),
+              ),
             ),
           ),
-          if (!collapsed)
-            for (final roadmap in roadmapsWithStep)
-              _buildActiveStepCard(context, roadmap, roadmap.currentPendingStep!),
+          ClipRect(
+            child: AnimatedSize(
+              duration: const Duration(milliseconds: 250),
+              curve: Curves.easeInOut,
+              child: collapsed
+                  ? const SizedBox.shrink()
+                  : Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        for (final roadmap in roadmapsWithStep)
+                          _buildActiveStepCard(context, roadmap, roadmap.currentPendingStep!),
+                      ],
+                    ),
+            ),
+          ),
         ],
       ),
     );

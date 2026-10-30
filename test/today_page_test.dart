@@ -106,8 +106,13 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    // Verify TodayRoadmapPanel is present
+    // Verify TodayRoadmapPanel is present and initially collapsed by default
     expect(find.byType(TodayRoadmapPanel), findsOneWidget);
+    expect(find.text('Kondansatörü Değiştir'), findsNothing);
+
+    // Expand the panel by tapping its header
+    await tester.tap(find.byType(TodayRoadmapPanel));
+    await tester.pumpAndSettle();
 
     // Verify only the NEXT pending steps are shown for each active roadmap
     expect(find.text('3 km Tempolu Koşu'), findsOneWidget);

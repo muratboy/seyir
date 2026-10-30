@@ -647,10 +647,12 @@ void main() {
       final restarted = AppStore();
       await restarted.load();
       expect(restarted.isSectionCollapsed('health'), isTrue);
-      expect(restarted.isSectionCollapsed('roadmap'), isFalse);
+      expect(restarted.isSectionCollapsed('roadmap'), isTrue);
 
       await restarted.toggleSection('health');
       expect(restarted.isSectionCollapsed('health'), isFalse);
+      await restarted.toggleSection('roadmap');
+      expect(restarted.isSectionCollapsed('roadmap'), isFalse);
     });
   });
 

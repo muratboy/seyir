@@ -20,28 +20,76 @@ class TodayRoutinesPanel extends StatelessWidget {
     final isTr = s.isTr;
     final scheme = Theme.of(context).colorScheme;
     final routines = store.routines;
+    final collapsed = store.isSectionCollapsed('routines');
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SectionTitle(
-          isTr ? '⚡ Rutinler & Paketler' : '⚡ Routines & Bundles',
-          trailing: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                icon: const Icon(Icons.add_circle_outline, size: 20),
-                visualDensity: VisualDensity.compact,
-                padding: EdgeInsets.zero,
-                constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-                tooltip: isTr ? 'Yeni Rutin Ekle' : 'Add Routine',
-                onPressed: () => RoutineEditSheet.show(context),
+        Semantics(
+          button: true,
+          toggled: !collapsed,
+          label: isTr ? 'Rutinler ve Paketler' : 'Routines and Bundles',
+          hint: collapsed
+              ? (isTr ? 'Genişletmek için dokunun' : 'Tap to expand')
+              : (isTr ? 'Daraltmak için dokunun' : 'Tap to collapse'),
+          child: InkWell(
+            onTap: () => store.toggleSection('routines'),
+            borderRadius: BorderRadius.circular(10),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 48),
+              child: Padding(
+                padding: const EdgeInsets.fromLTRB(16, 6, 12, 6),
+                child: Row(
+                  children: [
+                    Expanded(
+                      child: Text.rich(
+                        TextSpan(
+                          children: [
+                            TextSpan(
+                              text: isTr ? '⚡ Rutinler & Paketler' : '⚡ Routines & Bundles',
+                              style: Theme.of(context).textTheme.titleSmall?.copyWith(
+                                    color: scheme.primary,
+                                    fontWeight: FontWeight.w700,
+                                  ),
+                            ),
+                            if (collapsed)
+                              TextSpan(
+                                text: ' · ${routines.length}',
+                                style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                                      color: scheme.onSurfaceVariant,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                              ),
+                          ],
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (!collapsed)
+                      IconButton(
+                        icon: const Icon(Icons.add_circle_outline, size: 20),
+                        visualDensity: VisualDensity.compact,
+                        padding: EdgeInsets.zero,
+                        constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
+                        tooltip: isTr ? 'Yeni Rutin Ekle' : 'Add Routine',
+                        onPressed: () => RoutineEditSheet.show(context),
+                      ),
+                    const SectionToggle('routines'),
+                  ],
+                ),
               ),
-            ],
+            ),
           ),
         ),
-        if (routines.isEmpty)
-          Padding(
+        ClipRect(
+          child: AnimatedSize(
+            duration: const Duration(milliseconds: 250),
+            curve: Curves.easeInOut,
+            child: collapsed
+                ? const SizedBox.shrink()
+                : (routines.isEmpty
+                    ? Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
             child: InkWell(
               borderRadius: BorderRadius.circular(14),
@@ -88,8 +136,7 @@ class TodayRoutinesPanel extends StatelessWidget {
               ),
             ),
           )
-        else
-          SizedBox(
+        : SizedBox(
             height: 48,
             child: ListView.separated(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -156,9 +203,11 @@ class TodayRoutinesPanel extends StatelessWidget {
                 );
               },
             ),
-          ),
-      ],
-    );
+          )),
+        ),
+      ),
+    ],
+  );
   }
 
   void _showRoutineOptions(BuildContext context, Routine r) {

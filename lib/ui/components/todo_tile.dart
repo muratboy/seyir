@@ -16,6 +16,7 @@ class TodoTile extends StatefulWidget {
   final VoidCallback? onPostponed;
   final VoidCallback? onDeleted;
   final Set<int>? hiddenDueDiffs;
+  final bool dense;
 
   const TodoTile({
     super.key,
@@ -23,6 +24,7 @@ class TodoTile extends StatefulWidget {
     this.onPostponed,
     this.onDeleted,
     this.hiddenDueDiffs,
+    this.dense = false,
   });
 
   @override
@@ -203,7 +205,10 @@ class _TodoTileState extends State<TodoTile> with SingleTickerProviderStateMixin
           );
         },
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+          padding: EdgeInsets.symmetric(
+            horizontal: widget.dense ? 8 : 14,
+            vertical: widget.dense ? 3 : 8,
+          ),
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [

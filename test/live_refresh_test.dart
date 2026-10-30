@@ -8,6 +8,7 @@ import 'package:takip/services/roadmap_parser.dart';
 import 'package:takip/ui/components/roadmap_step_progress.dart';
 import 'package:takip/ui/goals_page.dart';
 import 'package:takip/ui/roadmap_detail_page.dart';
+import 'package:takip/ui/components/today_roadmap_panel.dart';
 import 'package:takip/ui/today_page.dart';
 
 import 'support/real_db.dart';
@@ -85,19 +86,25 @@ void main() {
     await tester.pumpWidget(MaterialApp(home: TodayPage(focusRequest: ValueNotifier<int>(0))));
     await tester.pump();
 
-    expect(find.byTooltip('Gizle'), findsOneWidget);
-    expect(find.text('İlk adım'), findsOneWidget);
+    // Section is closed by default
+    final roadmapShow = find.descendant(of: find.byType(TodayRoadmapPanel), matching: find.byTooltip('Göster'));
+    final roadmapHide = find.descendant(of: find.byType(TodayRoadmapPanel), matching: find.byTooltip('Gizle'));
 
-    await tester.tap(find.byTooltip('Gizle'));
-    await act(tester, () async {});
-    expect(find.text('İlk adım'), findsNothing, reason: 'the section is closed');
-    expect(find.byTooltip('Göster'), findsOneWidget, reason: 'and its button now offers to open it');
-    expect(find.byIcon(Icons.expand_more), findsOneWidget);
+    expect(roadmapShow, findsOneWidget);
+    expect(find.descendant(of: find.byType(TodayRoadmapPanel), matching: find.byIcon(Icons.expand_more)), findsOneWidget);
+    expect(find.text('İlk adım'), findsNothing);
 
-    await tester.tap(find.byTooltip('Göster'));
+    // Open the section
+    await tester.tap(roadmapShow);
     await act(tester, () async {});
-    expect(find.text('İlk adım'), findsOneWidget);
-    expect(find.byTooltip('Gizle'), findsOneWidget);
+    expect(find.text('İlk adım'), findsOneWidget, reason: 'the section is opened');
+    expect(roadmapHide, findsOneWidget, reason: 'and its button now offers to close it');
+
+    // Close the section again
+    await tester.tap(roadmapHide);
+    await act(tester, () async {});
+    expect(find.text('İlk adım'), findsNothing);
+    expect(roadmapShow, findsOneWidget);
     await tester.pumpWidget(const SizedBox());
   });
 
@@ -129,6 +136,8 @@ void main() {
       });
       await tester.pumpWidget(MaterialApp(home: TodayPage(focusRequest: ValueNotifier<int>(0))));
       await tester.pump();
+      await tester.tap(find.byType(TodayRoadmapPanel));
+      await act(tester, () async {});
       expect(find.text('Kelime çalış'), findsOneWidget);
       expect(find.text('0 / 30 dk'), findsOneWidget);
 
