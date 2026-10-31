@@ -441,6 +441,57 @@ class NaturalLanguageParser {
     'yaptım': 'yap',
   };
 
+  /// Bir sözcüğün bilinen bir fiil kökü ("kostum" -> "kos", "yürüdüm" -> "yuru"); yoksa null.
+  static String? verbRootFor(String word) => _verbToActivityRoot[normalizeTr(word).toLowerCase()];
+
+  /// Fiil kökünün mevcut bir aktiviteyle eşleşmediğinde oluşturacağı kanonik aktivite adı.
+  static const Map<String, String> _rootToCanonicalActivityName = {
+    'kos': 'Koşu',
+    'yuru': 'Yürüyüş',
+    'uyu': 'Uyku',
+    'oku': 'Kitap',
+    'ic': 'İçme',
+    'yap': 'Aktivite',
+  };
+
+  /// Serbest metinden miktar, birim, süre, zaman ve yapılacak ifadelerini temizleyerek
+  /// yeni oluşturulacak aktivite için temiz bir ad üretir.
+  /// Tek öğe ve çok öğe yolu birebir aynı ad temizleme motorunu kullanır.
+  /// Fiil kökü biliniyorsa ("koştum" ve "kostum" -> Koşu, "yürüdüm" -> Yürüyüş) kök adı kullanılır.
+  /// Adda rakam ya da birim kalmaz, Türkçe kuralına göre büyük harfle başlar (i -> İ).
+  static String cleanActivityName(String input, {bool allowCommands = false}) {
+    var text = input.trim();
+    if (text.isEmpty) return '';
+
+    // 1. Yapılacak öneklerini temizle
+    text = text.replaceFirst(
+      RegExp(r'^(yapılacak|yapilacak|todo|to-do)(\s*:|\s+)', caseSensitive: false),
+      '',
+    );
+    text = text.replaceFirst(
+      RegExp(
+        r'^(bugün|bugun|dün|dun|yarın|yarin|öbür\s+gün|obur\s+gun|haftaya|hafta\s*sonu|haftasonu|pazartesi|salı|sali|çarşamba|carsamba|perşembe|persembe|cuma|cumartesi|pazar|today|yesterday|tomorrow|next\s+week|weekend|monday|tuesday|wednesday|thursday|friday|saturday|sunday)\s*:\s*',
+        caseSensitive: false,
+      ),
+      '',
+    );
+
+    // 2. Baştaki veya sondaki zaman ifadelerini TimeParser ile ayıkla
+    final timeParsed = TimeParser.parse(text, direction: TemporalDirection.past);
+    if (timeParsed.cleanedText.isNotEmpty && timeParsed.rawMatchedText.isNotEmpty) {
+      text = timeParsed.cleanedText;
+    }
+
+    // 3. Tek ve çok öğe yolunu birleştiren çekirdek ayrıştırma
+    final res = parse(
+      text,
+      activities: const [],
+      measures: const [],
+      allowCommands: allowCommands,
+    );
+    return res.activityName;
+  }
+
   /// Parses natural Turkish input like:
   /// - "2 kupa filtre kahve"
   /// - "bir buçuk litre su"
@@ -469,10 +520,16 @@ class NaturalLanguageParser {
       );
     }
 
-    final lower = normalizeTr(cleanInput).toLowerCase();
+    // Zaman ifadeleri (örn. "2 saat once", "dun gece") ad ve miktar çıkarımından önce ayrıştırılır.
+    final timeParsed = TimeParser.parse(cleanInput, direction: TemporalDirection.past);
+    final effectiveText = (timeParsed.cleanedText.isNotEmpty && timeParsed.rawMatchedText.isNotEmpty)
+        ? timeParsed.cleanedText
+        : cleanInput;
+
+    final lower = normalizeTr(effectiveText).toLowerCase();
     // Sözcükler hem özgün yazımıyla hem normalize edilmiş hâliyle tutulur; iki liste aynı sıradadır.
     // Eşleştirme normalize hâlle yapılır, yeni aktivitenin adı ise özgün yazımdan kurulur.
-    final rawWords = cleanInput.split(RegExp(r'\s+'));
+    final rawWords = effectiveText.split(RegExp(r'\s+'));
     final words = [
       for (final raw in rawWords) normalizeTr(raw).replaceAll(RegExp(r'[^\wçğıöşüÇĞİÖŞÜ]'), ''),
     ];
@@ -623,9 +680,35 @@ class NaturalLanguageParser {
     if (matchedActivity != null) {
       finalActivityName = matchedActivity.name;
     } else {
-      final newActivityName = remainingRawWords.isNotEmpty
-          ? remainingRawWords.join(' ')
-          : cleanInput;
+      String? verbRoot;
+      for (final w in words) {
+        if (_verbToActivityRoot.containsKey(w)) {
+          verbRoot = _verbToActivityRoot[w];
+          break;
+        }
+      }
+
+      String newActivityName;
+      if (remainingRawWords.isNotEmpty) {
+        newActivityName = remainingRawWords.join(' ');
+      } else if (verbRoot != null) {
+        newActivityName = _rootToCanonicalActivityName[verbRoot] ?? verbRoot;
+      } else {
+        newActivityName = cleanInput;
+      }
+
+      // Addan arta kalan rakamları temizle
+      newActivityName = newActivityName.replaceAll(RegExp(r'\d+'), '').trim();
+
+      // Adda tek başına kalan birim sözcüklerini temizle
+      final tokens = newActivityName.split(RegExp(r'\s+')).where((t) {
+        final tn = normalizeTr(t).toLowerCase();
+        return !_unitWords.containsKey(tn) && tn.isNotEmpty;
+      }).toList();
+      if (tokens.isNotEmpty) {
+        newActivityName = tokens.join(' ');
+      }
+
       finalActivityName = trCapitalize(newActivityName);
     }
 
@@ -1136,7 +1219,18 @@ class NaturalLanguageParser {
 
       final act = singleParse.matchedActivity;
       final effectiveM = singleParse.matchedMeasure ?? (act != null && defaultMeasureFor != null ? defaultMeasureFor(act.id) : null);
-      final unitId = effectiveM?.unitId;
+      String? unitId = effectiveM?.unitId;
+      if (unitId == null) {
+        for (final raw in textToParse.split(RegExp(r'\s+'))) {
+          final cleaned = raw.replaceAll(RegExp(r'''^['"“”‘’()\[\]{}.,;:!?\-]+|['"“”‘’()\[\]{}.,;:!?\-]+$'''), '');
+          final norm = normalizeTr(cleaned).toLowerCase();
+          final u = unitIdForWord(norm) ?? _unitWords[_unitToken(norm)];
+          if (u == 'dk' || u == 'sa' || u == 'sn') {
+            unitId = u;
+            break;
+          }
+        }
+      }
       final isDuration = unitId == 'dk' || unitId == 'sa' || unitId == 'sn';
 
       DateTime itemStartAt = effectiveTime.dateTime;

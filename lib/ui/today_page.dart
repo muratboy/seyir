@@ -10,7 +10,6 @@ import '../data/store.dart';
 import '../logic/format.dart';
 import '../logic/l10n.dart';
 import '../logic/text_match.dart';
-import '../logic/time_parser.dart';
 import '../services/nl_parser.dart';
 import 'common.dart';
 import 'components/active_timer_card.dart';
@@ -477,14 +476,27 @@ class _TodayViewState extends State<_TodayView> {
 
   /// Metin hiçbir kayıtlı aktiviteye bağlanmasaydı açılacak aktivitenin adı ("Yeni Olarak Ekle" bunu açar).
   String _nameAsNew(String text) {
-    final timeParsed = TimeParser.parse(text, direction: TemporalDirection.past);
-    final cleanTimeText = timeParsed.cleanedText.isNotEmpty ? timeParsed.cleanedText : text;
-    return NaturalLanguageParser.parse(
-      cleanTimeText,
-      activities: const [],
-      measures: store.measures,
-      allowCommands: false,
-    ).activityName;
+    return NaturalLanguageParser.cleanActivityName(text, allowCommands: false);
+  }
+
+  /// Metindeki fiilin bir fiil kökü üzerinden bu aktiviteye bağlanıp bağlanmadığını denetler.
+  bool _isVerbMatchedTo(String text, Activity act) {
+    final rawWords = text.trim().split(RegExp(r'\s+'));
+    for (final raw in rawWords) {
+      final norm = normalizeTr(raw).replaceAll(RegExp(r'[^\wçğıöşüÇĞİÖŞÜ]'), '').toLowerCase();
+      final root = NaturalLanguageParser.verbRootFor(norm);
+      if (root != null) {
+        final an = normalizeTr(act.name).toLowerCase();
+        if (an.startsWith(root) ||
+            (root == 'yuru' && an.contains('yuru')) ||
+            (root == 'kos' && an.contains('kos')) ||
+            (root == 'uyu' && an.contains('uyku')) ||
+            (root == 'oku' && (an.contains('kitap') || an.contains('oku')))) {
+          return true;
+        }
+      }
+    }
+    return false;
   }
 
   /// Önizleme satırının metni: "💧 Su: 2 Su bardağı · 400 ml eklenecek", "🎸 Gitar: kronometre başlayacak".
@@ -1123,12 +1135,16 @@ class _TodayViewState extends State<_TodayView> {
     final matchedAct = plan?.existing;
     // "Yeni Olarak Ekle": metin kayıtlı bir aktiviteye bağlanmışken (örn: "Kitap okuma"),
     // kullanıcının yazdığı farklı adla (örn: "Kitap") yeni bir aktivite açma seçeneği.
-    // Metin zaten kendi adına eşlendiyse ("dun gece 500 ml su" -> Su) veya eşleşen yoksa çıkmaz.
+    // Metin zaten kendi adına eşlendiyse ("dun gece 500 ml su" -> Su), fiil kökünden geldiyse
+    // ("20 dk yurudum" -> Yürüyüş) veya eşleşen yoksa çıkmaz.
     String? newName;
     if (matchedAct != null && !startsTimer && q.isNotEmpty) {
       final candidate = _nameAsNew(q);
+      final isSameAct = normalizeTr(candidate) == normalizeTr(matchedAct.name);
+      final isVerbMatched = _isVerbMatchedTo(q, matchedAct);
       if (candidate.isNotEmpty &&
-          normalizeTr(candidate) != normalizeTr(matchedAct.name) &&
+          !isSameAct &&
+          !isVerbMatched &&
           store.exactMatch(candidate) == null) {
         newName = candidate;
       }

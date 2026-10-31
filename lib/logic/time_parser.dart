@@ -394,7 +394,7 @@ class TimeParser {
     // sabah: 08:00, öğle/öğlen: 12:30, öğleden sonra: 15:00, akşam: 19:00, gece: 22:00
     // "gece" 1-5 arası saatle gelirse 01:00-05:00 olur.
     final partOfDayRegex = RegExp(
-      r'(^|\s)(sabah|öğleden\s+sonra|ogleden\s+sonra|öğlen|oglen|öğle|ogle|akşam|aksam|gece|morning|afternoon|noon|midday|evening|night)(\s+(vakti|saatlerinde|zamanı|zamani))?($|\s)',
+      r'(^|\s)(sabah|öğleden\s+sonra|ogleden\s+sonra|öğlen|oglen|öğle|ogle|akşam|aksam|gece|morning|afternoon|noon|midday|evening|night)(?!\s+(yemeği|yemegi|kahvaltısı|kahvaltisi|yürüyüşü|yuruyusu))(\s+(vakti|saatlerinde|zamanı|zamani))?($|\s)',
       caseSensitive: false,
     );
 

@@ -4146,11 +4146,16 @@ class AppStore extends ChangeNotifier {
     _changed();
 
     final count = toFix.length;
-    final msg = strings.value.isTr
-        ? '$count eski kayıt varsayılan ölçüyle düzeltildi; öncesinin yedeği alındı (Ayarlar › Yedekler)'
-        : '$count old unmeasured entries updated with default measure; backup saved before changes (Settings › Backups)';
+    final msg = formatUnmeasuredFixMessage(count, isTr: strings.value.isTr);
     unmeasuredFixMessageNotifier.value = msg;
     return count;
+  }
+
+  /// Ölçüsüz kayıt düzeltme bildirim mesajını biçimlendirir.
+  String formatUnmeasuredFixMessage(int count, {required bool isTr}) {
+    return isTr
+        ? '$count eski kayıt varsayılan ölçüyle düzeltildi; öncesinin yedeği alındı (Ayarlar › Yedekleme & Raporlama › Yerel Yedekler)'
+        : '$count old unmeasured entries updated with default measure; backup saved before changes (Settings › Backup & Reports › Local Backups)';
   }
 
   /// Süreli aktivitelerdeki ölçüsüz kayıt sayısını ve şu an nasıl sayıldıklarını raporlamak için yardımcı sayaç.
