@@ -45,6 +45,9 @@ class BackupService {
 
   /// Mevcut veritabanının JSON yedeğini dosyaya kaydeder.
   static Future<File> createBackup(AppStore store, {String prefix = 'backup'}) async {
+    if (snapshotOverrideForTest != null) {
+      return snapshotOverrideForTest!(store);
+    }
     final dir = await getBackupDir();
     final jsonStr = await store.exportJson();
     final dateStr = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
@@ -96,7 +99,7 @@ class BackupService {
       final stat = await f.stat();
       final baseName = p.basename(f.path);
       final isAuto = baseName.startsWith('auto_');
-      final isPre = baseName.startsWith('pre_restore_');
+      final isPre = baseName.startsWith('pre_restore_') || baseName.startsWith('pre_fix_');
       result.add(BackupFileInfo(
         file: f,
         name: baseName,

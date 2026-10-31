@@ -25,6 +25,7 @@ class EntryParsedItem extends ParsedItem {
   final Measure? measure;
   final double quantity;
   final DateTime at;
+  final DateTime? endAt;
   final bool hasExplicitTime;
   final bool hasExplicitDate;
   final bool isExplicitFuture;
@@ -32,7 +33,9 @@ class EntryParsedItem extends ParsedItem {
   final String? timeKeyword;
   final bool isNewActivity;
   final ({String mode, int targetMs})? timerCommand;
-  final Todo? willCompleteTodo;
+  final List<Todo> willCompleteTodos;
+
+  Todo? get willCompleteTodo => willCompleteTodos.firstOrNull;
 
   EntryParsedItem({
     required this.rawText,
@@ -42,6 +45,7 @@ class EntryParsedItem extends ParsedItem {
     this.measure,
     required this.quantity,
     required this.at,
+    this.endAt,
     this.hasExplicitTime = false,
     this.hasExplicitDate = false,
     this.isExplicitFuture = false,
@@ -49,8 +53,9 @@ class EntryParsedItem extends ParsedItem {
     this.timeKeyword,
     this.isNewActivity = false,
     this.timerCommand,
-    this.willCompleteTodo,
-  });
+    Todo? willCompleteTodo,
+    List<Todo>? willCompleteTodos,
+  }) : willCompleteTodos = willCompleteTodos ?? (willCompleteTodo != null ? [willCompleteTodo] : const []);
 
   TodoParsedItem toTodoItem() {
     return TodoParsedItem(
@@ -70,6 +75,7 @@ class EntryParsedItem extends ParsedItem {
     Measure? measure,
     double? quantity,
     DateTime? at,
+    DateTime? endAt,
     bool? hasExplicitTime,
     bool? hasExplicitDate,
     bool? isExplicitFuture,
@@ -77,6 +83,7 @@ class EntryParsedItem extends ParsedItem {
     String? timeKeyword,
     bool? isNewActivity,
     Todo? willCompleteTodo,
+    List<Todo>? willCompleteTodos,
   }) =>
       EntryParsedItem(
         rawText: rawText,
@@ -86,6 +93,7 @@ class EntryParsedItem extends ParsedItem {
         measure: measure ?? this.measure,
         quantity: quantity ?? this.quantity,
         at: at ?? this.at,
+        endAt: endAt ?? this.endAt,
         hasExplicitTime: hasExplicitTime ?? this.hasExplicitTime,
         hasExplicitDate: hasExplicitDate ?? this.hasExplicitDate,
         isExplicitFuture: isExplicitFuture ?? this.isExplicitFuture,
@@ -93,7 +101,7 @@ class EntryParsedItem extends ParsedItem {
         timeKeyword: timeKeyword ?? this.timeKeyword,
         isNewActivity: isNewActivity ?? this.isNewActivity,
         timerCommand: timerCommand,
-        willCompleteTodo: willCompleteTodo ?? this.willCompleteTodo,
+        willCompleteTodos: willCompleteTodos ?? (willCompleteTodo != null ? [willCompleteTodo] : this.willCompleteTodos),
       );
 }
 
@@ -1009,6 +1017,7 @@ class NaturalLanguageParser {
     DateTime? now,
     DateTime? fallbackDay,
     Measure? Function(int activityId)? defaultMeasureFor,
+    List<Todo> Function(Iterable<dynamic> items)? predictCompletedTodos,
   }) {
     final cleanInput = input.trim();
     if (cleanInput.isEmpty) {
@@ -1125,21 +1134,72 @@ class NaturalLanguageParser {
         defaultMeasureFor: defaultMeasureFor,
       );
 
-      Todo? willComplete;
       final act = singleParse.matchedActivity;
+      final effectiveM = singleParse.matchedMeasure ?? (act != null && defaultMeasureFor != null ? defaultMeasureFor(act.id) : null);
+      final unitId = effectiveM?.unitId;
+      final isDuration = unitId == 'dk' || unitId == 'sa' || unitId == 'sn';
+
+      DateTime itemStartAt = effectiveTime.dateTime;
+      DateTime? itemEndAt;
+
+      if (isDuration) {
+        final totalVal = effectiveM != null ? effectiveM.amount * singleParse.quantity : singleParse.quantity;
+        final durSecs = (totalVal * (unitId == 'sa' ? 3600 : (unitId == 'dk' ? 60 : 1))).round();
+
+        final hasExplicitClockOrPod = effectiveTime.hasExplicitTime && !effectiveTime.isRelative;
+        final isRelativeAgo = effectiveTime.isRelative && effectiveTime.dateKeyword == 'önce';
+        final isRelativeJustNow = effectiveTime.isRelative && effectiveTime.dateKeyword != 'önce';
+        final hasNoTimeSpec = !effectiveTime.hasExplicitTime && !effectiveTime.hasExplicitDate && !effectiveTime.isRelative;
+
+        if (hasNoTimeSpec || isRelativeJustNow) {
+          // Zaman ifadesi yoksa ya da "az önce", "demin", "şimdi" varsa kayıt şimdi biter: başlangıç = şimdi - süre
+          itemEndAt = effectiveTime.dateTime;
+          itemStartAt = itemEndAt.subtract(Duration(seconds: durSecs));
+        } else if (isRelativeAgo) {
+          // "X önce" verilmişse kayıt X önce biter: bitiş = şimdi - X, başlangıç = bitiş - süre
+          itemEndAt = effectiveTime.dateTime;
+          itemStartAt = itemEndAt.subtract(Duration(seconds: durSecs));
+        } else if (hasExplicitClockOrPod || effectiveTime.hasExplicitDate) {
+          // Saat ya da gün bölümü verilmişse o an başlangıçtır: bitiş = başlangıç + süre
+          itemStartAt = effectiveTime.dateTime;
+          itemEndAt = itemStartAt.add(Duration(seconds: durSecs));
+        } else {
+          itemEndAt = effectiveTime.dateTime;
+          itemStartAt = itemEndAt.subtract(Duration(seconds: durSecs));
+        }
+      }
+
+      final matchedWillCompleteList = <Todo>[];
       if (act != null && openTodos.isNotEmpty) {
         final openLinked = openTodos.where(
           (t) => t.isLinked && !t.isCompleted && t.linkedActivityIds.contains(act.id),
         );
         for (final t in openLinked) {
           // Yapılacağın oluşturulmasından önceki kayıtlar sayılmaz
-          if (effectiveTime.dateTime.millisecondsSinceEpoch < t.createdAt) continue;
+          if (itemStartAt.millisecondsSinceEpoch < t.createdAt) continue;
 
-          final m = singleParse.matchedMeasure;
-          final val = (m != null) ? (singleParse.quantity * m.amount) : singleParse.quantity;
-          if (t.targetAmount == null || val >= t.targetAmount!) {
-            willComplete = t;
-            break;
+          // Birim ve boyut kontrolü
+          final tUnit = t.targetUnit;
+          if (t.targetAmount != null) {
+            // Birim boyut uyumu: süre kaydı (dk, sa, sn) mesafe (km, m) veya hacim (l) hedefini tamamlayamaz
+            final isTDuration = tUnit == 'dk' || tUnit == 'sa' || tUnit == 'sn';
+            final isTDistance = tUnit == 'km' || tUnit == 'm';
+            final isTVolume = tUnit == 'l' || tUnit == 'ml';
+            final isTMass = tUnit == 'kg' || tUnit == 'g' || tUnit == 'mg';
+
+            if (isDuration && !isTDuration) continue;
+            if (!isDuration && isTDuration) continue;
+            if (isTDistance && unitId != 'km' && unitId != 'm') continue;
+            if (isTVolume && unitId != 'l' && unitId != 'ml') continue;
+            if (isTMass && unitId != 'kg' && unitId != 'g' && unitId != 'mg') continue;
+
+            final m = singleParse.matchedMeasure ?? effectiveM;
+            final val = (m != null) ? (singleParse.quantity * m.amount) : singleParse.quantity;
+            if (val >= t.targetAmount!) {
+              matchedWillCompleteList.add(t);
+            }
+          } else {
+            matchedWillCompleteList.add(t);
           }
         }
       }
@@ -1152,7 +1212,8 @@ class NaturalLanguageParser {
           activityName: singleParse.activityName,
           measure: singleParse.matchedMeasure,
           quantity: singleParse.quantity,
-          at: effectiveTime.dateTime,
+          at: itemStartAt,
+          endAt: itemEndAt,
           hasExplicitTime: effectiveTime.hasExplicitTime,
           hasExplicitDate: effectiveTime.hasExplicitDate,
           isExplicitFuture: effectiveTime.isExplicitFuture,
@@ -1160,9 +1221,23 @@ class NaturalLanguageParser {
           timeKeyword: effectiveTime.dateKeyword,
           isNewActivity: singleParse.matchedActivity == null,
           timerCommand: singleParse.timerCommand,
-          willCompleteTodo: willComplete,
+          willCompleteTodos: matchedWillCompleteList,
         ),
       );
+    }
+
+    if (predictCompletedTodos != null) {
+      final entryItems = items.whereType<EntryParsedItem>().toList();
+      if (entryItems.isNotEmpty) {
+        final predicted = predictCompletedTodos(entryItems);
+        for (var i = 0; i < items.length; i++) {
+          final it = items[i];
+          if (it is EntryParsedItem && it.activity != null) {
+            final forThis = predicted.where((t) => t.linkedActivityIds.contains(it.activity!.id)).toList();
+            items[i] = it.copyWith(willCompleteTodos: forThis);
+          }
+        }
+      }
     }
 
     return MultiParseResult(

@@ -112,6 +112,7 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
       text,
       activities: store.activities.values.toList(),
       measures: store.measures,
+      defaultMeasureFor: store.defaultMeasureFor,
     );
     setState(() {
       _parsedResult = res;
@@ -139,6 +140,9 @@ class _VoiceInputModalState extends State<_VoiceInputModal> with SingleTickerPro
       _spokenText,
       activities: store.activities.values.toList(),
       measures: store.measures,
+      openTodos: store.todos,
+      defaultMeasureFor: store.defaultMeasureFor,
+      predictCompletedTodos: store.predictCompletedTodos,
     );
     final isComplex = multi.items.length > 1 ||
         multi.isTodoMode ||

@@ -182,6 +182,10 @@ class _TodayViewState extends State<_TodayView> {
     widget.focusRequest.addListener(_onFocusRequested);
     widget.voiceRequest?.addListener(_onVoiceRequested);
     store.todoCompletedNotifier.addListener(_onTodoCompleted);
+    store.unmeasuredFixMessageNotifier.addListener(_onUnmeasuredFixMessage);
+    if (store.unmeasuredFixMessageNotifier.value != null) {
+      _onUnmeasuredFixMessage();
+    }
     // Öneriler giriş kutusu odaklanınca da gösterilir.
     _inputFocus.addListener(_onFocusChanged);
     _textController.addListener(_onTextChanged);
@@ -198,6 +202,7 @@ class _TodayViewState extends State<_TodayView> {
     widget.focusRequest.removeListener(_onFocusRequested);
     widget.voiceRequest?.removeListener(_onVoiceRequested);
     store.todoCompletedNotifier.removeListener(_onTodoCompleted);
+    store.unmeasuredFixMessageNotifier.removeListener(_onUnmeasuredFixMessage);
     _inputFocus.removeListener(_onFocusChanged);
     _textController.removeListener(_onTextChanged);
     _inputFocus.dispose();
@@ -219,6 +224,25 @@ class _TodayViewState extends State<_TodayView> {
           content: Text(isTr ? '✓ Tamamlandı: $title' : '✓ Completed: $title'),
         ),
       );
+    }
+  }
+
+  void _onUnmeasuredFixMessage() {
+    final msg = store.unmeasuredFixMessageNotifier.value;
+    if (msg != null && mounted) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          final sm = ScaffoldMessenger.of(context);
+          sm.hideCurrentSnackBar();
+          sm.showSnackBar(
+            SnackBar(
+              duration: const Duration(seconds: 5),
+              content: Text(msg),
+            ),
+          );
+          store.unmeasuredFixMessageNotifier.value = null;
+        }
+      });
     }
   }
 
@@ -288,6 +312,7 @@ class _TodayViewState extends State<_TodayView> {
       now: DateTime.now(),
       fallbackDay: _currentDay,
       defaultMeasureFor: store.defaultMeasureFor,
+      predictCompletedTodos: store.predictCompletedTodos,
     );
     return multi.items;
   }
@@ -543,11 +568,24 @@ class _TodayViewState extends State<_TodayView> {
           ? DateTime.now()
           : DateTime(_currentDay.year, _currentDay.month, _currentDay.day, 12, 0);
 
+      // Kural: Süreli aktivite çipine dokunulduğunda saatsiz süreli kayıt şimdi biter (başlangıç = şimdi - süre)
+      final m = store.measureById(_selectedMeasureId) ?? store.defaultMeasureFor(act.id);
+      final unitId = m?.unitId;
+      final val = m != null ? m.amount * _qty : _qty;
+      DateTime effectiveAt = entryTime;
+      DateTime? effectiveEndAt;
+      if ((unitId == 'dk' || unitId == 'sa' || unitId == 'sn') && val > 0) {
+        final durSecs = (val * (unitId == 'sa' ? 3600 : (unitId == 'dk' ? 60 : 1))).round();
+        effectiveEndAt = entryTime;
+        effectiveAt = entryTime.subtract(Duration(seconds: durSecs));
+      }
+
       final res = await store.addEntry(
         act.id,
         measureId: _selectedMeasureId,
         qty: _qty,
-        at: entryTime,
+        at: effectiveAt,
+        endAt: effectiveEndAt,
         note: _noteController.text,
       );
 
@@ -624,6 +662,7 @@ class _TodayViewState extends State<_TodayView> {
             measureId: mId,
             qty: q,
             at: item.at,
+            endAt: item.endAt,
             note: _noteController.text,
           ),
         );
@@ -769,12 +808,18 @@ class _TodayViewState extends State<_TodayView> {
 
   Widget _buildEntryItemRow(EntryParsedItem item, int idx, ColorScheme scheme, AppStrings s) {
     final act = item.activity;
-    final emoji = act?.emoji ?? (item.timerCommand != null ? '⏱️' : '📝');
     final isNew = act == null || item.isNewActivity;
     final actName = isNew ? '${item.activityName} (${s.newActivityMark})' : act.name;
     final effectiveMId = item.measure?.id ?? (act != null ? store.defaultMeasureFor(act.id)?.id : null);
     final amountStr = store.amountDetail(effectiveMId, item.quantity, activityId: act?.id);
     final isTr = s.isTr;
+
+    Widget leadingWidget;
+    if (isNew) {
+      leadingWidget = Text(item.timerCommand != null ? '⏱️' : '📝', style: const TextStyle(fontSize: 16));
+    } else {
+      leadingWidget = ActivityAvatar(act.id, size: 20, activity: act);
+    }
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -783,7 +828,7 @@ class _TodayViewState extends State<_TodayView> {
         children: [
           Row(
             children: [
-              Text(emoji, style: const TextStyle(fontSize: 16)),
+              leadingWidget,
               const SizedBox(width: 8),
               Expanded(
                 child: Wrap(
@@ -882,7 +927,7 @@ class _TodayViewState extends State<_TodayView> {
               ),
             ],
           ),
-          if (item.willCompleteTodo != null) ...[
+          for (final t in item.willCompleteTodos) ...[
             Padding(
               padding: const EdgeInsets.only(left: 24, top: 2),
               child: Row(
@@ -892,8 +937,8 @@ class _TodayViewState extends State<_TodayView> {
                   Expanded(
                     child: Text(
                       isTr
-                          ? 'Bu kayıt "${item.willCompleteTodo!.title}" yapılacağını tamamlar'
-                          : 'This entry completes "${item.willCompleteTodo!.title}"',
+                          ? 'Bu kayıt "${t.title}" yapılacağını tamamlar'
+                          : 'This entry completes "${t.title}"',
                       style: TextStyle(
                         fontSize: AppFont.micro,
                         color: scheme.primary,
@@ -1296,28 +1341,34 @@ class _TodayViewState extends State<_TodayView> {
                         : null,
                   ),
                   Builder(builder: (c) {
-                    final willComplete = singleEntry?.willCompleteTodo;
-                    if (willComplete == null || startsTimer) return const SizedBox.shrink();
-                    return Padding(
-                      padding: const EdgeInsets.only(left: 6, bottom: 4),
-                      child: Row(
-                        children: [
-                          Icon(Icons.check_circle_outline, size: 14, color: Theme.of(c).colorScheme.primary),
-                          const SizedBox(width: 6),
-                          Expanded(
-                            child: Text(
-                              s.isTr
-                                  ? 'Bu kayıt "${willComplete.title}" yapılacağını tamamlar'
-                                  : 'This entry completes "${willComplete.title}"',
-                              style: TextStyle(
-                                fontSize: AppFont.micro,
-                                color: Theme.of(c).colorScheme.primary,
-                                fontWeight: FontWeight.w600,
-                              ),
+                    final willCompletes = singleEntry?.willCompleteTodos ?? const [];
+                    if (willCompletes.isEmpty || startsTimer) return const SizedBox.shrink();
+                    return Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        for (final willComplete in willCompletes)
+                          Padding(
+                            padding: const EdgeInsets.only(left: 6, bottom: 4),
+                            child: Row(
+                              children: [
+                                Icon(Icons.check_circle_outline, size: 14, color: Theme.of(c).colorScheme.primary),
+                                const SizedBox(width: 6),
+                                Expanded(
+                                  child: Text(
+                                    s.isTr
+                                        ? 'Bu kayıt "${willComplete.title}" yapılacağını tamamlar'
+                                        : 'This entry completes "${willComplete.title}"',
+                                    style: TextStyle(
+                                      fontSize: AppFont.micro,
+                                      color: Theme.of(c).colorScheme.primary,
+                                      fontWeight: FontWeight.w600,
+                                    ),
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                        ],
-                      ),
+                      ],
                     );
                   }),
                 ],

@@ -200,6 +200,7 @@ class AppStore extends ChangeNotifier {
   List<Routine> routines = [];
   List<Todo> todos = [];
   final ValueNotifier<String?> todoCompletedNotifier = ValueNotifier<String?>(null);
+  final ValueNotifier<String?> unmeasuredFixMessageNotifier = ValueNotifier<String?>(null);
   final Set<String> _goalCheckins = {};
   bool loaded = false;
 
@@ -320,6 +321,7 @@ class AppStore extends ChangeNotifier {
   /// (sayaç bildirimi ve alarmları, hatırlatıcılar, adım sensörü, günlük otomatik yedek).
   Future<void> load() async {
     await _read();
+    await fixUnmeasuredEntries();
     // Veriler okundu: bildirim, sensör ya da yedek tarafındaki bir hata uygulamayı açılmaz kılmasın.
     try {
       await _startServices();
@@ -724,11 +726,24 @@ class AppStore extends ChangeNotifier {
       }
     }
 
+    final m = result.matchedMeasure ?? defaultMeasureFor(act.id);
+    final unitId = m?.unitId;
+    final val = m != null ? m.amount * qty : qty;
+    final now = DateTime.now();
+    DateTime effectiveAt = now;
+    DateTime? effectiveEndAt;
+    if ((unitId == 'dk' || unitId == 'sa' || unitId == 'sn') && val > 0) {
+      final durSecs = (val * (unitId == 'sa' ? 3600 : (unitId == 'dk' ? 60 : 1))).round();
+      effectiveEndAt = now;
+      effectiveAt = now.subtract(Duration(seconds: durSecs));
+    }
+
     await addEntry(
       act.id,
       measureId: measureId,
       qty: qty,
-      at: DateTime.now(),
+      at: effectiveAt,
+      endAt: effectiveEndAt,
     );
 
     final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
@@ -741,11 +756,22 @@ class AppStore extends ChangeNotifier {
   Future<String?> logQuickActivity(int activityId) async {
     final act = activity(activityId);
     final lastMId = stats[activityId]?.lastMeasureId;
+    final now = DateTime.now();
+    final m = measureById(lastMId) ?? defaultMeasureFor(activityId);
+    final unitId = m?.unitId;
+    DateTime effectiveAt = now;
+    DateTime? effectiveEndAt;
+    if (unitId == 'dk' || unitId == 'sa' || unitId == 'sn') {
+      final durSecs = (m != null ? m.amount * (unitId == 'sa' ? 3600 : (unitId == 'dk' ? 60 : 1)) : 60).round();
+      effectiveEndAt = now;
+      effectiveAt = now.subtract(Duration(seconds: durSecs));
+    }
     await addEntry(
       activityId,
       measureId: lastMId,
       qty: 1.0,
-      at: DateTime.now(),
+      at: effectiveAt,
+      endAt: effectiveEndAt,
     );
     final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
     final amount = amountDetail(lastMId, 1.0);
@@ -1292,6 +1318,18 @@ class AppStore extends ChangeNotifier {
 
     final last = lastEntryForActivity(activityId);
     final targetTime = at ?? DateTime.now();
+    DateTime effectiveAt = targetTime;
+    DateTime? effectiveEndAt;
+    if (last != null) {
+      final unitId = last.unitId;
+      final val = last.value ?? (last.measureId != null ? measureById(last.measureId)?.amount : null);
+      if ((unitId == 'dk' || unitId == 'sa' || unitId == 'sn') && val != null && val > 0) {
+        final durSecs = (val * (unitId == 'sa' ? 3600 : (unitId == 'dk' ? 60 : 1))).round();
+        effectiveEndAt = targetTime;
+        effectiveAt = targetTime.subtract(Duration(seconds: durSecs));
+      }
+    }
+
     final added = last != null
         ? (await addEntry(
             activityId,
@@ -1300,9 +1338,10 @@ class AppStore extends ChangeNotifier {
             value: last.value,
             unitId: last.unitId,
             note: last.note,
-            at: targetTime,
+            at: effectiveAt,
+            endAt: effectiveEndAt,
           )).entry
-        : (await addEntry(activityId, at: targetTime)).entry;
+        : (await addEntry(activityId, at: effectiveAt, endAt: effectiveEndAt)).entry;
 
     final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
     final isTr = strings.value.isTr;
@@ -1807,7 +1846,10 @@ class AppStore extends ChangeNotifier {
       if (adetM != null) return adetM;
     }
 
-    return otherMeasures.firstOrNull ?? measures.firstOrNull;
+    for (final m in otherMeasures) {
+      if (unit(m.unitId).dim == targetDim) return m;
+    }
+    return null;
   }
 
   /// Çoklu kayıt ve yapılacakları tek bir SQLite transaction'ında yazar.
@@ -1837,19 +1879,21 @@ class AppStore extends ChangeNotifier {
         final finalValue = m != null ? m.amount * input.qty : null;
 
         int? calculatedEndTs = input.endAt?.millisecondsSinceEpoch;
+        DateTime effectiveTime = time;
         if (calculatedEndTs == null &&
             (finalUnitId == 'dk' || finalUnitId == 'sa' || finalUnitId == 'sn') &&
             finalValue != null &&
             finalValue > 0) {
           final durationSecs =
               (finalValue * (finalUnitId == 'sa' ? 3600 : (finalUnitId == 'dk' ? 60 : 1))).round();
+          effectiveTime = time;
           calculatedEndTs = time.add(Duration(seconds: durationSecs)).millisecondsSinceEpoch;
         }
 
         final e = Entry(
           id: 0,
           activityId: input.activityId,
-          ts: time.millisecondsSinceEpoch,
+          ts: effectiveTime.millisecondsSinceEpoch,
           endTs: calculatedEndTs,
           measureId: m?.id,
           qty: input.qty,
@@ -3532,7 +3576,26 @@ class AppStore extends ChangeNotifier {
     final entryTime = sameDay(targetDay, DateTime.now())
         ? DateTime.now()
         : DateTime(targetDay.year, targetDay.month, targetDay.day, 12, 0);
-    final r = await addEntry(q.activityId, measureId: q.measureId, qty: q.qty, at: entryTime);
+
+    // Kural: Süreli aktivite çipine dokunulduğunda saatsiz süreli kayıt şimdi biter (başlangıç = şimdi - süre)
+    final m = measureById(q.measureId) ?? defaultMeasureFor(q.activityId);
+    final unitId = m?.unitId;
+    final val = m != null ? m.amount * q.qty : q.qty;
+    DateTime effectiveAt = entryTime;
+    DateTime? effectiveEndAt;
+    if ((unitId == 'dk' || unitId == 'sa' || unitId == 'sn') && val > 0) {
+      final durSecs = (val * (unitId == 'sa' ? 3600 : (unitId == 'dk' ? 60 : 1))).round();
+      effectiveEndAt = entryTime;
+      effectiveAt = entryTime.subtract(Duration(seconds: durSecs));
+    }
+
+    final r = await addEntry(
+      q.activityId,
+      measureId: q.measureId,
+      qty: q.qty,
+      at: effectiveAt,
+      endAt: effectiveEndAt,
+    );
     return QuickTapResult(added: r.entry, achieved: r.achieved, exceeded: r.exceeded);
   }
 
@@ -3721,11 +3784,23 @@ class AppStore extends ChangeNotifier {
         }
       }
 
+      DateTime effectiveAt = itemTime;
+      DateTime? effectiveEndAt;
+      final m = measureById(effectiveMeasureId);
+      final uId = m?.unitId ?? effectiveUnitId;
+      final val = m != null ? m.amount * effectiveQty : effectiveValue;
+      if ((uId == 'dk' || uId == 'sa' || uId == 'sn') && val != null && val > 0) {
+        final durSecs = (val * (uId == 'sa' ? 3600 : (uId == 'dk' ? 60 : 1))).round();
+        effectiveEndAt = itemTime;
+        effectiveAt = itemTime.subtract(Duration(seconds: durSecs));
+      }
+
       final res = await addEntry(
         it.activityId,
         measureId: effectiveMeasureId,
         qty: effectiveQty,
-        at: itemTime,
+        at: effectiveAt,
+        endAt: effectiveEndAt,
         note: it.note,
         value: effectiveValue,
         unitId: effectiveUnitId,
@@ -3997,6 +4072,102 @@ class AppStore extends ChangeNotifier {
     try {
       await NotificationService.scheduleReminders(this);
     } catch (_) {}
+  }
+
+  /// Eski ölçüsüz kayıtları (measure_id ve value boş olanlar) varsayılan ölçüyle bir defalık düzeltir.
+  /// Ölçülü aktiviteler (hacim, kütle, mesafe, özel ölçü) kapsanır.
+  /// Olay/adet, süreli aktiviteler ve dolu kayıtlar atlanır.
+  Future<int> fixUnmeasuredEntries() async {
+    final toFix = <Entry>[];
+    for (final e in entries) {
+      if (e.measureId != null || e.value != null) continue;
+      if (!activities.containsKey(e.activityId)) continue;
+      final act = activities[e.activityId]!;
+
+      final defM = defaultMeasureFor(act.id);
+      if (defM == null) continue;
+
+      final dim = unit(defM.unitId).dim;
+      // Süreli aktivitelere ve adet/olay aktivitelerine dokunulmaz
+      if (dim == 'time' || dim == 'count' || dim == 'times') continue;
+
+      // Hacim, kütle, mesafe ve özel ölçülü aktiviteler
+      if (dim == 'volume' || dim == 'mass' || dim == 'distance' || dim == 'custom') {
+        toFix.add(e);
+      }
+    }
+
+    if (toFix.isEmpty) return 0;
+
+    // Güvenlik: Değiştirilecek kayıt varsa ÖNCE tam bir yedek al (H6 kuralı)
+    try {
+      await BackupService.createBackup(this, prefix: 'pre_fix_unmeasured');
+    } catch (err, st) {
+      debugPrint('Güvenlik yedeği alınamadığı için ölçüsüz kayıt düzeltmesi iptal edildi: $err\n$st');
+      return 0;
+    }
+
+    // Değişikliği tek transaction'da yap
+    final d = await db;
+    try {
+      await d.transaction((tx) async {
+        for (final e in toFix) {
+          final defM = defaultMeasureFor(e.activityId)!;
+          final finalVal = defM.amount * e.qty;
+          await tx.update(
+            'entries',
+            {
+              'measure_id': defM.id,
+              'unit_id': defM.unitId,
+              'value': finalVal,
+            },
+            where: 'id = ?',
+            whereArgs: [e.id],
+          );
+        }
+      });
+    } catch (err, st) {
+      debugPrint('Ölçüsüz kayıt düzeltme transaction hatası: $err\n$st');
+      return 0;
+    }
+
+    // Bellek nesnelerini güncelle
+    for (final e in toFix) {
+      final defM = defaultMeasureFor(e.activityId)!;
+      e.measureId = defM.id;
+      e.unitId = defM.unitId;
+      e.value = defM.amount * e.qty;
+    }
+
+    // Hedefler, yapılacaklar, yol haritası ve widget'ı yenile
+    await _syncLinkedSteps(announce: false);
+    await _syncTodos(announce: false);
+    WidgetSync.schedule();
+    _changed();
+
+    final count = toFix.length;
+    final msg = strings.value.isTr
+        ? '$count eski kayıt varsayılan ölçüyle düzeltildi; öncesinin yedeği alındı (Ayarlar › Yedekler)'
+        : '$count old unmeasured entries updated with default measure; backup saved before changes (Settings › Backups)';
+    unmeasuredFixMessageNotifier.value = msg;
+    return count;
+  }
+
+  /// Süreli aktivitelerdeki ölçüsüz kayıt sayısını ve şu an nasıl sayıldıklarını raporlamak için yardımcı sayaç.
+  int countUnmeasuredDurationEntries() {
+    int count = 0;
+    for (final e in entries) {
+      if (e.measureId != null || e.value != null) continue;
+      if (!activities.containsKey(e.activityId)) continue;
+      final act = activities[e.activityId]!;
+      final defM = defaultMeasureFor(act.id);
+      final dim = defM != null ? unit(defM.unitId).dim : null;
+      final format = activityFormat(act.id);
+      if (dim == 'time' || format == ActivityFormat.duration) {
+        count++;
+      }
+    }
+    return count;
   }
 
   // ---------------------------------------------------------------- yol haritaları (roadmaps)
@@ -4667,6 +4838,106 @@ bool isTargetReached(double current, double target, {double epsilon = 1e-9}) =>
       unitSymbol: unitSym,
       contributingEntries: contributing,
     );
+  }
+
+  /// Henüz kaydedilmemiş bir veya birden fazla girdinin (EntryParsedItem veya BatchEntryInput)
+  /// kaydedildiğinde hangi açık yapılacakları tamamlayacağını tahmin eder.
+  /// Gerçek tamamlanma hesabı (todoProgress & contribution) ile birebir aynı kuralları uygular.
+  List<Todo> predictCompletedTodos(Iterable<dynamic> items) {
+    if (items.isEmpty) return const [];
+    final openLinked = todos.where((t) => t.isLinked && !todoProgress(t).isCompleted).toList();
+    if (openLinked.isEmpty) return const [];
+
+    final simulatedEntries = <Entry>[];
+    for (final it in items) {
+      int? actId;
+      int? measureId;
+      double qty = 1.0;
+      DateTime at = DateTime.now();
+      DateTime? endAt;
+
+      // EntryParsedItem veya BatchEntryInput nesnelerini destekler
+      try {
+        final dynamic dyn = it;
+        if (dyn.activity != null) {
+          actId = dyn.activity.id;
+        } else if (dyn.activityId != null) {
+          actId = dyn.activityId;
+        }
+        if (dyn.measure != null) {
+          measureId = dyn.measure.id;
+        } else if (dyn.measureId != null) {
+          measureId = dyn.measureId;
+        }
+        if (dyn.quantity != null) {
+          qty = (dyn.quantity as num).toDouble();
+        } else if (dyn.qty != null) {
+          qty = (dyn.qty as num).toDouble();
+        }
+        if (dyn.at != null) {
+          at = dyn.at as DateTime;
+        }
+        if (dyn.endAt != null) {
+          endAt = dyn.endAt as DateTime;
+        }
+      } catch (_) {}
+
+      if (actId == null || !activities.containsKey(actId)) continue;
+
+      final m = measureById(measureId) ?? defaultMeasureFor(actId);
+      final format = activityFormat(actId);
+      final unitId = m?.unitId ?? (format == ActivityFormat.duration ? 'dk' : null);
+      final val = m != null ? m.amount * qty : (format == ActivityFormat.duration ? qty : null);
+
+      simulatedEntries.add(
+        Entry(
+          id: -999,
+          activityId: actId,
+          ts: at.millisecondsSinceEpoch,
+          endTs: endAt?.millisecondsSinceEpoch,
+          measureId: m?.id,
+          qty: qty,
+          value: val,
+          unitId: unitId,
+        ),
+      );
+    }
+
+    if (simulatedEntries.isEmpty) return const [];
+
+    final willCompleteList = <Todo>[];
+    for (final t in openLinked) {
+      final goal = todoGoal(t);
+      final currentProg = todoProgress(t);
+      double additional = 0.0;
+      int addCount = 0;
+
+      for (final sim in simulatedEntries) {
+        if (!t.linkedActivityIds.contains(sim.activityId)) continue;
+        // Yapılacağın oluşturulmasından önceki kayıtlar sayılmaz
+        if (sim.ts < t.createdAt) continue;
+
+        if (t.targetAmount != null) {
+          final c = contribution(goal, sim, 100);
+          if (c != null && c > 0) {
+            additional += c;
+          }
+        } else {
+          addCount++;
+        }
+      }
+
+      if (t.targetAmount != null) {
+        if (additional > 0 && isTargetReached(currentProg.currentAmount + additional, t.targetAmount!)) {
+          willCompleteList.add(t);
+        }
+      } else {
+        if (addCount > 0) {
+          willCompleteList.add(t);
+        }
+      }
+    }
+    return willCompleteList;
   }
 
   /// Bağlı bir yapılacağı tamamlarken ilgili miktar ve birimde kayıt açar.

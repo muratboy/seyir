@@ -453,6 +453,12 @@ class TimeParser {
         continue;
       }
 
+      // Sayıdan sonra süre veya miktar birimi geliyorsa ("1 saat", "30 dk", "2 kahve") bu günün saati değil, aktivite süresi/miktarıdır.
+      final afterMatch = workingText.substring(m.end).trimLeft();
+      if (afterMatch.startsWith(RegExp(r'^(saat\b|sa\b|dk\b|dakika\b|sn\b|saniye\b|gun\b|gün\b|fincan\b|bardak\b|km\b|adet\b|porsiyon\b|kupa\b)', caseSensitive: false))) {
+        continue;
+      }
+
       int? hVal;
       if (int.tryParse(rawH) != null) {
         hVal = int.parse(rawH);
