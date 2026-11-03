@@ -676,7 +676,7 @@ void main() {
       expect(items.first['sub'], '0/30 dk');
     });
 
-    test('H5: Hedefe ulaşma karşılaştırması aynı toleransla tek bir yardımcıda toplanır ve _syncTodos ile todoProgress uyumludur', () async {
+    test('Hedefe ulaşma karşılaştırması aynı toleransla tek bir yardımcıda toplanır ve _syncTodos ile todoProgress uyumludur', () async {
       final s = AppStore();
       await s.load();
       final act = await s.addActivity('Su');
@@ -694,7 +694,7 @@ void main() {
       expect(dbTodo.doneAt, isNotNull, reason: '_syncTodos must agree with todoProgress via isTargetReached');
     });
 
-    test('H1: ml/L alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
+    test('ml/L alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
       final s = AppStore();
       await s.load();
       final act = await s.addActivity('Su');
@@ -728,7 +728,7 @@ void main() {
       expect(p.isCompleted, isTrue);
     });
 
-    test('H1: mg/g alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
+    test('mg/g alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
       final s = AppStore();
       await s.load();
       final act = await s.addActivity('Aspirin');
@@ -754,7 +754,7 @@ void main() {
       expect(p.isCompleted, isTrue);
     });
 
-    test('H1: sn/dk/sa alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
+    test('sn/dk/sa alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
       final s = AppStore();
       await s.load();
       final actPlank = await s.addActivity('Plank');
@@ -800,7 +800,7 @@ void main() {
       expect(pDers.currentAmount, closeTo(1.0, 1e-9));
     });
 
-    test('H1: m/km ve g/kg alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
+    test('m/km ve g/kg alt birim ölçeklemesi, hedef, ilerleme ve açılan kayıt', () async {
       final s = AppStore();
       await s.load();
       final actKos = await s.addActivity('Koşu');
@@ -836,7 +836,7 @@ void main() {
       expect(pAg.isCompleted, isTrue);
     });
 
-    test('H1: Başlık düzenlenince hedefin birimi ve anlamı değişmez', () async {
+    test('Başlık düzenlenince hedefin birimi ve anlamı değişmez', () async {
       final s = AppStore();
       await s.load();
       final act = await s.addActivity('Su');
@@ -857,7 +857,7 @@ void main() {
       expect(s.todoProgress(reloaded).targetAmount, 500.0);
     });
 
-    test('H1: target_unit NULL olan eski satırların geçişi (migration) doğru çalışır', () async {
+    test('target_unit NULL olan eski satırların geçişi (migration) doğru çalışır', () async {
       final s = AppStore();
       await s.load();
       final act = await s.addActivity('Su');
@@ -894,7 +894,7 @@ void main() {
       expect(s.todoProgress(todo2).unitSymbol, 'L');
     });
 
-    test('H1: "Ne yaptın?" kutusu ile "Kaydet ve tamamla" eşdeğerliği', () async {
+    test('"Ne yaptın?" kutusu ile "Kaydet ve tamamla" eşdeğerliği', () async {
       final s = AppStore();
       await s.load();
       final act = await s.addActivity('Su');

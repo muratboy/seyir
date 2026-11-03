@@ -99,7 +99,7 @@ void main() {
       expect(await app.finishTimer(t.id), isNull);
     });
 
-    test('H4: store.refresh() sonrasında sayaçların isCollapsed durumu korunur', () async {
+    test('store.refresh() sonrasında sayaçların isCollapsed durumu korunur', () async {
       final s = await openStore();
       final act = await s.addActivity('Ders');
       final t = await s.startTimer(act.id);
@@ -109,7 +109,7 @@ void main() {
       expect(s.getTimer(t.id)!.isCollapsed, isTrue);
     });
 
-    test('H6: Geri yükleme öncesi güvenlik yedeği alınamazsa işlem iptal edilir ve veriler korunur', () async {
+    test('Geri yükleme öncesi güvenlik yedeği alınamazsa işlem iptal edilir ve veriler korunur', () async {
       final s = await openStore();
       final act = await s.addActivity('Önemli Aktivite');
       await s.addEntry(act.id, value: 10, unitId: 'dk');
@@ -1221,7 +1221,7 @@ void main() {
       expect(s.entries, hasLength(2));
     });
 
-    test('H3 Delete: deleteActivity removes all referencing reminders, routine items, and leaves no orphaned references in any table', () async {
+    test('deleteActivity removes all referencing reminders, routine items, and leaves no orphaned references in any table', () async {
       final s = await openStore();
       final act = await s.addActivity('Koşu');
 
@@ -1284,7 +1284,7 @@ void main() {
       }
     });
 
-    test('H3 Merge: mergeActivity moves reminders & routines to target activity, deduplicates, and leaves no references to fromId', () async {
+    test('mergeActivity moves reminders & routines to target activity, deduplicates, and leaves no references to fromId', () async {
       final s = await openStore();
       final actOld = await s.addActivity('Kosu');
       final actNew = await s.addActivity('Koşu');
@@ -1748,7 +1748,7 @@ void main() {
       expect(app.goals, isEmpty);
     });
 
-    test('H2 Guard: Every user table in sqlite_master is explicitly included in AppDb.tables', () async {
+    test('Every user table in sqlite_master is explicitly included in AppDb.tables', () async {
       final s = await openStore();
       final d = await s.db;
       final rows = await d.query(
@@ -1766,7 +1766,7 @@ void main() {
       }
     });
 
-    test('H2 Roundtrip: Full database with routines, routine_items, activity_reminders, goal_checkins is 100% preserved', () async {
+    test('Full database with routines, routine_items, activity_reminders, goal_checkins is 100% preserved', () async {
       final s = await openStore();
       final act = await s.addActivity('Sabah Egzersizi', emoji: '🧘');
       final goal = Goal(
@@ -1830,7 +1830,7 @@ void main() {
       expect(s2.isGoalCheckinDone(restoredGoal), isTrue);
     });
 
-    test('H2 Orphan cleanup: restoring a backup with missing/orphaned references cleans up invalid child rows', () async {
+    test('Restoring a backup with missing/orphaned references cleans up invalid child rows', () async {
       final s = await openStore();
       await s.addActivity('Su');
       await s.saveGoal(Goal(

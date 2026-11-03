@@ -607,7 +607,7 @@ void main() {
     });
   });
 
-  group('Stage 1 Hardening Tests', () {
+  group('Hardening', () {
     test('ActiveTimer proportional midnight split handles pauses gracefully', () {
       final now = DateTime.now();
       // Started yesterday at 23:00
@@ -647,7 +647,7 @@ void main() {
     });
   });
 
-  group('Stage 2 Data Model & Safety Tests', () {
+  group('Data Model & Safety', () {
     test('Entry model preserves endTs and calculates duration', () {
       final start = DateTime(2026, 10, 9, 14, 0);
       final end = DateTime(2026, 10, 9, 15, 30);
@@ -772,7 +772,7 @@ void main() {
     });
   });
 
-  group('Stage 3 Notifications & Timers Tests', () {
+  group('Notifications & Timers', () {
     test('Pomodoro remainingMs and progress calculations', () {
       final timer = ActiveTimer(
         id: 1,
@@ -853,7 +853,7 @@ void main() {
     });
   });
 
-  group('Stage 4 UI & UX Logic Tests', () {
+  group('UI & UX Logic', () {
     test('fmtDayTitle localization supports English and Turkish', () {
       final now = DateTime.now();
       expect(fmtDayTitle(now, isTr: true), equals('Bugün'));
@@ -928,7 +928,7 @@ void main() {
     });
   });
 
-  group('Stage 5 Architecture, Performance & Scale Tests', () {
+  group('Architecture, Performance & Scale', () {
     test('DaySummary computes and caches day-level metrics', () {
       final store = AppStore();
       final day = DateTime(2026, 10, 9);
@@ -1014,7 +1014,7 @@ void main() {
       expect(store.appLanguageNotifier.value, equals(AppLanguage.en));
     });
 
-    test('AppStrings provides Stage 5 localized labels for both Turkish and English', () {
+    test('AppStrings provides localized labels for both Turkish and English', () {
       const trStrings = AppStrings(AppLanguage.tr);
       const enStrings = AppStrings(AppLanguage.en);
 

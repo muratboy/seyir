@@ -7,7 +7,7 @@ import 'support/real_db.dart';
 void main() {
   useRealDatabase();
 
-  group('Activity Reminders (Paket C)', () {
+  group('Activity Reminders', () {
     test('save, toggle, and delete activity reminders with persistence', () async {
       final act = await store.addActivity('Su');
 
@@ -46,7 +46,7 @@ void main() {
     });
   });
 
-  group('Routines & Activity Bundles (Paket D)', () {
+  group('Routines & Activity Bundles', () {
     test('save, reorder, execute and persist routines', () async {
       final su = await store.addActivity('Su');
       final vitamin = await store.addActivity('Vitamin');
@@ -93,7 +93,7 @@ void main() {
     });
   });
 
-  group('Correlation Analysis (Paket D)', () {
+  group('Correlation Analysis', () {
     test('detects symptom triggers and protective habits', () async {
       final kahve = await store.addActivity('Kahve');
       final uykusuzluk = await store.addActivity('Uykusuzluk');
@@ -141,7 +141,7 @@ void main() {
     });
   });
 
-  group('Sleep Routine Synchronization (Paket C)', () {
+  group('Sleep Routine Synchronization', () {
     test('startSleepSession and stopSleepSession record proper duration', () async {
       final startTime = DateTime(2026, 8, 1, 23, 0);
       final endTime = DateTime(2026, 8, 2, 7, 30); // 8.5 hours

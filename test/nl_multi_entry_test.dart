@@ -42,7 +42,7 @@ void main() {
     Intl.defaultLocale = 'tr_TR';
   });
 
-  group('P0: Sayı, aktivitenin varsayılan ölçüsüyle çarpılır (veri hatası düzeltmesi)', () {
+  group('Sayı aktivitenin varsayılan ölçüsüyle çarpılır', () {
     test('Kahve için "2 kahve" varsayılan ölçüyü (Fincan 0.08 L) kullanır, 2 L ve limit aşımı olmaz', () async {
       final s = await openStore();
       final actCoffee = await s.addActivity('Kahve', emoji: '☕');
@@ -151,7 +151,7 @@ void main() {
     });
   });
 
-  group('P1.1: Fiil çekimleri ve ASCII yazım eşleşmesi', () {
+  group('Fiil çekimleri ve ASCII yazım eşleşmesi', () {
     test('"30 dk yurudum" Yürüyüş aktivitesine eşleşir ve adında miktar kalmaz', () async {
       final s = await openStore();
       final actWalk = await s.addActivity('Yürüyüş', emoji: '🚶');
@@ -185,7 +185,7 @@ void main() {
     });
   });
 
-  group('P1.2: "Yeni Olarak Ekle" önerisi temizliği', () {
+  group('"Yeni Olarak Ekle" önerisi temizliği', () {
     testWidgets('Metin bir aktiviteye eşlendiğinde ("dun gece su", "2 saat once kahve") Yeni Olarak Ekle çipi çıkmaz', (tester) async {
       await tester.runAsync(() async {
         await store.load();
@@ -220,7 +220,7 @@ void main() {
     });
   });
 
-  group('P1.3: Çok öğede tanınmayan parça ve Geri al aktivite temizliği', () {
+  group('Çok öğede tanınmayan parça ve Geri al aktivite temizliği', () {
     test('Toplu kaydı Geri al, bu kaydın yarattığı ve başka kaydı olmayan aktiviteyi de siler', () async {
       final s = await openStore();
       final initialActCount = s.activities.length;
@@ -250,7 +250,7 @@ void main() {
     });
   });
 
-  group('P1.4: Yapılacak tamamlama ipucu geçmiş kayıt kuralı', () {
+  group('Yapılacak tamamlama ipucu geçmiş kayıt kuralı', () {
     test('Kaydın zamanı yapılacağın oluşturulmasından önceyse willCompleteTodo null olmalıdır', () async {
       final s = await openStore();
       final actSu = await s.addActivity('Su', emoji: '💧');

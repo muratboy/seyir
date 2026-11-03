@@ -39,7 +39,7 @@ void main() {
     await initializeDateFormatting('tr_TR', null);
   });
 
-  group('Fixes Round 4 - Ad Temizleme ve Eşleşme Düzeltmeleri', () {
+  group('Aktivite Adı Temizleme ve Eşleşme', () {
     test('1. Koşu yokken "30 dk kostum" ve "2 saat once 30 dk kostum" aktivite adını "Koşu" yapar, süreyi addan temizler', () async {
       final now = DateTime(2026, 10, 31, 12, 0);
 

@@ -4099,7 +4099,7 @@ class AppStore extends ChangeNotifier {
 
     if (toFix.isEmpty) return 0;
 
-    // Güvenlik: Değiştirilecek kayıt varsa ÖNCE tam bir yedek al (H6 kuralı)
+    // Güvenlik: Veri kaybını önlemek için değiştirilecek kayıt varsa önce tam bir yedek al
     try {
       await BackupService.createBackup(this, prefix: 'pre_fix_unmeasured');
     } catch (err, st) {

@@ -20,7 +20,7 @@ void main() {
     await initializeDateFormatting('tr_TR', null);
   });
 
-  group('Fixes Round 3 - Eski Ölçüsüz Kayıtlar ve Paket A Hataları', () {
+  group('Eski Ölçüsüz Kayıtlar ve Giriş Kuralları', () {
     test('1. Unmeasured entries migration: converts quantity activities, leaves duration/events/filled untouched', () async {
       await store.load();
 
@@ -88,7 +88,7 @@ void main() {
       expect(store.unmeasuredFixMessageNotifier.value, isNotNull);
     });
 
-    test('2. Unmeasured fix safety: aborts and rolls back if backup fails', () async {
+    test('2. Unmeasured migration safety: aborts and rolls back if backup fails', () async {
       await store.load();
 
       final coffee = await store.addActivity('Kahve', emoji: '☕');
@@ -125,7 +125,7 @@ void main() {
       expect(re1.value, isNull);
     });
 
-    test('3. Unmeasured fix after JSON restore & Goal contribution matches chip', () async {
+    test('3. Unmeasured migration after JSON restore & Goal contribution matches chip', () async {
       await store.load();
 
       final coffee = await store.addActivity('Kahve', emoji: '☕');
