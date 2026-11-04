@@ -8,7 +8,7 @@
         android:shortcutLongLabel="@string/shortcut_voice_long">
         <intent
             android:action="es.antonborri.home_widget.action.LAUNCH"
-            android:targetPackage="dev.takip.takip"
+            android:targetPackage="io.github.muratboy.seyir"
             android:targetClass="dev.takip.takip.MainActivity"
             android:data="takip://voice" />
     </shortcut>
@@ -20,7 +20,7 @@
         android:shortcutLongLabel="@string/shortcut_repeat_long">
         <intent
             android:action="es.antonborri.home_widget.action.LAUNCH"
-            android:targetPackage="dev.takip.takip"
+            android:targetPackage="io.github.muratboy.seyir"
             android:targetClass="dev.takip.takip.MainActivity"
             android:data="takip://quick_repeat" />
     </shortcut>
@@ -32,7 +32,7 @@
         android:shortcutLongLabel="@string/shortcut_add_long">
         <intent
             android:action="es.antonborri.home_widget.action.LAUNCH"
-            android:targetPackage="dev.takip.takip"
+            android:targetPackage="io.github.muratboy.seyir"
             android:targetClass="dev.takip.takip.MainActivity"
             android:data="takip://add" />
     </shortcut>

@@ -1,0 +1,28 @@
+Seyir is an offline tracker for your daily activities, habits and goals. Just write down what you did, such as "30 min run" or "2 bardak su" (2 glasses of water): the app works out what it means and shows you what will be saved before you save it.
+
+Goals, habits, to-dos and roadmap steps that are linked to an activity move forward on their own as you log it, so you can always see how far you have come and what is next.
+
+Journal
+• Free-text logging in Turkish or English with a live preview
+• Voice input, stopwatch, countdown and pomodoro
+• The day's timeline, sleep and step tracking
+
+To-dos
+• A to-do linked to an activity progresses with that activity's entries (e.g. 60 min of cardio)
+• A home-screen widget of its own
+
+Goals
+• Daily, weekly, monthly and all-time goals and limits
+• Streaks and a heatmap for habits
+• Roadmaps added by hand, from a shared https link or with AI (a ready-made prompt template or your own API key); steps linked to an activity complete themselves when their target is reached
+
+Stats
+• Day, week, month and year views
+• Comparison with the previous period and a category breakdown
+
+Your data stays with you
+• No account, no ads, no tracking
+• Data is stored only in a database on your device; JSON backup (including an automatic daily local backup), PDF and CSV export
+• The app connects to the internet only to download a roadmap from a link you add and, if you turn on the optional AI feature with your own API key, to reach the provider you chose (Gemini, OpenAI or OpenRouter)
+
+Turkish and English interface; system, light and dark themes.

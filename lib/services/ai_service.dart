@@ -282,7 +282,7 @@ class AiService {
           req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $key');
         }
         if (p == 'openrouter') {
-          req.headers.set('HTTP-Referer', 'https://seyir.dev');
+          req.headers.set('HTTP-Referer', 'https://github.com/muratboy/seyir');
           req.headers.set('X-Title', 'Seyir');
         }
         req.add(utf8.encode(payload));
@@ -428,7 +428,7 @@ class AiService {
           req.headers.set(HttpHeaders.authorizationHeader, 'Bearer $key');
         }
         if (p == 'openrouter') {
-          req.headers.set('HTTP-Referer', 'https://seyir.dev');
+          req.headers.set('HTTP-Referer', 'https://github.com/muratboy/seyir');
           req.headers.set('X-Title', 'Seyir');
         }
         req.add(utf8.encode(payload));

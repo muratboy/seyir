@@ -10,7 +10,7 @@ An offline Android app for tracking your daily activities, habits and goals. Dat
 
 | Journal | Goals | Settings |
 | :---: | :---: | :---: |
-| <img src="docs/screenshots/today.png" width="250" alt="Journal page: daily summary, to-dos, shortcuts and the What did you do? box"> | <img src="docs/screenshots/goals.png" width="250" alt="Goals page: goals and limits with their linked activities"> | <img src="docs/screenshots/settings.png" width="250" alt="Settings page"> |
+| <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1-today.png" width="250" alt="Journal page: daily summary, to-dos, shortcuts and the What did you do? box"> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2-goals.png" width="250" alt="Goals page: goals and limits with their linked activities"> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3-settings.png" width="250" alt="Settings page"> |
 
 The screenshots show the Turkish interface; the language can be switched to English in Settings.
 
@@ -21,6 +21,12 @@ The screenshots show the Turkish interface; the language can be switched to Engl
 - **Goals:** daily, weekly, monthly and all-time goals and limits, streaks and a heatmap for habits, roadmaps (added by hand, from a shared https link, or with AI: through a ready-made prompt template or your own API key). Roadmap steps can be linked to an activity: the activity's entries advance the step, and the step completes itself once its target is reached.
 - **Stats:** day / week / month / year views, comparison with the previous period, category breakdown.
 - **Settings:** theme and language (Turkish / English), activity and unit management, notifications and reminders, home-screen widgets, JSON backup (including an automatic daily local backup), PDF and CSV export, AI provider (Gemini, OpenAI, OpenRouter).
+
+## Install
+
+Download the APK for your phone from the [Releases](https://github.com/muratboy/seyir/releases) page and install it: `arm64-v8a` for most phones, `armeabi-v7a` for older 32-bit phones, `x86_64` for emulators and Chromebooks. Each release comes with a `SHA256SUMS.txt` file to verify the downloads.
+
+Once Seyir is on F-Droid, the F-Droid build will be signed with F-Droid's own key, so it cannot update an install from GitHub (or the other way round). To switch, take a JSON backup before uninstalling and restore it in the new install.
 
 ## Build and test
 
@@ -42,10 +48,13 @@ flutter build apk --release
 | `lib/ui` | Pages and components |
 | `android` | Android project: home-screen widgets, notification icons, R8 rules |
 | `test` | Unit and widget tests (real SQLite setup: `test/support/real_db.dart`) |
-| `docs/screenshots` | Screenshots used in the README |
+| `assets/fonts` | Noto Sans font |
+| `fastlane/metadata/android` | F-Droid store listing: descriptions, icon and screenshots (also shown in this README) |
 
 ## License
 
 Copyright © 2026 Murat Boy
 
 Seyir is free software: you can redistribute it and/or modify it under the terms of version 3 of the GNU General Public License (GPL-3.0-only). It is provided without any warranty. The full license text is in [LICENSE](LICENSE).
+
+The bundled Noto Sans font is licensed under the SIL Open Font License 1.1: [assets/fonts/OFL.txt](assets/fonts/OFL.txt).

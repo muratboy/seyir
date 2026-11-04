@@ -1,0 +1,28 @@
+Seyir; günlük aktivitelerini, alışkanlıklarını ve hedeflerini takip eden, çevrimdışı çalışan bir uygulama. Yalnızca ne yaptığını yazarsın, örneğin "30 dk koşu" ya da "2 bardak su": uygulama ne demek istediğini çıkarır ve kaydetmeden önce neyin kaydedileceğini gösterir.
+
+Bir aktiviteye bağlı hedefler, alışkanlıklar, yapılacaklar ve yol haritası adımları, o aktiviteyi kaydettikçe kendiliğinden ilerler. Ne kadar yol aldığını ve sırada ne olduğunu her an görürsün.
+
+Günlük
+• Yazarken önizleme gösteren, Türkçe ve İngilizce serbest metinle kayıt
+• Sesle giriş, kronometre, geri sayım ve pomodoro
+• Günün akışı, uyku ve adım takibi
+
+Yapılacaklar
+• Bir aktiviteye bağlanan yapılacak, o aktivitenin kayıtlarıyla ilerler (ör. 60 dk kardiyo)
+• Kendi ana ekran widget'ı
+
+Hedefler
+• Günlük, haftalık, aylık ve toplam hedefler ile limitler
+• Alışkanlıklar için seri ve ısı haritası
+• Elle, paylaşılan bir https bağlantısından ya da yapay zekâyla (hazır istem kalıbı ya da kendi API anahtarın) eklenen yol haritaları; bir aktiviteye bağlı adımlar hedefe ulaşınca kendiliğinden tamamlanır
+
+İstatistik
+• Gün, hafta, ay ve yıl görünümleri
+• Önceki dönemle karşılaştırma ve kategori dağılımı
+
+Verilerin sende kalır
+• Hesap yok, reklam yok, izleme yok
+• Veriler yalnızca cihazdaki veritabanında tutulur; JSON yedek (günlük otomatik yerel yedek dahil), PDF ve CSV dışa aktarma
+• Uygulama internete yalnızca eklediğin bir bağlantıdan yol haritasını indirmek için ve isteğe bağlı yapay zekâ özelliğini kendi API anahtarınla açarsan seçtiğin sağlayıcıya (Gemini, OpenAI ya da OpenRouter) ulaşmak için bağlanır
+
+Türkçe ve İngilizce arayüz; sistem, açık ve koyu tema.

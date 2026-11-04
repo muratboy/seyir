@@ -1,7 +1,16 @@
+import java.io.FileInputStream
+import java.util.Properties
+
 plugins {
     id("com.android.application")
     // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
     id("dev.flutter.flutter-gradle-plugin")
+}
+
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
 }
 
 android {
@@ -16,7 +25,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "dev.takip.takip"
+        applicationId = "io.github.muratboy.seyir"
         minSdk = flutter.minSdkVersion
         targetSdk = flutter.targetSdkVersion
         // Sürüm adı ve kodu pubspec.yaml'daki version alanından gelir.
@@ -24,11 +33,26 @@ android {
         versionName = flutter.versionName
     }
 
+    // Android Gradle eklentisi APK'ya yalnızca Google'ın okuyabildiği şifreli bir bağımlılık bloğu ekliyor; F-Droid bunu istemiyor.
+    dependenciesInfo {
+        includeInApk = false
+        includeInBundle = false
+    }
+
+    signingConfigs {
+        create("release") {
+            keyAlias = keystoreProperties["keyAlias"] as String?
+            keyPassword = keystoreProperties["keyPassword"] as String?
+            storeFile = keystoreProperties["storeFile"]?.let { file(it) }
+            storePassword = keystoreProperties["storePassword"] as String?
+        }
+    }
+
     buildTypes {
         release {
-            // Henüz bir release anahtarı tanımlı değil: sürüm derlemesi debug anahtarıyla imzalanıyor, yani
-            // telefona kurulur ama mağazaya yüklenemez. Yayına çıkmadan önce kendi signingConfig'ini ekle.
-            signingConfig = signingConfigs.getByName("debug")
+            // key.properties varsa Seyir'in release anahtarı, yoksa yerel derleme için debug anahtarı kullanılır.
+            // F-Droid tarifi bu satırı silip uygulamayı kendi anahtarıyla imzalar; satır tek kalmalı.
+            signingConfig = if (keystorePropertiesFile.exists()) signingConfigs.getByName("release") else signingConfigs.getByName("debug")
         }
     }
 }

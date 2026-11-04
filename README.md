@@ -10,7 +10,7 @@ Günlük aktivitelerini, alışkanlıklarını ve hedeflerini takip eden, çevri
 
 | Günlük | Hedefler | Ayarlar |
 | :---: | :---: | :---: |
-| <img src="docs/screenshots/today.png" width="250" alt="Günlük sayfası: günün özeti, yapılacaklar, sık yapılanlar ve Ne yaptın? kutusu"> | <img src="docs/screenshots/goals.png" width="250" alt="Hedefler sayfası: bağlı aktiviteleriyle hedefler ve limitler"> | <img src="docs/screenshots/settings.png" width="250" alt="Ayarlar sayfası"> |
+| <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/1-today.png" width="250" alt="Günlük sayfası: günün özeti, yapılacaklar, sık yapılanlar ve Ne yaptın? kutusu"> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/2-goals.png" width="250" alt="Hedefler sayfası: bağlı aktiviteleriyle hedefler ve limitler"> | <img src="fastlane/metadata/android/en-US/images/phoneScreenshots/3-settings.png" width="250" alt="Ayarlar sayfası"> |
 
 ## Neler yapar
 
@@ -19,6 +19,12 @@ Günlük aktivitelerini, alışkanlıklarını ve hedeflerini takip eden, çevri
 - **Hedefler:** günlük, haftalık, aylık ve toplam hedefler ile limitler, alışkanlıklar için seri ve ısı haritası, yol haritaları (elle, paylaşılan bir https bağlantısından ya da yapay zekâyla: hazır istem kalıbıyla veya kendi API anahtarınızla eklenir). Yol haritası adımları bir aktiviteye bağlanabilir: aktivitenin kayıtları adımı ilerletir, hedefe ulaşılınca adım kendiliğinden tamamlanır.
 - **İstatistik:** gün / hafta / ay / yıl görünümleri, önceki dönemle karşılaştırma, kategori dağılımı.
 - **Ayarlar:** tema ve dil (Türkçe / İngilizce), aktivite ve ölçü yönetimi, bildirimler ve hatırlatıcılar, ana ekran widget'ları, JSON yedek (günlük otomatik yerel yedek dahil), PDF ve CSV dışa aktarma, yapay zekâ sağlayıcısı (Gemini, OpenAI, OpenRouter).
+
+## Kurulum
+
+[Releases](https://github.com/muratboy/seyir/releases) sayfasından telefonunuza uygun APK'yı indirip kurun: çoğu telefon için `arm64-v8a`, eski 32 bit telefonlar için `armeabi-v7a`, emülatör ve Chromebook için `x86_64`. Her sürümle birlikte dosyaları doğrulamak için `SHA256SUMS.txt` yayımlanır.
+
+Seyir F-Droid'de yayımlandığında oradaki sürüm F-Droid'in kendi anahtarıyla imzalanır; bu yüzden GitHub'dan kurulan sürümün üzerine güncellenmez (tersi de). Kaynak değiştirmek için uygulamayı silmeden önce JSON yedeği alıp yeni kurulumda geri yükleyin.
 
 ## Çalıştırma ve test
 
@@ -40,10 +46,13 @@ flutter build apk --release
 | `lib/ui` | Sayfalar ve bileşenler |
 | `android` | Android projesi: ana ekran widget'ları, bildirim simgeleri, R8 kuralları |
 | `test` | Birim ve widget testleri (gerçek SQLite altyapısı: `test/support/real_db.dart`) |
-| `docs/screenshots` | README'deki ekran görüntüleri |
+| `assets/fonts` | Noto Sans yazı tipi |
+| `fastlane/metadata/android` | F-Droid mağaza bilgileri: açıklamalar, simge ve ekran görüntüleri (README de bunları gösterir) |
 
 ## Lisans
 
 Copyright © 2026 Murat Boy
 
 Seyir özgür yazılımdır: GNU Genel Kamu Lisansı'nın 3. sürümünün (GPL-3.0-only) koşulları altında yeniden dağıtabilir ve değiştirebilirsiniz. Program hiçbir garanti olmaksızın sunulur. Lisansın tam metni [LICENSE](LICENSE) dosyasındadır.
+
+Uygulamayla gelen Noto Sans yazı tipi SIL Open Font License 1.1 ile lisanslıdır: [assets/fonts/OFL.txt](assets/fonts/OFL.txt).
