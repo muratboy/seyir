@@ -648,6 +648,11 @@ class TodayTimeline extends StatelessWidget {
                                 visualDensity: VisualDensity.compact,
                                 padding: const EdgeInsets.all(4),
                                 constraints: const BoxConstraints(),
+                                style: IconButton.styleFrom(
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  minimumSize: Size.zero,
+                                  padding: const EdgeInsets.all(4),
+                                ),
                                 icon: const Icon(Icons.swap_horiz_rounded, size: 18),
                                 tooltip: s.isTr ? 'Aktiviteyi Değiştir' : 'Change Activity',
                                 onPressed: () async {
@@ -669,6 +674,11 @@ class TodayTimeline extends StatelessWidget {
                                 visualDensity: VisualDensity.compact,
                                 padding: const EdgeInsets.all(4),
                                 constraints: const BoxConstraints(),
+                                style: IconButton.styleFrom(
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  minimumSize: Size.zero,
+                                  padding: const EdgeInsets.all(4),
+                                ),
                                 icon: const Icon(Icons.insights_rounded, size: 18),
                                 tooltip: s.isTr ? 'Aktivite Sayfasını Aç' : 'View Activity Page',
                                 onPressed: () {
@@ -683,6 +693,11 @@ class TodayTimeline extends StatelessWidget {
                                 visualDensity: VisualDensity.compact,
                                 padding: const EdgeInsets.all(4),
                                 constraints: const BoxConstraints(),
+                                style: IconButton.styleFrom(
+                                  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                                  minimumSize: Size.zero,
+                                  padding: const EdgeInsets.all(4),
+                                ),
                                 icon: const Icon(Icons.edit_outlined, size: 18),
                                 tooltip: s.isTr ? 'Aktiviteyi Düzenle (İsim, Kategori, İkon)' : 'Edit Activity',
                                 onPressed: () async {
@@ -1042,7 +1057,10 @@ class TodayTimeline extends StatelessWidget {
                   },
                 ),
                 const SizedBox(height: 16),
-                Row(
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  crossAxisAlignment: WrapCrossAlignment.center,
                   children: [
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
@@ -1062,7 +1080,46 @@ class TodayTimeline extends StatelessWidget {
                         }
                       },
                     ),
-                    const SizedBox(width: 8),
+                    if (store.canConvertEntryToTodo(e))
+                      OutlinedButton.icon(
+                        key: const Key('convert-to-todo-button'),
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                        ),
+                        icon: const Icon(Icons.add_task_rounded, size: 16),
+                        label: Text(
+                          s.isTr ? 'Yapılacağa çevir' : 'Turn into to-do',
+                          style: const TextStyle(fontSize: AppFont.caption),
+                        ),
+                        onPressed: () async {
+                          final messenger = ScaffoldMessenger.of(context);
+                          final durMins = calcDurMins(measureId, qty);
+                          final startTime = calcStartTime(refTime, isEndMode, durMins);
+                          final currentEndTs = durMins > 0
+                              ? startTime.add(Duration(minutes: durMins)).millisecondsSinceEpoch
+                              : null;
+                          final currentNote =
+                              noteCtrl.text.trim().isEmpty ? null : noteCtrl.text.trim();
+
+                          final res = await store.convertEntryToTodo(
+                            e,
+                            activityId: currentActivityId,
+                            time: startTime,
+                            measureId: measureId,
+                            qty: qty,
+                            note: currentNote,
+                            endTs: currentEndTs,
+                          );
+                          if (c.mounted) {
+                            Navigator.pop(c);
+                            showSnackOn(
+                              messenger,
+                              s.isTr ? 'Yapılacağa çevrildi' : 'Turned into a to-do',
+                              undo: () => res.undo(),
+                            );
+                          }
+                        },
+                      ),
                     OutlinedButton.icon(
                       style: OutlinedButton.styleFrom(
                         padding: const EdgeInsets.symmetric(horizontal: 10),
@@ -1089,9 +1146,13 @@ class TodayTimeline extends StatelessWidget {
                         }
                       },
                     ),
-                    const Spacer(),
-                    FilledButton(
-                      onPressed: () async {
+                  ],
+                ),
+                const SizedBox(height: 12),
+                Align(
+                  alignment: Alignment.centerRight,
+                  child: FilledButton(
+                    onPressed: () async {
                         final durMins = calcDurMins(measureId, qty);
                         final startTime = calcStartTime(refTime, isEndMode, durMins);
                         await store.updateEntry(
@@ -1107,8 +1168,7 @@ class TodayTimeline extends StatelessWidget {
                       },
                       child: Text(s.save),
                     ),
-                  ],
-                ),
+                  ),
               ],
             ),
           ),

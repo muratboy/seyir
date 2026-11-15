@@ -1090,6 +1090,19 @@ class NaturalLanguageParser {
     return (false, null, trimmed);
   }
 
+  /// Metindeki yapılacak işareti varsa kaldırır:
+  /// - "yapılacak"/"todo"/"to-do" önekini siler.
+  /// - "tarih: ..." biçiminde yalnızca iki noktayı kaldırır ("tarih içerik" yapar).
+  /// Yapılacak işareti yoksa metni olduğu gibi döndürür.
+  static String stripTodoMarker(String input) {
+    final (isTodo, prefixDate, content) = _detectTodoMode(input);
+    if (!isTodo) return input;
+    if (prefixDate != null) {
+      return '$prefixDate $content';
+    }
+    return content;
+  }
+
   /// Birden fazla kayıt veya yapılacak içeren serbest metni ayrıştırır.
   /// Zaman paylaşımı, geçmiş yönlü çözümleme ve kutudan yapılacak modunu destekler.
   static MultiParseResult parseMulti(
@@ -1101,13 +1114,17 @@ class NaturalLanguageParser {
     DateTime? fallbackDay,
     Measure? Function(int activityId)? defaultMeasureFor,
     List<Todo> Function(Iterable<dynamic> items)? predictCompletedTodos,
+    bool forceTodo = false,
   }) {
     final cleanInput = input.trim();
     if (cleanInput.isEmpty) {
       return const MultiParseResult(rawText: '', items: []);
     }
 
-    final (isTodo, prefixDateWord, content) = _detectTodoMode(cleanInput, now: now);
+    final detected = _detectTodoMode(cleanInput, now: now);
+    final isTodo = forceTodo || detected.$1;
+    final prefixDateWord = (forceTodo && !detected.$1) ? null : detected.$2;
+    final content = (forceTodo && !detected.$1) ? cleanInput : detected.$3;
     if (isTodo) {
       DateTime? sharedDueDate;
       String? sharedDateKeyword = prefixDateWord;

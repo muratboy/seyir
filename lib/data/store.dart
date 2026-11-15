@@ -2014,6 +2014,102 @@ class AppStore extends ChangeNotifier {
           ? (e.measureId, e.qty)
           : (pickedMeasureId, pickedQty);
 
+  static const _unset = Object();
+
+  /// Kayıt düzenleme formundaki veya yapılacak dönüştürme işlemindeki güncel alanlara göre
+  /// kaydın alacağı durumu (aktivite, zaman, miktar, ölçü, birim, not ve bitiş zamanı) hesaplar.
+  /// [updateEntry] ve [convertEntryToTodo] aynı kuralları kullanır:
+  /// - Ölçü seçildiyse onun değeri ve birimi kullanılır.
+  /// - Değer veya birim doğrudan verildiyse o geçerlidir.
+  /// - Aktivite değişmediyse ve ölçü seçimi değişmediyse (ör. adım veya sayaç kaydı) mevcut değer ölçeklenir.
+  /// - Aktivite değiştiyse veya ölçü bilerek kaldırıldıysa eski miktar ve birim sıfırlanır.
+  /// - Bitiş zamanı açıkça verilmediyse veya süre ölçüsü seçilmediyse kaydın mevcut bitiş zamanı korunur.
+  ({
+    int activityId,
+    DateTime time,
+    int ts,
+    int? measureId,
+    double qty,
+    double? value,
+    String? unitId,
+    String? note,
+    int? endTs,
+  }) resolveEntryState(
+    Entry e, {
+    int? activityId,
+    DateTime? time,
+    Object? measureId = _unset,
+    double? qty,
+    Object? note = _unset,
+    DateTime? endAt,
+    int? endTs,
+    double? value,
+    String? unitId,
+  }) {
+    final effectiveActId = activityId ?? e.activityId;
+    final effectiveTime = time ?? e.time;
+    final effectiveMeasureId = identical(measureId, _unset) ? e.measureId : (measureId as int?);
+    final effectiveQty = qty ??
+        ((effectiveActId != e.activityId || (e.measureId != null && effectiveMeasureId == null))
+            ? 1.0
+            : e.qty);
+    final effectiveNote = identical(note, _unset)
+        ? e.note
+        : ((note as String?)?.trim().isEmpty ?? true ? null : (note as String).trim());
+
+    int? resolvedMeasureId;
+    double? resolvedValue;
+    String? resolvedUnitId;
+    final resolvedQty = effectiveQty;
+
+    final m = measureById(effectiveMeasureId);
+    if (m != null) {
+      resolvedMeasureId = m.id;
+      resolvedValue = m.amount * resolvedQty;
+      resolvedUnitId = m.unitId;
+    } else if (value != null || unitId != null) {
+      // Değer ve birim açıkça verildi (ör. adım senkronu)
+      resolvedMeasureId = null;
+      resolvedValue = value;
+      resolvedUnitId = unitId;
+    } else if (effectiveActId == e.activityId && effectiveMeasureId == e.measureId && e.value != null) {
+      // Aynı aktivitede ölçü seçimi değişmedi ama ölçünün kendisi yok (silinmiş ya da hiç
+      // olmamış: sayaç ve adım kayıtları): anlık görüntüyü koru, değeri miktarla orantılı ölçekle
+      resolvedMeasureId = e.measureId;
+      resolvedValue = e.qty != 0 ? (e.value! / e.qty * resolvedQty) : e.value;
+      resolvedUnitId = e.unitId;
+    } else {
+      // Ölçü bilerek kaldırıldı ya da aktivite değiştiğinde eski aktivitenin ölçüsü/değeri sıfırlandı
+      resolvedMeasureId = null;
+      resolvedValue = null;
+      resolvedUnitId = null;
+    }
+
+    int? resolvedEndTs;
+    if (endTs != null) {
+      resolvedEndTs = endTs;
+    } else if (endAt != null) {
+      resolvedEndTs = endAt.millisecondsSinceEpoch;
+    } else if ((resolvedUnitId == 'dk' || resolvedUnitId == 'sa') && resolvedValue != null && resolvedValue > 0) {
+      final durationMins = (resolvedValue * (resolvedUnitId == 'sa' ? 60 : 1)).round();
+      resolvedEndTs = effectiveTime.add(Duration(minutes: durationMins)).millisecondsSinceEpoch;
+    } else {
+      resolvedEndTs = e.endTs;
+    }
+
+    return (
+      activityId: effectiveActId,
+      time: effectiveTime,
+      ts: effectiveTime.millisecondsSinceEpoch,
+      measureId: resolvedMeasureId,
+      qty: resolvedQty,
+      value: resolvedValue,
+      unitId: resolvedUnitId,
+      note: effectiveNote,
+      endTs: resolvedEndTs,
+    );
+  }
+
   Future<void> updateEntry(
     Entry e, {
     required int activityId,
@@ -2026,46 +2122,32 @@ class AppStore extends ChangeNotifier {
     double? value,
     String? unitId,
   }) async {
-    final m = measureById(measureId);
-    if (m != null) {
-      e.value = m.amount * qty;
-      e.unitId = m.unitId;
-      e.measureId = m.id;
-      e.qty = qty;
-    } else if (value != null || unitId != null) {
-      // değer ve birim açıkça verildi (ör. adım senkronu)
-      e.measureId = null;
-      e.value = value;
-      e.unitId = unitId;
-      e.qty = qty;
-    } else if (measureId == e.measureId && e.value != null) {
-      // Ölçü seçimi değişmedi ama ölçünün kendisi yok (silinmiş ya da hiç olmamış: sayaç ve adım
-      // kayıtları): anlık görüntüyü koru, değeri miktarla orantılı ölçekle
-      if (e.qty != 0) e.value = e.value! / e.qty * qty;
-      e.qty = qty;
-    } else {
-      // ölçü bilerek kaldırıldı
-      e.measureId = null;
-      e.value = null;
-      e.unitId = null;
-      e.qty = qty;
-    }
-    e.activityId = activityId;
-    e.note = (note?.trim().isEmpty ?? true) ? null : note!.trim();
-    final newTs = time.millisecondsSinceEpoch;
-    if (newTs != e.ts) {
+    final state = resolveEntryState(
+      e,
+      activityId: activityId,
+      time: time,
+      measureId: measureId,
+      qty: qty,
+      note: note,
+      endAt: endAt,
+      endTs: endTs,
+      value: value,
+      unitId: unitId,
+    );
+
+    e.activityId = state.activityId;
+    e.measureId = state.measureId;
+    e.qty = state.qty;
+    e.value = state.value;
+    e.unitId = state.unitId;
+    e.note = state.note;
+    if (state.ts != e.ts) {
       entries.remove(e);
-      e.ts = newTs;
+      e.ts = state.ts;
       _insertSorted(e);
     }
-    if (endTs != null) {
-      e.endTs = endTs;
-    } else if (endAt != null) {
-      e.endTs = endAt.millisecondsSinceEpoch;
-    } else if ((e.unitId == 'dk' || e.unitId == 'sa') && e.value != null && e.value! > 0) {
-      final durationMins = (e.value! * (e.unitId == 'sa' ? 60 : 1)).round();
-      e.endTs = time.add(Duration(minutes: durationMins)).millisecondsSinceEpoch;
-    }
+    e.endTs = state.endTs;
+
     await (await db).update('entries', e.toMap(), where: 'id=?', whereArgs: [e.id]);
     _changed();
     await _syncLinkedSteps();
@@ -2088,6 +2170,140 @@ class AppStore extends ChangeNotifier {
     _changed();
     await _syncLinkedSteps();
     await _syncTodos();
+  }
+
+  /// Kaydın yapılacağa çevrilebilir olup olmadığını belirler.
+  /// Otomatik adım ve uyku kayıtları yapılacağa çevrilemez.
+  bool canConvertEntryToTodo(Entry e) {
+    if (stepsActivity != null && e.activityId == stepsActivity!.id) return false;
+    if (sleepActivity != null && e.activityId == sleepActivity!.id) return false;
+    return true;
+  }
+
+  /// Kaydı doğrudan bir yapılacağa çevirir:
+  /// Aktivite ve miktar bilgilerinden hedef ve başlık türetilir, tek transaction ile
+  /// yapılacak eklenip kayıt silinir. Geri al işlemi kaydı birebir geri yükler ve yapılacağı siler.
+  /// Sayfada henüz kaydedilmemiş değişiklikler opsiyonel parametrelerle aktarılır; kayıt nesnesi
+  /// mutate edilmez.
+  Future<({Todo todo, Future<void> Function() undo})> convertEntryToTodo(
+    Entry entry, {
+    int? activityId,
+    DateTime? time,
+    Object? measureId = _unset,
+    double? qty,
+    Object? note = _unset,
+    DateTime? endAt,
+    int? endTs,
+  }) async {
+    final state = resolveEntryState(
+      entry,
+      activityId: activityId,
+      time: time,
+      measureId: measureId,
+      qty: qty,
+      note: note,
+      endAt: endAt,
+      endTs: endTs,
+    );
+
+    final act = activity(state.activityId);
+    final d = await db;
+
+    double? targetAmount;
+    String? targetUnit;
+
+    final m = measureById(state.measureId);
+
+    // Hedef sırası:
+    // 1. Ölçü veya değer varsa o
+    if (m != null) {
+      final mUnit = unit(m.unitId);
+      if (mUnit.id == 'sn') {
+        targetAmount = state.value;
+        targetUnit = 'sn';
+      } else if (mUnit.dim == 'time') {
+        targetAmount = m.unitId == 'sa' ? (state.value! * 60) : state.value;
+        targetUnit = 'dk';
+      } else {
+        targetAmount = state.value;
+        targetUnit = m.unitId.isNotEmpty ? m.unitId : m.name;
+      }
+    } else if (state.value != null && state.unitId != null) {
+      final vUnit = unit(state.unitId!);
+      if (vUnit.dim == 'time') {
+        targetAmount = state.unitId == 'sa' ? (state.value! * 60) : state.value;
+        targetUnit = 'dk';
+      } else {
+        targetAmount = state.value;
+        targetUnit = state.unitId;
+      }
+    } else if (state.endTs != null && state.endTs! > state.ts) {
+      // 2. Yoksa süresi (endTs)
+      final durMins = ((state.endTs! - state.ts) / 60000).round();
+      if (durMins > 0) {
+        targetAmount = durMins.toDouble();
+        targetUnit = 'dk';
+      }
+    } else if (state.qty > 0 && state.qty != 1.0) {
+      // 3. Yoksa adedi
+      targetAmount = state.qty;
+      targetUnit = state.unitId ?? activityBaseUnit(act.id);
+    }
+
+    final actName = act.name;
+    final String title;
+    if (targetAmount != null && targetUnit != null) {
+      final sym = unit(targetUnit).symbol;
+      title = '${fmtNum(targetAmount)} $sym $actName'.trim();
+    } else {
+      title = actName;
+    }
+
+    final todo = Todo(
+      id: 0,
+      title: title,
+      note: state.note,
+      createdAt: DateTime.now().millisecondsSinceEpoch,
+      targetAmount: targetAmount,
+      targetUnit: targetUnit,
+      linkedActivityIds: [state.activityId],
+    );
+
+    int insertedTodoId = 0;
+    await d.transaction((tx) async {
+      insertedTodoId = await tx.insert('todos', todo.toMap()..remove('id'));
+      await tx.insert('todo_links', {'todo_id': insertedTodoId, 'activity_id': state.activityId});
+      await tx.delete('entries', where: 'id = ?', whereArgs: [entry.id]);
+    });
+
+    todo.id = insertedTodoId;
+    todos.add(todo);
+    entries.removeWhere((e) => e.id == entry.id);
+
+    _changed();
+    await _syncLinkedSteps();
+    await _syncTodos();
+    WidgetSync.schedule();
+
+    Future<void> undo() async {
+      final dbInst = await db;
+      await dbInst.transaction((tx) async {
+        await tx.delete('todo_links', where: 'todo_id = ?', whereArgs: [todo.id]);
+        await tx.delete('todos', where: 'id = ?', whereArgs: [todo.id]);
+        await tx.insert('entries', entry.toMap(), conflictAlgorithm: ConflictAlgorithm.replace);
+      });
+
+      todos.removeWhere((t) => t.id == todo.id);
+      entries.removeWhere((e) => e.id == entry.id);
+      _insertSorted(entry);
+
+      _changed();
+      await _syncLinkedSteps();
+      await _syncTodos();
+      WidgetSync.schedule();
+    }
+
+    return (todo: todo, undo: undo);
   }
 
   // ---------------------------------------------------------------- kronometre

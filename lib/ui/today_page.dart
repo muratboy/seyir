@@ -61,6 +61,107 @@ class _ComposerPlan {
   ({String mode, int targetMs})? get timer => parsed.timerCommand;
 }
 
+class _ComposerModeSelector extends StatelessWidget {
+  final bool isEntrySelected;
+  final bool isTodoSelected;
+  final ValueChanged<bool> onChanged;
+
+  const _ComposerModeSelector({
+    required this.isEntrySelected,
+    required this.isTodoSelected,
+    required this.onChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final s = strings.value;
+    final scheme = Theme.of(context).colorScheme;
+    final isTr = s.isTr;
+
+    Widget buildSegment({
+      required String label,
+      required bool selected,
+      required bool forTodo,
+      required Key key,
+    }) {
+      return Semantics(
+        button: true,
+        selected: selected,
+        child: Material(
+          color: Colors.transparent,
+          child: InkWell(
+            key: key,
+            borderRadius: BorderRadius.circular(10),
+            canRequestFocus: false,
+            onTap: () => onChanged(forTodo),
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(minHeight: 36),
+              child: Center(
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: selected ? scheme.primary : Colors.transparent,
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  child: Text(
+                    label,
+                    style: TextStyle(
+                      fontSize: AppFont.micro,
+                      fontWeight: selected ? FontWeight.bold : FontWeight.w500,
+                      color: selected ? scheme.onPrimary : scheme.onSurfaceVariant,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
+
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        Positioned(
+          top: 6,
+          bottom: 6,
+          left: 0,
+          right: 0,
+          child: IgnorePointer(
+            child: Container(
+              decoration: BoxDecoration(
+                color: scheme.surfaceContainerHighest.withValues(alpha: 0.5),
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: scheme.outlineVariant.withValues(alpha: 0.4), width: 0.8),
+              ),
+            ),
+          ),
+        ),
+        Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            const SizedBox(width: 2),
+            buildSegment(
+              label: isTr ? 'Kayıt' : 'Entry',
+              selected: isEntrySelected,
+              forTodo: false,
+              key: const Key('mode-selector-entry'),
+            ),
+            const SizedBox(width: 2),
+            buildSegment(
+              label: isTr ? 'Yapılacak' : 'To-do',
+              selected: isTodoSelected,
+              forTodo: true,
+              key: const Key('mode-selector-todo'),
+            ),
+            const SizedBox(width: 2),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
 /// Gönder düğmesine basılınca ne olacağını söyleyen satır. Uygulama yazılanı sessizce yorumlamaz: sayaç
 /// mı başlayacak, hangi aktiviteye ne kadar eklenecek, önce burada görünür. Metin iki türlü okunabiliyorsa
 /// [otherLabel] öbür okumaya geçirir.
@@ -106,6 +207,7 @@ class _ComposerPreview extends StatelessWidget {
                 child: Text(
                   text,
                   key: const Key('composer-preview'),
+                  overflow: TextOverflow.ellipsis,
                   style: TextStyle(fontSize: AppFont.small, color: scheme.onSurfaceVariant),
                 ),
               ),
@@ -168,6 +270,9 @@ class _TodayViewState extends State<_TodayView> {
   /// Yazılan metin sayaç komutu olarak okunurken kullanıcı "kayıt olarak ekle"yi seçtiyse true.
   bool _asEntry = false;
 
+  /// Giriş kutusunda yapılacak modunun seçili olup olmadığı (Kayıt | Yapılacak).
+  bool _isTodoMode = false;
+
   // Ölçü ve miktar metinden okunur; kullanıcı seçiciye dokunduysa oradaki değer geçerli olur.
   bool _measureTouched = false;
   bool _qtyTouched = false;
@@ -191,6 +296,9 @@ class _TodayViewState extends State<_TodayView> {
   }
 
   void _onTextChanged() {
+    if (_textController.text.trim().isEmpty && _isTodoMode) {
+      setState(() => _isTodoMode = false);
+    }
     if (_customItems != null) {
       setState(() => _customItems = null);
     }
@@ -273,6 +381,7 @@ class _TodayViewState extends State<_TodayView> {
       _showOptions = false;
       _forceNew = false;
       _asEntry = false;
+      _isTodoMode = false;
       _measureTouched = false;
       _qtyTouched = false;
       _customItems = null;
@@ -284,6 +393,7 @@ class _TodayViewState extends State<_TodayView> {
     final st = store.stats[a.id];
     setState(() {
       _selectedActivity = a;
+      _isTodoMode = false;
       _draftEmoji = a.emoji;
       _textController.text = a.name;
       _selectedMeasureId = st?.lastMeasureId;
@@ -312,6 +422,7 @@ class _TodayViewState extends State<_TodayView> {
       fallbackDay: _currentDay,
       defaultMeasureFor: store.defaultMeasureFor,
       predictCompletedTodos: store.predictCompletedTodos,
+      forceTodo: _isTodoMode,
     );
     return multi.items;
   }
@@ -319,6 +430,7 @@ class _TodayViewState extends State<_TodayView> {
   /// Kutuya yazılanın gönder düğmesine basılınca neye dönüşeceği; aktivite listeden seçildiyse ya da kutu
   /// boşsa null. Önizleme satırı da kaydetme de bu planı kullanır: ekranda yazan ile yapılan aynıdır.
   _ComposerPlan? _plan() {
+    if (_isTodoMode) return null;
     final text = _textController.text.trim();
     if (_selectedActivity != null || text.isEmpty) return null;
 
@@ -551,7 +663,8 @@ class _TodayViewState extends State<_TodayView> {
 
     if (items.isEmpty) return;
 
-    if (items.length == 1 && items.first is EntryParsedItem) {
+    final allTodos = items.every((i) => i is TodoParsedItem);
+    if (!allTodos && items.length == 1 && items.first is EntryParsedItem) {
       final entryItem = items.first as EntryParsedItem;
       if (!entryItem.isExplicitFuture) {
         final plan = _plan();
@@ -972,6 +1085,7 @@ class _TodayViewState extends State<_TodayView> {
   Widget _buildTodoItemRow(TodoParsedItem item, int idx, ColorScheme scheme, AppStrings s) {
     final isTr = s.isTr;
     final dateText = item.dueDate != null ? _formatDateChip(item.dueDate!, isTr: isTr) : (isTr ? 'Tarihsiz' : 'No date');
+    final unitSymbol = item.suggestedUnit != null ? ' ${store.unit(item.suggestedUnit!).symbol}' : '';
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
@@ -1013,14 +1127,32 @@ class _TodayViewState extends State<_TodayView> {
                 ),
                 if (item.suggestedActivity != null)
                   Container(
+                    constraints: const BoxConstraints(maxWidth: 220),
                     padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                     decoration: BoxDecoration(
                       color: scheme.surfaceContainerHighest,
                       borderRadius: BorderRadius.circular(6),
                     ),
                     child: Text(
-                      '${item.suggestedActivity!.emoji ?? ""} ${item.suggestedActivity!.name}'.trim(),
+                      '${item.suggestedActivity!.emoji ?? ""} ${item.suggestedActivity!.name}${item.suggestedAmount != null ? " · ${fmtNum(item.suggestedAmount!)}$unitSymbol" : ""}'.trim(),
                       style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
+                    ),
+                  )
+                else if (item.suggestedAmount != null)
+                  Container(
+                    constraints: const BoxConstraints(maxWidth: 120),
+                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                    decoration: BoxDecoration(
+                      color: scheme.surfaceContainerHighest,
+                      borderRadius: BorderRadius.circular(6),
+                    ),
+                    child: Text(
+                      '${fmtNum(item.suggestedAmount!)}$unitSymbol'.trim(),
+                      style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                      overflow: TextOverflow.ellipsis,
+                      maxLines: 1,
                     ),
                   ),
               ],
@@ -1128,10 +1260,41 @@ class _TodayViewState extends State<_TodayView> {
     // Hiç aktivite yokken ne yazılabileceğini örnekler gösterir.
     final examples = showSuggestions && q.isEmpty && store.activities.isEmpty ? s.composerExamples : const <String>[];
     final items = _currentItems();
+    final allTodos = items.isNotEmpty && items.every((i) => i is TodoParsedItem);
+    final allEntries = _selectedActivity != null || (items.isNotEmpty && items.every((i) => i is EntryParsedItem));
+    final isEntrySelected = allEntries || (items.isEmpty && !_isTodoMode);
+    final isTodoSelected = allTodos || (items.isEmpty && _isTodoMode);
     final isSingleEntry = items.length == 1 && items.first is EntryParsedItem;
     final singleEntry = isSingleEntry ? (items.first as EntryParsedItem) : null;
     final plan = _plan();
     final startsTimer = plan?.timer != null;
+    final hasText = q.isNotEmpty;
+    final modeSelector = hasText
+        ? _ComposerModeSelector(
+            isEntrySelected: isEntrySelected,
+            isTodoSelected: isTodoSelected,
+            onChanged: (todo) {
+              setState(() {
+                _customItems = null;
+                if (_selectedActivity != null) {
+                  _textController.text = _selectedActivity!.name;
+                  _selectedActivity = null;
+                }
+                if (todo) {
+                  _isTodoMode = true;
+                } else {
+                  _isTodoMode = false;
+                  final currentText = _textController.text;
+                  final stripped = NaturalLanguageParser.stripTodoMarker(currentText);
+                  if (stripped != currentText) {
+                    _textController.text = stripped;
+                  }
+                }
+                _textController.selection = TextSelection.collapsed(offset: _textController.text.length);
+              });
+            },
+          )
+        : null;
     final matchedAct = plan?.existing;
     // "Yeni Olarak Ekle": metin kayıtlı bir aktiviteye bağlanmışken (örn: "Kitap okuma"),
     // kullanıcının yazdığı farklı adla (örn: "Kitap") yeni bir aktivite açma seçeneği.
@@ -1291,25 +1454,42 @@ class _TodayViewState extends State<_TodayView> {
                 const SizedBox(height: 6),
               ],
 
+              if (modeSelector != null) ...[
+                Padding(
+                  padding: const EdgeInsets.only(left: 4, bottom: 4),
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: modeSelector,
+                  ),
+                ),
+              ],
+
               if (items.length > 1 || (items.isNotEmpty && items.first is TodoParsedItem)) ...[
                 _buildMultiItemPreview(items),
               ] else if (plan != null) ...[
                 if (singleEntry != null && singleEntry.isExplicitFuture) ...[
                   Padding(
                     padding: const EdgeInsets.only(left: 6, bottom: 6),
-                    child: Row(
+                    child: Wrap(
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      spacing: 6,
+                      runSpacing: 4,
                       children: [
-                        Icon(Icons.warning_amber_rounded, size: 16, color: Theme.of(context).colorScheme.error),
-                        const SizedBox(width: 6),
-                        Text(
-                          s.isTr ? 'Gelecek zaman' : 'Future time',
-                          style: TextStyle(
-                            fontSize: AppFont.small,
-                            color: Theme.of(context).colorScheme.error,
-                            fontWeight: FontWeight.bold,
-                          ),
+                        Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.warning_amber_rounded, size: 16, color: Theme.of(context).colorScheme.error),
+                            const SizedBox(width: 6),
+                            Text(
+                              s.isTr ? 'Gelecek zaman' : 'Future time',
+                              style: TextStyle(
+                                fontSize: AppFont.small,
+                                color: Theme.of(context).colorScheme.error,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ],
                         ),
-                        const SizedBox(width: 8),
                         ActionChip(
                           avatar: const Icon(Icons.add_task, size: 14),
                           label: Text(s.isTr ? 'Yapılacak olarak ekle' : 'Add as to-do'),
@@ -1414,7 +1594,11 @@ class _TodayViewState extends State<_TodayView> {
                       onChanged: (text) {
                         setState(() {
                           _forceNew = false;
-                          if (text.trim().isEmpty) _asEntry = false;
+                          _customItems = null;
+                          if (text.trim().isEmpty) {
+                            _asEntry = false;
+                            _isTodoMode = false;
+                          }
                           if (_selectedActivity != null && _selectedActivity!.name != text) {
                             _selectedActivity = null;
                           }
@@ -1443,11 +1627,18 @@ class _TodayViewState extends State<_TodayView> {
                   // Düğme ne yapacaksa onu gösterir: kayıt ekler ya da sayaç başlatır.
                   IconButton.filled(
                     key: const Key('composer-submit'),
-                    tooltip: startsTimer ? s.startTimerAction : s.logButton,
+                    tooltip: allTodos
+                        ? (s.isTr ? 'Yapılacak ekle' : 'Add to-do')
+                        : (startsTimer ? s.startTimerAction : s.logButton),
                     style: IconButton.styleFrom(
                       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
                     ),
-                    icon: Icon(startsTimer ? Icons.play_arrow_rounded : Icons.check_rounded, size: 22),
+                    icon: Icon(
+                      allTodos
+                          ? Icons.checklist_rounded
+                          : (startsTimer ? Icons.play_arrow_rounded : Icons.check_rounded),
+                      size: 22,
+                    ),
                     onPressed: (q.isNotEmpty || _selectedActivity != null) ? _onSubmitPressed : null,
                   ),
                 ],

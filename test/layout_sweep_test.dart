@@ -15,6 +15,7 @@ import 'package:takip/ui/components/todo_complete_sheet.dart';
 import 'package:takip/ui/components/todo_quick_add_sheet.dart';
 import 'package:takip/ui/components/today_routines_panel.dart';
 import 'package:takip/ui/components/today_roadmap_panel.dart';
+import 'package:takip/ui/components/today_timeline.dart';
 
 import 'support/fonts.dart';
 import 'support/real_db.dart';
@@ -200,12 +201,16 @@ void main() {
         addTearDown(tester.view.resetDevicePixelRatio);
         addTearDown(tester.platformDispatcher.clearTextScaleFactorTestValue);
 
+        final tr = lang == AppLanguage.tr;
         await tester.runAsync(() async {
           await seedSampleData();
           await store.setLanguage(lang);
+          final longAct = await store.addActivity(
+            tr ? 'Çok Uzun İsimli Maraton Koşusu ve Dayanıklılık Antrenmanı' : 'Very Long Named Marathon Running and Endurance Training',
+          );
+          await store.addEntry(longAct.id, qty: 1.0, at: DateTime.now(), note: 'Test note');
         });
         final s = strings.value;
-        final tr = lang == AppLanguage.tr;
 
         await tester.pumpWidget(const TakipApp());
         await tester.pump(const Duration(milliseconds: 500));
@@ -267,6 +272,7 @@ void main() {
         store.todos.addAll(savedTodos);
         await tester.pump(const Duration(milliseconds: 200));
 
+        await scrollToTop();
         await tester.tap(find.text('Gitar').first);
         await expectClean('today, timer expanded');
         await tester.enterText(find.byType(TextField).last, 'su');
@@ -274,6 +280,23 @@ void main() {
         await tester.tap(find.widgetWithText(ActionChip, 'Su'));
         await expectClean('today, composer options');
         await tester.tap(find.byTooltip(tr ? 'Temizle' : 'Clear'));
+
+        // Seçicili kutu iki modda (Kayıt ve Yapılacak)
+        await tester.enterText(find.byType(TextField).last, tr ? '30 dk koşu yarın' : '30 min run tomorrow');
+        await tester.pump(const Duration(milliseconds: 200));
+        await expectClean('today, composer entry mode with selector');
+        await tester.tap(find.byKey(const Key('mode-selector-todo')));
+        await tester.pump(const Duration(milliseconds: 200));
+        await expectClean('today, composer todo mode with selector');
+        await tester.tap(find.byTooltip(tr ? 'Temizle' : 'Clear'));
+        await tester.pump(const Duration(milliseconds: 200));
+
+        // Algılanmış yapılacaklı kutu durumu
+        await tester.enterText(find.byType(TextField).last, tr ? 'yapılacak: doktora git' : 'todo: call dentist');
+        await tester.pump(const Duration(milliseconds: 200));
+        await expectClean('today, composer detected todo');
+        await tester.tap(find.byTooltip(tr ? 'Temizle' : 'Clear'));
+        await tester.pump(const Duration(milliseconds: 200));
 
         // Çok öğeli önizleme: uzun adlar, zaman çipleri, ipucu satırları
         await tester.enterText(
@@ -286,6 +309,7 @@ void main() {
         await expectClean('today, multi-item preview');
         await tester.tap(find.byTooltip(tr ? 'Temizle' : 'Clear'));
         await tester.pump(const Duration(milliseconds: 200));
+
         await scrollThrough('today', steps: 6);
 
         // Arama sayfası (TakipSearchDelegate)
@@ -375,6 +399,13 @@ void main() {
         TodoCompleteSheet.show(navContext, sampleLinkedTodo);
         await settleSheet();
         await expectClean('todo complete sheet');
+        await closeDialog();
+
+        // Kayıt işlem yüzeyi ("Yapılacağa çevir" eylemi ile)
+        final entryToEdit = store.entries.firstWhere((e) => store.canConvertEntryToTodo(e));
+        TodayTimeline.showEntryEditSheet(navContext, entryToEdit);
+        await settleSheet();
+        await expectClean('entry edit sheet with convert action');
         await closeDialog();
 
         // Statistics in every range.
