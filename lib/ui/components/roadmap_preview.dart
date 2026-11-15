@@ -128,19 +128,27 @@ class RoadmapPreview extends StatelessWidget {
   }
 }
 
+bool _isSavingRoadmap = false;
+
 /// Önizlenen yol haritasını kaydeder, içe aktarma penceresini kapatır ve sonucu bildirir.
 Future<void> saveImportedRoadmap(BuildContext context, Roadmap roadmap) async {
-  final isTr = strings.value.isTr;
-  final messenger = ScaffoldMessenger.of(context);
-  await store.createRoadmap(roadmap);
-  if (!context.mounted) return;
-  Navigator.pop(context);
-  messenger.showSnackBar(
-    SnackBar(
-      content: Text(isTr
-          ? '🎉 "${roadmap.title}" yol haritalarına eklendi!'
-          : '🎉 "${roadmap.title}" added to roadmaps!'),
-      behavior: SnackBarBehavior.floating,
-    ),
-  );
+  if (_isSavingRoadmap) return;
+  _isSavingRoadmap = true;
+  try {
+    final isTr = strings.value.isTr;
+    final messenger = ScaffoldMessenger.of(context);
+    await store.createRoadmap(roadmap);
+    if (!context.mounted) return;
+    Navigator.pop(context);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(isTr
+            ? '🎉 "${roadmap.title}" yol haritalarına eklendi!'
+            : '🎉 "${roadmap.title}" added to roadmaps!'),
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
+  } finally {
+    _isSavingRoadmap = false;
+  }
 }

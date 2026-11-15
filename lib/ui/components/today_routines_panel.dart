@@ -9,6 +9,8 @@ import '../app_font.dart';
 import '../common.dart';
 
 /// Bugün ekranında rutinleri (aktivite paketlerini) gösteren ve tek dokunuşla çalıştıran panel
+bool _isExecutingRoutine = false;
+
 class TodayRoutinesPanel extends StatelessWidget {
   final DateTime currentDay;
 
@@ -150,18 +152,24 @@ class TodayRoutinesPanel extends StatelessWidget {
                 return InkWell(
                   borderRadius: BorderRadius.circular(14),
                   onTap: () async {
-                    HapticFeedback.mediumImpact();
-                    final entries = await store.executeRoutine(r.id, at: currentDay);
-                    if (context.mounted && entries.isNotEmpty) {
-                      showSnack(
-                        context,
-                        '${r.emoji} ${r.name} ${isTr ? "kaydedildi" : "logged"} ($itemCount ${isTr ? "aktivite" : "activities"}) ✨',
-                        undo: () async {
-                          for (final e in entries) {
-                            await store.deleteEntry(e);
-                          }
-                        },
-                      );
+                    if (_isExecutingRoutine) return;
+                    _isExecutingRoutine = true;
+                    try {
+                      HapticFeedback.mediumImpact();
+                      final entries = await store.executeRoutine(r.id, at: currentDay);
+                      if (context.mounted && entries.isNotEmpty) {
+                        showSnack(
+                          context,
+                          '${r.emoji} ${r.name} ${isTr ? "kaydedildi" : "logged"} ($itemCount ${isTr ? "aktivite" : "activities"}) ✨',
+                          undo: () async {
+                            for (final e in entries) {
+                              await store.deleteEntry(e);
+                            }
+                          },
+                        );
+                      }
+                    } finally {
+                      _isExecutingRoutine = false;
                     }
                   },
                   onLongPress: () => _showRoutineOptions(context, r),
@@ -251,18 +259,24 @@ class TodayRoutinesPanel extends StatelessWidget {
                 leading: const Icon(Icons.play_arrow_rounded),
                 title: Text(isTr ? 'Şimdi Kaydet / Çalıştır' : 'Execute Routine Now'),
                 onTap: () async {
+                  if (_isExecutingRoutine) return;
+                  _isExecutingRoutine = true;
                   Navigator.pop(sheetCtx);
-                  final entries = await store.executeRoutine(r.id, at: currentDay);
-                  if (context.mounted && entries.isNotEmpty) {
-                    showSnack(
-                      context,
-                      '${r.emoji} ${r.name} ${isTr ? "kaydedildi" : "logged"} (${r.items.length} ${isTr ? "aktivite" : "activities"})',
-                      undo: () async {
-                        for (final e in entries) {
-                          await store.deleteEntry(e);
-                        }
-                      },
-                    );
+                  try {
+                    final entries = await store.executeRoutine(r.id, at: currentDay);
+                    if (context.mounted && entries.isNotEmpty) {
+                      showSnack(
+                        context,
+                        '${r.emoji} ${r.name} ${isTr ? "kaydedildi" : "logged"} (${r.items.length} ${isTr ? "aktivite" : "activities"})',
+                        undo: () async {
+                          for (final e in entries) {
+                            await store.deleteEntry(e);
+                          }
+                        },
+                      );
+                    }
+                  } finally {
+                    _isExecutingRoutine = false;
                   }
                 },
               ),
@@ -313,6 +327,7 @@ class _RoutineEditSheetState extends State<RoutineEditSheet> {
   late final TextEditingController _nameController;
   late String _emoji;
   late List<RoutineItem> _items;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -654,17 +669,27 @@ class _RoutineEditSheetState extends State<RoutineEditSheet> {
                 const SizedBox(width: 12),
                 Expanded(
                   child: FilledButton(
-                    onPressed: _nameController.text.trim().isEmpty || _items.isEmpty
+                    onPressed: _nameController.text.trim().isEmpty || _items.isEmpty || _isSaving
                         ? null
                         : () async {
-                            final r = Routine(
-                              id: widget.routine?.id ?? 0,
-                              name: _nameController.text.trim(),
-                              emoji: _emoji,
-                              items: _items,
-                            );
-                            await store.saveRoutine(r);
-                            if (context.mounted) Navigator.pop(context);
+                            if (_isSaving) return;
+                            setState(() => _isSaving = true);
+                            try {
+                              final r = Routine(
+                                id: widget.routine?.id ?? 0,
+                                name: _nameController.text.trim(),
+                                emoji: _emoji,
+                                items: _items,
+                              );
+                              await store.saveRoutine(r);
+                              if (context.mounted) Navigator.pop(context);
+                            } finally {
+                              if (mounted) {
+                                setState(() => _isSaving = false);
+                              } else {
+                                _isSaving = false;
+                              }
+                            }
                           },
                     child: Text(s.save),
                   ),

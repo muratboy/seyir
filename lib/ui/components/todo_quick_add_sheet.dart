@@ -38,6 +38,7 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
 
   bool _manualDateOverridden = false;
   bool _manualActivityOverridden = false;
+  bool _isSaving = false;
 
   @override
   void initState() {
@@ -109,10 +110,12 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
   }
 
   Future<void> _save() async {
+    if (_isSaving) return;
     final rawText = _controller.text.trim();
     if (rawText.isEmpty) return;
-
-    // Başlıktan tarih kelimesini ayıkla
+    _isSaving = true;
+    try {
+      // Başlıktan tarih kelimesini ayıkla
     final parsed = TodoInputParser.parse(
       rawText,
       activities: store.activities.values.where((a) => !a.isArchived).toList(),
@@ -161,6 +164,13 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
           ),
         ),
       );
+    }
+    } finally {
+      if (mounted) {
+        setState(() => _isSaving = false);
+      } else {
+        _isSaving = false;
+      }
     }
   }
 
@@ -229,10 +239,12 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
               fillColor: scheme.surfaceContainerHighest.withValues(alpha: 0.3),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.arrow_upward_rounded),
-                onPressed: _save,
+                onPressed: _isSaving ? null : _save,
               ),
             ),
-            onSubmitted: (_) => _save(),
+            onSubmitted: (_) {
+              if (!_isSaving) _save();
+            },
           ),
 
           const SizedBox(height: 10),
@@ -355,7 +367,7 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
             ),
             icon: const Icon(Icons.add),
             label: Text(s.isTr ? 'Ekle' : 'Add'),
-            onPressed: _save,
+            onPressed: _isSaving ? null : _save,
           ),
         ],
       ),

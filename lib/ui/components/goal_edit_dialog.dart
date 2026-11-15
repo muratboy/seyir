@@ -30,6 +30,7 @@ class GoalEditDialog {
             customRate: l.customRate,
           )))
         : <GoalLink>[];
+    bool saving = false;
 
     await showDialog<void>(
       context: context,
@@ -401,38 +402,50 @@ class GoalEditDialog {
           actions: [
             TextButton(onPressed: () => Navigator.pop(c), child: Text(s.cancel)),
             FilledButton(
-              onPressed: () async {
-                final name = nameCtrl.text.trim();
-                final targetVal = parseNum(targetCtrl.text);
-                if (name.isEmpty || targetVal == null || targetVal <= 0) return;
+              onPressed: saving
+                  ? null
+                  : () async {
+                      if (saving) return;
+                      final name = nameCtrl.text.trim();
+                      final targetVal = parseNum(targetCtrl.text);
+                      if (name.isEmpty || targetVal == null || targetVal <= 0) return;
 
-                final goal = existing ??
-                    Goal(
-                      id: 0,
-                      name: name,
-                      type: type,
-                      mode: mode,
-                      unitId: mode == 'amount' ? unitId : null,
-                      target: targetVal,
-                      period: period,
-                      startDate: DateTime.now().millisecondsSinceEpoch,
-                      endDate: hasEndDate && endDate != null ? endDate!.millisecondsSinceEpoch : null,
-                      createdAt: DateTime.now().millisecondsSinceEpoch,
-                      links: links,
-                    );
+                      setS(() => saving = true);
+                      try {
+                        final goal = existing ??
+                            Goal(
+                              id: 0,
+                              name: name,
+                              type: type,
+                              mode: mode,
+                              unitId: mode == 'amount' ? unitId : null,
+                              target: targetVal,
+                              period: period,
+                              startDate: DateTime.now().millisecondsSinceEpoch,
+                              endDate: hasEndDate && endDate != null ? endDate!.millisecondsSinceEpoch : null,
+                              createdAt: DateTime.now().millisecondsSinceEpoch,
+                              links: links,
+                            );
 
-                goal.name = name;
-                goal.type = type;
-                goal.mode = mode;
-                goal.unitId = mode == 'amount' ? unitId : null;
-                goal.target = targetVal;
-                goal.period = period;
-                goal.endDate = hasEndDate && endDate != null ? endDate!.millisecondsSinceEpoch : null;
-                goal.links = links;
+                        goal.name = name;
+                        goal.type = type;
+                        goal.mode = mode;
+                        goal.unitId = mode == 'amount' ? unitId : null;
+                        goal.target = targetVal;
+                        goal.period = period;
+                        goal.endDate = hasEndDate && endDate != null ? endDate!.millisecondsSinceEpoch : null;
+                        goal.links = links;
 
-                await store.saveGoal(goal);
-                if (c.mounted) Navigator.pop(c);
-              },
+                        await store.saveGoal(goal);
+                        if (c.mounted) Navigator.pop(c);
+                      } finally {
+                        if (c.mounted) {
+                          setS(() => saving = false);
+                        } else {
+                          saving = false;
+                        }
+                      }
+                    },
               child: Text(s.save),
             ),
           ],

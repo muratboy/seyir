@@ -149,6 +149,41 @@ void main() {
     await finish(tester);
   });
 
+  testWidgets('kutuda varsayılan ölçüsü olan aktivite yazılıp seçenekler panelinde ölçü kaldırılarak kaydedilince kayıt ölçüsüz', (tester) async {
+    tester.view.devicePixelRatio = 1.0;
+    tester.view.physicalSize = const Size(800, 1200);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.runAsync(() async {
+      await store.load();
+      await store.addActivity('Su', emoji: '💧');
+    });
+    await pumpToday(tester);
+
+    await tester.enterText(composerField, 'su');
+    await tester.pump();
+    await tester.tap(find.byTooltip('Ayrıntılar'));
+    await tester.pumpAndSettle();
+
+    // Seçili olan ölçü chip'ine dokunup seçimi kaldır
+    final selectedChip = find.byWidgetPredicate(
+      (w) => w is ChoiceChip && w.selected,
+    );
+    expect(selectedChip, findsOneWidget);
+    await tester.tap(selectedChip);
+    await tester.pumpAndSettle();
+
+    await tester.tap(submitButton);
+    await settleStore(tester);
+
+    expect(store.entries, hasLength(1));
+    final entry = store.entries.single;
+    expect(entry.measureId, isNull);
+    expect(entry.value, isNull);
+    await finish(tester);
+  });
+
   testWidgets('a text read as a timer command can be logged as an entry instead', (tester) async {
     await tester.runAsync(() async {
       await store.load();

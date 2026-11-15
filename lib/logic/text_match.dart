@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'l10n.dart';
+
 /// Türkçe karakterleri sadeleştirir ve küçük harfe çevirir:
 /// "Çay Bardağı" -> "cay bardagi". Böylece "cay" yazınca "Çay" bulunur.
 String normalizeTr(String s) {
@@ -94,9 +96,37 @@ double matchScore(String q, String n) {
   return 0;
 }
 
-/// Ondalık sayıyı hem virgül hem nokta ile kabul eder.
-double? parseNum(String s) {
-  final t = s.trim().replaceAll(' ', '').replaceAll(',', '.');
+/// Binlik ayraçları ve ondalık sayıları çözümler.
+/// - Nokta: ilk basamağı sıfır olmayan 1–3 basamak ve ardından bir ya da daha çok ".ddd" grubu binlik yazımdır
+///   ("1.000" -> 1000, "10.000" -> 10000, "1.234,5" -> 1234.5). Her iki dilde geçerlidir.
+/// - Virgül: yalnızca arayüz dili İngilizce iken ("1,000" -> 1000, "1,234.5" -> 1234.5). Türkçe arayüzde ondalık kalır (1).
+/// - Değişmeyenler: "1.5", "1,5", "0.5", "0,5", "12.5", "1.50", "0.500" (0.5).
+double? parseNum(String s, {bool? isEn}) {
+  final t = s.trim().replaceAll(' ', '');
   if (t.isEmpty) return null;
-  return double.tryParse(t);
+
+  final english = isEn ?? (strings.value.lang == AppLanguage.en);
+
+  // 1. Binlik nokta: 1-3 basamak (ilk rakam 1-9), ardı ardına .ddd grupları, isteğe bağlı ondalık virgül (,d+)
+  final dotThousandRegex = RegExp(r'^([1-9]\d{0,2}(?:\.\d{3})+)(?:,(\d+))?$');
+  final dotMatch = dotThousandRegex.firstMatch(t);
+  if (dotMatch != null) {
+    final intPart = dotMatch.group(1)!.replaceAll('.', '');
+    final decPart = dotMatch.group(2);
+    return double.tryParse(decPart != null ? '$intPart.$decPart' : intPart);
+  }
+
+  // 2. Binlik virgül (yalnızca İngilizce): 1-3 basamak (ilk rakam 1-9), ardı ardına ,ddd grupları, isteğe bağlı ondalık nokta (.d+)
+  if (english) {
+    final commaThousandRegex = RegExp(r'^([1-9]\d{0,2}(?:,\d{3})+)(?:\.(\d+))?$');
+    final commaMatch = commaThousandRegex.firstMatch(t);
+    if (commaMatch != null) {
+      final intPart = commaMatch.group(1)!.replaceAll(',', '');
+      final decPart = commaMatch.group(2);
+      return double.tryParse(decPart != null ? '$intPart.$decPart' : intPart);
+    }
+  }
+
+  // 3. Standart ondalık sayı (hem nokta hem virgül kabul edilir)
+  return double.tryParse(t.replaceAll(',', '.'));
 }

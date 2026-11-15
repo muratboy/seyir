@@ -978,11 +978,27 @@ class _ActivityPickerSheet extends StatefulWidget {
 
 class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
   final _c = TextEditingController();
+  bool _isCreating = false;
 
   @override
   void dispose() {
     _c.dispose();
     super.dispose();
+  }
+
+  Future<void> _handleCreate(String q) async {
+    if (_isCreating) return;
+    setState(() => _isCreating = true);
+    try {
+      final a = await store.addActivity(q);
+      if (mounted) Navigator.pop(context, a);
+    } finally {
+      if (mounted) {
+        setState(() => _isCreating = false);
+      } else {
+        _isCreating = false;
+      }
+    }
   }
 
   List<Activity> get _items {
@@ -1044,10 +1060,7 @@ class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
                               isTr ? 'Oluştur' : 'Create',
                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.small),
                             ),
-                            onPressed: () async {
-                              final a = await store.addActivity(q);
-                              if (context.mounted) Navigator.pop(context, a);
-                            },
+                            onPressed: _isCreating ? null : () => _handleCreate(q),
                           ),
                         )
                       : (q.isNotEmpty
@@ -1064,8 +1077,7 @@ class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
                 onChanged: (_) => setState(() {}),
                 onSubmitted: (_) async {
                   if (canCreate) {
-                    final a = await store.addActivity(q);
-                    if (context.mounted) Navigator.pop(context, a);
+                    await _handleCreate(q);
                   } else if (items.isNotEmpty) {
                     Navigator.pop(context, items.first);
                   }
@@ -1101,10 +1113,7 @@ class _ActivityPickerSheetState extends State<_ActivityPickerSheet> {
                             style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
                           ),
                           trailing: Icon(Icons.arrow_forward_ios_rounded, size: 14, color: scheme.primary),
-                          onTap: () async {
-                            final a = await store.addActivity(q);
-                            if (context.mounted) Navigator.pop(context, a);
-                          },
+                          onTap: _isCreating ? null : () => _handleCreate(q),
                         ),
                       ),
                     ),

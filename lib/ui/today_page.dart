@@ -279,6 +279,7 @@ class _TodayViewState extends State<_TodayView> {
 
   List<ParsedItem>? _customItems;
   final _previewScrollController = ScrollController();
+  bool _isSubmitting = false;
 
   @override
   void initState() {
@@ -655,6 +656,7 @@ class _TodayViewState extends State<_TodayView> {
   /// ya da seçenekler paneli açıksa, çift onay istenmeden tek dokunuşla doğrudan kaydedilir.
   /// Miktar/ölçü belirtilmemişse önce seçenekler paneli açılarak kullanıcının seçmesi sağlanır.
   void _onSubmitPressed() {
+    if (_isSubmitting) return;
     final items = _currentItems();
     if (_selectedActivity != null) {
       _submitEntry();
@@ -681,9 +683,12 @@ class _TodayViewState extends State<_TodayView> {
   }
 
   Future<void> _submitEntry() async {
-    final s = strings.value;
-    final items = _currentItems();
-    if (items.isEmpty && _selectedActivity == null) return;
+    if (_isSubmitting) return;
+    _isSubmitting = true;
+    try {
+      final s = strings.value;
+      final items = _currentItems();
+      if (items.isEmpty && _selectedActivity == null) return;
 
     // Tek seçili aktivite akışı (seçenekler panelinden tıklanmışsa)
     if (_selectedActivity != null) {
@@ -760,57 +765,15 @@ class _TodayViewState extends State<_TodayView> {
       }
     }
 
-    final entriesToSave = <BatchEntryInput>[];
-    final todosToSave = <BatchTodoInput>[];
-    final createdActivityIds = <int>[];
-
-    for (final item in items) {
-      if (item is EntryParsedItem) {
-        Activity act;
-        if (item.activity != null) {
-          act = item.activity!;
-        } else {
-          act = await store.addActivity(item.activityName, emoji: _draftEmoji);
-          createdActivityIds.add(act.id);
-        }
-        await _applyDraftEmoji(act);
-
-        final defMeasureId = store.defaultMeasureFor(act.id)?.id;
-        final mId = _measureTouched && items.length == 1
-            ? _selectedMeasureId
-            : (item.measure?.id ?? defMeasureId);
-        final q = _qtyTouched && items.length == 1 ? _qty : item.quantity;
-
-        entriesToSave.add(
-          BatchEntryInput(
-            activityId: act.id,
-            measureId: mId,
-            qty: q,
-            at: item.at,
-            endAt: item.endAt,
-            note: _noteController.text,
-          ),
-        );
-      } else if (item is TodoParsedItem) {
-        todosToSave.add(
-          BatchTodoInput(
-            title: item.title,
-            dueDate: item.dueDate,
-            linkedActivityId: item.suggestedActivity?.id,
-            targetAmount: item.suggestedAmount,
-            targetUnit: item.suggestedUnit,
-          ),
-        );
-      }
-    }
-
-    if (entriesToSave.isEmpty && todosToSave.isEmpty) return;
-
-    final batchRes = await store.saveBatch(
-      entries: entriesToSave,
-      todos: todosToSave,
-      createdActivityIds: createdActivityIds,
+    final batchRes = await store.saveParsedItems(
+      items,
+      note: _noteController.text,
+      overrideMeasureId: _measureTouched && items.length == 1 ? _selectedMeasureId : null,
+      hasMeasureOverride: _measureTouched && items.length == 1,
+      overrideQty: _qtyTouched && items.length == 1 ? _qty : null,
+      draftEmoji: _draftEmoji,
     );
+    if (batchRes.entries.isEmpty && batchRes.todos.isEmpty) return;
 
     if (mounted) {
       final eCount = batchRes.entries.length;
@@ -844,16 +807,27 @@ class _TodayViewState extends State<_TodayView> {
     }
 
     _resetComposer();
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      } else {
+        _isSubmitting = false;
+      }
+    }
   }
 
   Future<void> _openVoiceInput() async {
     final s = strings.value;
+    bool voiceSubmitting = false;
     await showVoiceInputDialog(
       context,
       onConfirmed: (result) async {
-        final act = result.matchedActivity ??
-            store.exactMatch(result.activityName) ??
-            await store.addActivity(result.activityName);
+        if (voiceSubmitting) return;
+        voiceSubmitting = true;
+        try {
+          final act = result.matchedActivity ??
+              store.exactMatch(result.activityName) ??
+              await store.addActivity(result.activityName);
 
         final command = result.timerCommand;
         if (command != null) {
@@ -885,7 +859,10 @@ class _TodayViewState extends State<_TodayView> {
             undo: () => store.deleteEntry(res.entry),
           );
         }
-      },
+      } finally {
+        voiceSubmitting = false;
+      }
+    },
       onComplexInput: (spokenText) {
         setState(() {
           _textController.text = spokenText;
@@ -1604,7 +1581,9 @@ class _TodayViewState extends State<_TodayView> {
                           }
                         });
                       },
-                      onSubmitted: (_) => _onSubmitPressed(),
+                      onSubmitted: (_) {
+                        if (!_isSubmitting) _onSubmitPressed();
+                      },
                     ),
                   ),
                   const SizedBox(width: 4),
@@ -1639,7 +1618,7 @@ class _TodayViewState extends State<_TodayView> {
                           : (startsTimer ? Icons.play_arrow_rounded : Icons.check_rounded),
                       size: 22,
                     ),
-                    onPressed: (q.isNotEmpty || _selectedActivity != null) ? _onSubmitPressed : null,
+                    onPressed: ((q.isNotEmpty || _selectedActivity != null) && !_isSubmitting) ? _onSubmitPressed : null,
                   ),
                 ],
               ),

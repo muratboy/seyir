@@ -55,6 +55,9 @@ void main() {
       final e4 = Entry(id: 0, activityId: book.id, ts: DateTime(2026, 10, 1).millisecondsSinceEpoch, qty: 1);
       e4.id = await (await store.db).insert('entries', e4.toMap()..remove('id'));
 
+      // Eski veritabanı simülasyonu: henüz geçiş bayrağı konmamış veri durumu
+      await (await store.db).delete('settings', where: 'key = ?', whereArgs: ['unmeasured_entries_fixed']);
+
       await store.refresh();
 
       // Düzeltmeyi çalıştır

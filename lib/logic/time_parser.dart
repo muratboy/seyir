@@ -9,6 +9,8 @@ enum TemporalDirection {
 
 class TimeParseResult {
   final DateTime dateTime;
+  final DateTime? endDateTime;
+  final int? rangeMinutes;
   final bool hasExplicitDate;
   final bool hasExplicitTime;
   final bool isExplicitFuture;
@@ -19,6 +21,8 @@ class TimeParseResult {
 
   const TimeParseResult({
     required this.dateTime,
+    this.endDateTime,
+    this.rangeMinutes,
     this.hasExplicitDate = false,
     this.hasExplicitTime = false,
     this.isExplicitFuture = false,
@@ -32,6 +36,118 @@ class TimeParseResult {
 }
 
 class TimeParser {
+  /// Art arda yazılmış süre parçalarını (örn. "2 saat 15 dk" -> "135 dk", "1h 30m" -> "90 min", "1 dk 30 sn" -> "90 sn")
+  /// toplayıp en küçük birimle tek parça süreye dönüştürür.
+  static String collapseCompoundDurations(String input) {
+    if (input.trim().isEmpty) return input;
+
+    bool isEnUnit(String u) => const {
+          'h', 'hr', 'hrs', 'hour', 'hours',
+          'm', 'min', 'mins', 'minute', 'minutes',
+          's', 'sec', 'secs', 'second', 'seconds',
+        }.contains(u.toLowerCase());
+
+    String text = input;
+
+    // 1. Saat + Dakika + Saniye
+    // İngilizce saat parçası: yalın m ve (eğer dakika İngilizce kısaltmaysa) yalın s kabul edilir
+    final hmsEnRegex = RegExp(
+      r'(?:^|\b)(\d+)\s*(hours?|hrs?|h)\s*(\d+)\s*(minutes?|mins?|min|m|dakika|dk)\s*(\d+)\s*(seconds?|secs?|sec|s|saniye|sn)(?:\b|$)',
+      caseSensitive: false,
+    );
+    text = text.replaceAllMapped(hmsEnRegex, (m) {
+      final h = int.parse(m.group(1)!);
+      final min = int.parse(m.group(3)!);
+      final s = int.parse(m.group(5)!);
+      final total = h * 3600 + min * 60 + s;
+      final en = isEnUnit(m.group(2)!) || isEnUnit(m.group(4)!) || isEnUnit(m.group(6)!);
+      return '$total ${en ? "sec" : "sn"}';
+    });
+
+    // Türkçe saat parçası: yalın m ve yalın s kabul edilmez
+    final hmsTrRegex = RegExp(
+      r'(?:^|\b)(\d+)\s*(saat|sa)\s*(\d+)\s*(dakika|dk|minutes?|mins?|min)\s*(\d+)\s*(saniye|sn|seconds?|secs?|sec)(?:\b|$)',
+      caseSensitive: false,
+    );
+    text = text.replaceAllMapped(hmsTrRegex, (m) {
+      final h = int.parse(m.group(1)!);
+      final min = int.parse(m.group(3)!);
+      final s = int.parse(m.group(5)!);
+      final total = h * 3600 + min * 60 + s;
+      final en = isEnUnit(m.group(2)!) || isEnUnit(m.group(4)!) || isEnUnit(m.group(6)!);
+      return '$total ${en ? "sec" : "sn"}';
+    });
+
+    // 2. Saat + Dakika
+    // İngilizce saat parçası: yalın m kabul edilir ("1h 30m", "1 hr 30 min")
+    final hmEnRegex = RegExp(
+      r'(?:^|\b)(\d+)\s*(hours?|hrs?|h)\s*(\d+)\s*(minutes?|mins?|min|m|dakika|dk)(?:\b|$)',
+      caseSensitive: false,
+    );
+    text = text.replaceAllMapped(hmEnRegex, (m) {
+      final h = int.parse(m.group(1)!);
+      final min = int.parse(m.group(3)!);
+      final total = h * 60 + min;
+      final en = isEnUnit(m.group(2)!) || isEnUnit(m.group(4)!);
+      return '$total ${en ? "min" : "dk"}';
+    });
+
+    // Türkçe saat parçası: yalın m kabul edilmez ("1 saat 100 m yüzme" gibi metre karışımlarını engeller)
+    final hmTrRegex = RegExp(
+      r'(?:^|\b)(\d+)\s*(saat|sa)\s*(\d+)\s*(dakika|dk|minutes?|mins?|min)(?:\b|$)',
+      caseSensitive: false,
+    );
+    text = text.replaceAllMapped(hmTrRegex, (m) {
+      final h = int.parse(m.group(1)!);
+      final min = int.parse(m.group(3)!);
+      final total = h * 60 + min;
+      final en = isEnUnit(m.group(2)!) || isEnUnit(m.group(4)!);
+      return '$total ${en ? "min" : "dk"}';
+    });
+
+    // 3. Saat + Saniye (yalın s kabul edilmez)
+    final hsRegex = RegExp(
+      r'(?:^|\b)(\d+)\s*(hours?|hrs?|h|saat|sa)\s*(\d+)\s*(seconds?|secs?|sec|saniye|sn)(?:\b|$)',
+      caseSensitive: false,
+    );
+    text = text.replaceAllMapped(hsRegex, (m) {
+      final h = int.parse(m.group(1)!);
+      final s = int.parse(m.group(3)!);
+      final total = h * 3600 + s;
+      final en = isEnUnit(m.group(2)!) || isEnUnit(m.group(4)!);
+      return '$total ${en ? "sec" : "sn"}';
+    });
+
+    // 4. Dakika + Saniye
+    // İngilizce dakika parçası: yalın s kabul edilir ("1m 30s", "1 min 30 s")
+    final msEnRegex = RegExp(
+      r'(?:^|\b)(\d+)\s*(minutes?|mins?|min|m)\s*(\d+)\s*(seconds?|secs?|sec|s|saniye|sn)(?:\b|$)',
+      caseSensitive: false,
+    );
+    text = text.replaceAllMapped(msEnRegex, (m) {
+      final min = int.parse(m.group(1)!);
+      final s = int.parse(m.group(3)!);
+      final total = min * 60 + s;
+      final en = isEnUnit(m.group(2)!) || isEnUnit(m.group(4)!);
+      return '$total ${en ? "sec" : "sn"}';
+    });
+
+    // Türkçe dakika parçası: yalın s kabul edilmez ("1 dk 30 sn" geçerli, "1 dk 30 s" yalın s geçersiz)
+    final msTrRegex = RegExp(
+      r'(?:^|\b)(\d+)\s*(dakika|dk)\s*(\d+)\s*(saniye|sn|seconds?|secs?|sec)(?:\b|$)',
+      caseSensitive: false,
+    );
+    text = text.replaceAllMapped(msTrRegex, (m) {
+      final min = int.parse(m.group(1)!);
+      final s = int.parse(m.group(3)!);
+      final total = min * 60 + s;
+      final en = isEnUnit(m.group(2)!) || isEnUnit(m.group(4)!);
+      return '$total ${en ? "sec" : "sn"}';
+    });
+
+    return text;
+  }
+
   static const Map<String, int> _weekdays = {
     'pazartesi': 1,
     'monday': 1,
@@ -380,6 +496,75 @@ class TimeParser {
         remainingWords.add(rawWord);
       }
       workingText = remainingWords.join(' ');
+    }
+
+    // -------------------------------------------------------------
+    // 3.5. Time Ranges (Saat Aralıkları: 14:00-15:30, 23:30-00:30, 14:00-15 arası vb.)
+    // -------------------------------------------------------------
+    final timeRangeRegex = RegExp(
+      r"(^|\s)(?<h1Code>\b\d{1,2})(?:(?<sep1>[:.])(?<m1Code>\d{2}))?\s*[-–—]\s*(?<h2Code>\d{1,2})(?:(?<sep2>[:.])(?<m2Code>\d{2}))?(\s*(?<suffix>arası|arasında|arasi|arasinda))?($|\s)",
+      caseSensitive: false,
+    );
+
+    for (final trMatch in timeRangeRegex.allMatches(workingText)) {
+      final rawH1 = trMatch.namedGroup('h1Code')!;
+      final rawM1 = trMatch.namedGroup('m1Code');
+      final rawH2 = trMatch.namedGroup('h2Code')!;
+      final rawM2 = trMatch.namedGroup('m2Code');
+
+      // İki yanında da dakika yoksa aralık sayılmaz ("2-3 bardak su", "1-2 km" olduğu gibi kalır)
+      if (rawM1 == null && rawM2 == null) continue;
+
+      final h1 = int.parse(rawH1);
+      final m1 = rawM1 != null ? int.parse(rawM1) : 0;
+      final h2 = int.parse(rawH2);
+      final m2 = rawM2 != null ? int.parse(rawM2) : 0;
+
+      if (h1 < 0 || h1 > 24 || h2 < 0 || h2 > 24 || m1 < 0 || m1 >= 60 || m2 < 0 || m2 >= 60) continue;
+
+      int startTotalMins = h1 * 60 + m1;
+      int endTotalMins = h2 * 60 + m2;
+      bool overflowsToNextDay = false;
+      if (endTotalMins <= startTotalMins) {
+        overflowsToNextDay = true;
+        endTotalMins += 24 * 60;
+      }
+      final durationMinutes = endTotalMins - startTotalMins;
+
+      final targetDate = detectedDate ?? baseDay;
+      final startCandidate = DateTime(targetDate.year, targetDate.month, targetDate.day, h1, m1);
+      DateTime finalStartDateTime;
+      if (detectedDate == null) {
+        if (direction == TemporalDirection.past && startCandidate.isAfter(refNow)) {
+          finalStartDateTime = DateTime(targetDate.year, targetDate.month, targetDate.day - 1, h1, m1);
+        } else {
+          finalStartDateTime = startCandidate;
+        }
+      } else {
+        finalStartDateTime = startCandidate;
+      }
+
+      DateTime finalEndDateTime;
+      if (overflowsToNextDay) {
+        finalEndDateTime = DateTime(finalStartDateTime.year, finalStartDateTime.month, finalStartDateTime.day + 1, h2, m2);
+      } else {
+        finalEndDateTime = DateTime(finalStartDateTime.year, finalStartDateTime.month, finalStartDateTime.day, h2, m2);
+      }
+
+      workingText = _removeMatch(workingText, trMatch);
+      matchedTokens.add(trMatch.group(0)!.trim());
+
+      return TimeParseResult(
+        dateTime: finalStartDateTime,
+        endDateTime: finalEndDateTime,
+        rangeMinutes: durationMinutes,
+        hasExplicitDate: hasExplicitDate,
+        hasExplicitTime: true,
+        isExplicitFuture: finalStartDateTime.isAfter(refNow),
+        dateKeyword: matchedKeyword,
+        cleanedText: _cleanText(workingText),
+        rawMatchedText: matchedTokens.join(' '),
+      );
     }
 
     // -------------------------------------------------------------

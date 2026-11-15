@@ -293,5 +293,50 @@ void main() {
       expect(resFut.entryItems.length, 1);
       expect(resFut.entryItems[0].isExplicitFuture, true);
     });
+
+    test('m ve s kisaltmalari metre ve baska birimlerle karismaz', () {
+      // "1 saat 100 m yüzme" ve "2 saat 500 m yürüyüş" girdileri birleşmez
+      final t1 = TimeParser.collapseCompoundDurations('1 saat 100 m yüzme');
+      expect(t1, '1 saat 100 m yüzme');
+
+      final t2 = TimeParser.collapseCompoundDurations('2 saat 500 m yürüyüş');
+      expect(t2, '2 saat 500 m yürüyüş');
+
+      // İngilizce saat kısaltmasıyla yalın m ve s geçerlidir
+      final t3 = TimeParser.collapseCompoundDurations('1h 30m study');
+      expect(t3, '90 min study');
+
+      final t4 = TimeParser.collapseCompoundDurations('1 hr 30 min');
+      expect(t4, '90 min');
+
+      // Türkçe bileşik süreler
+      final t5 = TimeParser.collapseCompoundDurations('2 saat 15 dk');
+      expect(t5, '135 dk');
+
+      final t6 = TimeParser.collapseCompoundDurations('1 dk 30 sn');
+      expect(t6, '90 sn');
+    });
+
+    test('Saat aralığında gece yarısı ve gün geçişleri takvim günüyle hesaplanır', () {
+      // 1. Gece yarısını aşan saat aralığı (23:30-00:30): başlangıç bir önceki gün takvimiyle kurulur
+      final r1 = TimeParser.parse(
+        '23:30-00:30 film',
+        direction: TemporalDirection.past,
+        now: DateTime(2026, 3, 29, 15, 0), // Yaz saati geçiş günü
+      );
+      expect(r1.dateTime, DateTime(2026, 3, 28, 23, 30));
+      expect(r1.endDateTime, DateTime(2026, 3, 29, 0, 30));
+      expect(r1.rangeMinutes, 60);
+
+      // 2. Gün içinde normal saat aralığı
+      final r2 = TimeParser.parse(
+        '14:00-15:30 ders',
+        direction: TemporalDirection.past,
+        now: DateTime(2026, 3, 29, 16, 0),
+      );
+      expect(r2.dateTime, DateTime(2026, 3, 29, 14, 0));
+      expect(r2.endDateTime, DateTime(2026, 3, 29, 15, 30));
+      expect(r2.rangeMinutes, 90);
+    });
   });
 }

@@ -382,6 +382,8 @@ class NaturalLanguageParser {
     'gittim',
     'aldim',
     'aldım',
+    'attim',
+    'attım',
     'tane',
     'defa',
     'kere',
@@ -509,7 +511,7 @@ class NaturalLanguageParser {
     bool allowCommands = true,
     Measure? Function(int activityId)? defaultMeasureFor,
   }) {
-    final cleanInput = input.trim();
+    final cleanInput = TimeParser.collapseCompoundDurations(input.trim());
     if (cleanInput.isEmpty) {
       return const NlParseResult(
         rawText: '',
@@ -580,11 +582,12 @@ class NaturalLanguageParser {
         quantity = tens + ones;
         foundExplicitQty = true;
       } else {
-        // Check for standalone numbers (digits)
-        final digitMatch = RegExp(r'(\d+([.,]\d+)?)').firstMatch(lower);
+        // Check for standalone numbers (digits with thousand separators or decimals)
+        final digitMatch = RegExp(
+          r'((?<!\d)[1-9]\d{0,2}(?:\.\d{3})+(?:,\d+)?(?!\d)|(?<!\d)[1-9]\d{0,2}(?:,\d{3})+(?:\.\d+)?(?!\d)|\d+(?:[.,]\d+)?)',
+        ).firstMatch(lower);
         if (digitMatch != null) {
-          final numStr = digitMatch.group(1)!.replaceAll(',', '.');
-          final val = double.tryParse(numStr);
+          final val = parseNum(digitMatch.group(0)!);
           if (val != null) {
             quantity = val;
             foundExplicitQty = true;
@@ -600,6 +603,11 @@ class NaturalLanguageParser {
           }
         }
       }
+    }
+
+    if (!foundExplicitQty && timeParsed.rangeMinutes != null) {
+      quantity = timeParsed.rangeMinutes!.toDouble();
+      foundExplicitQty = true;
     }
 
     // Check if time-based (e.g. 30 dakika / 45 dk / yarım saat). Birim sayıya yapışık ya da ekli de
@@ -619,7 +627,10 @@ class NaturalLanguageParser {
     }
 
     // 3. Find Measure
-    final (matchedMeasure, measureWords) = _findMeasure(words, lower, measures);
+    var (matchedMeasure, measureWords) = _findMeasure(words, lower, measures);
+    if (matchedMeasure == null && timeParsed.rangeMinutes != null) {
+      matchedMeasure = measures.where((m) => m.unitId == 'dk' && m.amount == 1).firstOrNull;
+    }
 
     // 4. Extract Activity Name by filtering out numbers, measures, timer triggers and fillers
     final remainingWords = <String>[];
@@ -629,7 +640,7 @@ class NaturalLanguageParser {
       if (w.isEmpty) continue;
 
       // Ignore digits
-      if (double.tryParse(w.replaceAll(',', '.')) != null) continue;
+      if (parseNum(w) != null || parseNum(rawWords[i]) != null) continue;
       // Ignore Turkish number words
       if (_turkishWordNumbers.containsKey(w)) continue;
       // Ignore timer/action keywords
@@ -675,6 +686,15 @@ class NaturalLanguageParser {
       }
     }
 
+    // Ölçü adı ile aktivite adı aynıysa ("Adım", "Sayfa" vb.) ve geriye başka aktivite sözcüğü kalmadıysa aktiviteye bağla
+    if (matchedActivity == null && remainingWords.isEmpty && matchedMeasure != null) {
+      final byMeasureName = activities.where((a) => normalizeTr(a.name) == normalizeTr(matchedMeasure!.name)).firstOrNull;
+      if (byMeasureName != null) {
+        matchedActivity = byMeasureName;
+        confidence = 1.0;
+      }
+    }
+
     // Yeni aktivite adı özgün yazımdan kurulur; normalize hâl "Çay"ı "Cay" olarak kaydederdi.
     String finalActivityName;
     if (matchedActivity != null) {
@@ -697,8 +717,10 @@ class NaturalLanguageParser {
         newActivityName = cleanInput;
       }
 
-      // Addan arta kalan rakamları temizle
-      newActivityName = newActivityName.replaceAll(RegExp(r'\d+'), '').trim();
+      // Addan arta kalan rakamları ve noktalama işaretlerini temizle
+      final withoutDigits = newActivityName.replaceAll(RegExp(r'\d+'), '').trim();
+      final stripped = withoutDigits.replaceAll(_edgePunctuation, '').trim();
+      newActivityName = stripped.isNotEmpty ? stripped : withoutDigits;
 
       // Adda tek başına kalan birim sözcüklerini temizle
       final tokens = newActivityName.split(RegExp(r'\s+')).where((t) {
@@ -1116,15 +1138,15 @@ class NaturalLanguageParser {
     List<Todo> Function(Iterable<dynamic> items)? predictCompletedTodos,
     bool forceTodo = false,
   }) {
-    final cleanInput = input.trim();
-    if (cleanInput.isEmpty) {
+    final trimmedInput = input.trim();
+    if (trimmedInput.isEmpty) {
       return const MultiParseResult(rawText: '', items: []);
     }
 
-    final detected = _detectTodoMode(cleanInput, now: now);
+    final detected = _detectTodoMode(trimmedInput, now: now);
     final isTodo = forceTodo || detected.$1;
     final prefixDateWord = (forceTodo && !detected.$1) ? null : detected.$2;
-    final content = (forceTodo && !detected.$1) ? cleanInput : detected.$3;
+    final content = (forceTodo && !detected.$1) ? trimmedInput : detected.$3;
     if (isTodo) {
       DateTime? sharedDueDate;
       String? sharedDateKeyword = prefixDateWord;
@@ -1185,13 +1207,14 @@ class NaturalLanguageParser {
       }
 
       return MultiParseResult(
-        rawText: cleanInput,
+        rawText: trimmedInput,
         isTodoMode: true,
         items: todoItems,
       );
     }
 
     // Kayıt modu (Record mode)
+    final cleanInput = TimeParser.collapseCompoundDurations(trimmedInput);
     TimeParseResult? sharedTime;
     String workingInput = cleanInput;
 
@@ -1235,7 +1258,16 @@ class NaturalLanguageParser {
       );
 
       final act = singleParse.matchedActivity;
-      final effectiveM = singleParse.matchedMeasure ?? (act != null && defaultMeasureFor != null ? defaultMeasureFor(act.id) : null);
+      double effectiveQty = singleParse.quantity;
+      Measure? effectiveMeasure = singleParse.matchedMeasure;
+      if (!singleParse.hasExplicitQuantity && effectiveTime.rangeMinutes != null) {
+        effectiveQty = effectiveTime.rangeMinutes!.toDouble();
+      }
+      if (effectiveTime.rangeMinutes != null && !singleParse.hasExplicitMeasure) {
+        effectiveMeasure = measures.where((m) => m.unitId == 'dk' && m.amount == 1).firstOrNull;
+      }
+
+      final effectiveM = effectiveMeasure ?? (act != null && defaultMeasureFor != null ? defaultMeasureFor(act.id) : null);
       String? unitId = effectiveM?.unitId;
       if (unitId == null) {
         for (final raw in textToParse.split(RegExp(r'\s+'))) {
@@ -1251,9 +1283,9 @@ class NaturalLanguageParser {
       final isDuration = unitId == 'dk' || unitId == 'sa' || unitId == 'sn';
 
       DateTime itemStartAt = effectiveTime.dateTime;
-      DateTime? itemEndAt;
+      DateTime? itemEndAt = effectiveTime.endDateTime;
 
-      if (isDuration) {
+      if (isDuration && itemEndAt == null) {
         final totalVal = effectiveM != null ? effectiveM.amount * singleParse.quantity : singleParse.quantity;
         final durSecs = (totalVal * (unitId == 'sa' ? 3600 : (unitId == 'dk' ? 60 : 1))).round();
 
@@ -1321,8 +1353,8 @@ class NaturalLanguageParser {
           parseResult: singleParse,
           activity: singleParse.matchedActivity,
           activityName: singleParse.activityName,
-          measure: singleParse.matchedMeasure,
-          quantity: singleParse.quantity,
+          measure: effectiveMeasure,
+          quantity: effectiveQty,
           at: itemStartAt,
           endAt: itemEndAt,
           hasExplicitTime: effectiveTime.hasExplicitTime,

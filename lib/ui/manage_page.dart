@@ -361,6 +361,7 @@ class _ManagePageState extends State<ManagePage> {
                 onPressed: () async {
                   final nameCtrl = TextEditingController();
                   String? emoji;
+                  bool isSaving = false;
                   await showDialog<void>(
                     context: c,
                     builder: (dialogContext) => StatefulBuilder(
@@ -406,13 +407,25 @@ class _ManagePageState extends State<ManagePage> {
                         actions: [
                           TextButton(onPressed: () => Navigator.pop(dialogContext), child: Text(s.cancel)),
                           FilledButton(
-                            onPressed: () async {
-                              final name = nameCtrl.text.trim();
-                              if (name.isNotEmpty) {
-                                await store.addActivity(name, emoji: emoji);
-                                if (dialogContext.mounted) Navigator.pop(dialogContext);
-                              }
-                            },
+                            onPressed: isSaving
+                                ? null
+                                : () async {
+                                    final name = nameCtrl.text.trim();
+                                    if (name.isNotEmpty) {
+                                      if (isSaving) return;
+                                      setS(() => isSaving = true);
+                                      try {
+                                        await store.addActivity(name, emoji: emoji);
+                                        if (dialogContext.mounted) Navigator.pop(dialogContext);
+                                      } finally {
+                                        if (dialogContext.mounted) {
+                                          setS(() => isSaving = false);
+                                        } else {
+                                          isSaving = false;
+                                        }
+                                      }
+                                    }
+                                  },
                             child: Text(s.save),
                           ),
                         ],

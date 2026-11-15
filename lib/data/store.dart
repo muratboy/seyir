@@ -697,65 +697,77 @@ class AppStore extends ChangeNotifier {
   Future<String?> logFromQuickText(String text) async {
     final trimmed = text.trim();
     if (trimmed.isEmpty) return null;
-    final result = NaturalLanguageParser.parse(
+
+    final multiResult = NaturalLanguageParser.parseMulti(
       trimmed,
       activities: activities.values.toList(),
       measures: measures,
+      openTodos: todos,
+      defaultMeasureFor: defaultMeasureFor,
+      predictCompletedTodos: predictCompletedTodos,
     );
-    final act = result.matchedActivity ?? exactMatch(result.activityName) ?? await addActivity(result.activityName);
 
-    final command = result.timerCommand;
-    if (command != null) {
-      await startTimer(act.id, mode: command.mode, targetMs: command.targetMs);
-      final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
-      final mins = command.targetMs ~/ 60000;
-      final modeStr = switch (command.mode) {
-        'pomodoro' => 'Pomodoro ($mins dk)',
-        'countdown' => '$mins dk Geri Sayım',
-        _ => strings.value.isTr ? 'Kronometre' : 'Stopwatch',
-      };
-      return strings.value.isTr ? '$emoji${act.name}: $modeStr başlatıldı' : '$emoji${act.name}: $modeStr started';
-    }
+    if (multiResult.items.isEmpty) return null;
 
-    int? measureId = result.matchedMeasure?.id;
-    double qty = result.quantity > 0 ? result.quantity : 1.0;
-    if (measureId == null) {
-      final lastMId = stats[act.id]?.lastMeasureId;
-      if (lastMId != null) {
-        measureId = lastMId;
+    // Açıkça gelecek bir zamanı gösteren kayıt öğeleri hızlı kayıtta yapılacak olarak eklenir
+    final itemsToSave = multiResult.items.map((item) {
+      if (item is EntryParsedItem && item.isExplicitFuture) {
+        return item.toTodoItem();
+      }
+      return item;
+    }).toList();
+
+    // Tek öğeli sayaç komutuysa sayaç başlar
+    if (itemsToSave.length == 1 && itemsToSave.first is EntryParsedItem) {
+      final item = itemsToSave.first as EntryParsedItem;
+      final command = item.timerCommand;
+      if (command != null) {
+        final act = item.activity ?? exactMatch(item.activityName) ?? await addActivity(item.activityName);
+        await startTimer(act.id, mode: command.mode, targetMs: command.targetMs);
+        final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+        final mins = command.targetMs ~/ 60000;
+        final modeStr = switch (command.mode) {
+          'pomodoro' => 'Pomodoro ($mins dk)',
+          'countdown' => '$mins dk Geri Sayım',
+          _ => strings.value.isTr ? 'Kronometre' : 'Stopwatch',
+        };
+        return strings.value.isTr ? '$emoji${act.name}: $modeStr başlatıldı' : '$emoji${act.name}: $modeStr started';
       }
     }
 
-    final m = result.matchedMeasure ?? defaultMeasureFor(act.id);
-    final unitId = m?.unitId;
-    final val = m != null ? m.amount * qty : qty;
-    final now = DateTime.now();
-    DateTime effectiveAt = now;
-    DateTime? effectiveEndAt;
-    if ((unitId == 'dk' || unitId == 'sa' || unitId == 'sn') && val > 0) {
-      final durSecs = (val * (unitId == 'sa' ? 3600 : (unitId == 'dk' ? 60 : 1))).round();
-      effectiveEndAt = now;
-      effectiveAt = now.subtract(Duration(seconds: durSecs));
+    final batchRes = await saveParsedItems(itemsToSave);
+    final eCount = batchRes.entries.length;
+    final tCount = batchRes.todos.length;
+
+    if (eCount == 0 && tCount == 0) return null;
+
+    if (eCount == 0 && tCount > 0) {
+      return strings.value.isTr ? 'Yapılacaklara eklendi' : 'Added to To-dos';
     }
 
-    await addEntry(
-      act.id,
-      measureId: measureId,
-      qty: qty,
-      at: effectiveAt,
-      endAt: effectiveEndAt,
-    );
+    if (eCount == 1 && tCount == 0) {
+      final entry = batchRes.entries.first;
+      final act = activities[entry.activityId];
+      final emoji = act?.emoji != null && act!.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
+      final amount = amountDetail(entry.measureId, entry.qty);
+      final detail = amount.isEmpty ? '' : ' ($amount)';
+      return strings.value.isTr ? '$emoji${act?.name ?? ""}$detail kaydedildi' : '$emoji${act?.name ?? ""}$detail logged';
+    }
 
-    final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
-    final amount = amountDetail(measureId, qty);
-    final detail = amount.isEmpty ? '' : ' ($amount)';
-    return strings.value.isTr ? '$emoji${act.name}$detail kaydedildi' : '$emoji${act.name}$detail logged';
+    if (eCount > 0 && tCount > 0) {
+      return strings.value.isTr
+          ? '$eCount kayıt, $tCount yapılacak eklendi'
+          : '$eCount ${eCount == 1 ? "entry" : "entries"}, $tCount ${tCount == 1 ? "to-do" : "to-dos"} added';
+    }
+
+    return strings.value.isTr ? '$eCount kayıt eklendi' : '$eCount entries added';
   }
 
   /// Bildirimdeki hızlı butona tıklandığında ilgili aktiviteye son ölçüsüyle 1 adet kayıt ekler.
   Future<String?> logQuickActivity(int activityId) async {
     final act = activity(activityId);
-    final lastMId = stats[activityId]?.lastMeasureId;
+    final defaultPhys = defaultPhysicalMeasureFor(activityId);
+    final lastMId = stats[activityId]?.lastMeasureId ?? defaultPhys?.id;
     final now = DateTime.now();
     final m = measureById(lastMId) ?? defaultMeasureFor(activityId);
     final unitId = m?.unitId;
@@ -1320,9 +1332,29 @@ class AppStore extends ChangeNotifier {
     final targetTime = at ?? DateTime.now();
     DateTime effectiveAt = targetTime;
     DateTime? effectiveEndAt;
+    int? effectiveMeasureId;
+    double? effectiveValue;
+    String? effectiveUnitId;
+    double effectiveQty = 1.0;
+
     if (last != null) {
-      final unitId = last.unitId;
-      final val = last.value ?? (last.measureId != null ? measureById(last.measureId)?.amount : null);
+      effectiveMeasureId = last.measureId;
+      effectiveValue = last.value;
+      effectiveUnitId = last.unitId;
+      effectiveQty = last.qty;
+    } else {
+      final autoM = defaultPhysicalMeasureFor(activityId);
+      if (autoM != null) {
+        effectiveMeasureId = autoM.id;
+        effectiveUnitId = autoM.unitId;
+        effectiveValue = autoM.amount * effectiveQty;
+      }
+    }
+
+    if (effectiveUnitId != null || effectiveMeasureId != null) {
+      final m = measureById(effectiveMeasureId);
+      final unitId = m?.unitId ?? effectiveUnitId;
+      final val = effectiveValue ?? (m != null ? m.amount * effectiveQty : null);
       if ((unitId == 'dk' || unitId == 'sa' || unitId == 'sn') && val != null && val > 0) {
         final durSecs = (val * (unitId == 'sa' ? 3600 : (unitId == 'dk' ? 60 : 1))).round();
         effectiveEndAt = targetTime;
@@ -1330,18 +1362,16 @@ class AppStore extends ChangeNotifier {
       }
     }
 
-    final added = last != null
-        ? (await addEntry(
-            activityId,
-            measureId: last.measureId,
-            qty: last.qty,
-            value: last.value,
-            unitId: last.unitId,
-            note: last.note,
-            at: effectiveAt,
-            endAt: effectiveEndAt,
-          )).entry
-        : (await addEntry(activityId, at: effectiveAt, endAt: effectiveEndAt)).entry;
+    final added = (await addEntry(
+      activityId,
+      measureId: effectiveMeasureId,
+      qty: effectiveQty,
+      value: effectiveValue,
+      unitId: effectiveUnitId,
+      note: last?.note,
+      at: effectiveAt,
+      endAt: effectiveEndAt,
+    )).entry;
 
     final emoji = act.emoji != null && act.emoji!.trim().isNotEmpty ? '${act.emoji!.trim()} ' : '';
     final isTr = strings.value.isTr;
@@ -1850,6 +1880,81 @@ class AppStore extends ChangeNotifier {
       if (unit(m.unitId).dim == targetDim) return m;
     }
     return null;
+  }
+
+  /// Ayrıştırılmış öğeleri (kayıtlar ve yapılacaklar) tek bir toplu işlemde (batch) kaydeder.
+  Future<BatchSaveResult> saveParsedItems(
+    List<ParsedItem> items, {
+    String? note,
+    int? overrideMeasureId,
+    bool hasMeasureOverride = false,
+    double? overrideQty,
+    String? draftEmoji,
+  }) async {
+    final entriesToSave = <BatchEntryInput>[];
+    final todosToSave = <BatchTodoInput>[];
+    final createdActivityIds = <int>[];
+
+    for (final item in items) {
+      if (item is EntryParsedItem) {
+        Activity act;
+        if (item.activity != null) {
+          act = item.activity!;
+        } else {
+          final existing = exactMatch(item.activityName);
+          if (existing != null) {
+            act = existing;
+          } else {
+            act = await addActivity(item.activityName, emoji: draftEmoji);
+            if (!createdActivityIds.contains(act.id)) {
+              createdActivityIds.add(act.id);
+            }
+          }
+        }
+        if (draftEmoji != null && draftEmoji.isNotEmpty && (act.emoji == null || act.emoji!.isEmpty)) {
+          act.emoji = draftEmoji;
+          final d = await db;
+          await d.update('activities', {'emoji': draftEmoji}, where: 'id = ?', whereArgs: [act.id]);
+        }
+
+        final defMeasureId = defaultMeasureFor(act.id)?.id;
+        final mId = (hasMeasureOverride || overrideMeasureId != null)
+            ? overrideMeasureId
+            : (item.measure?.id ?? defMeasureId);
+        final q = overrideQty ?? item.quantity;
+
+        entriesToSave.add(
+          BatchEntryInput(
+            activityId: act.id,
+            measureId: mId,
+            qty: q > 0 ? q : 1.0,
+            at: item.at,
+            endAt: item.endAt,
+            note: note,
+          ),
+        );
+      } else if (item is TodoParsedItem) {
+        todosToSave.add(
+          BatchTodoInput(
+            title: item.title,
+            dueDate: item.dueDate,
+            linkedActivityId: item.suggestedActivity?.id,
+            targetAmount: item.suggestedAmount,
+            targetUnit: item.suggestedUnit,
+          ),
+        );
+      }
+    }
+
+    if (entriesToSave.isEmpty && todosToSave.isEmpty) {
+      return BatchSaveResult(entries: const [], todos: const [], achievedGoals: const [], undo: () async {});
+    }
+
+    return saveBatch(
+      entries: entriesToSave,
+      todos: todosToSave,
+      createdActivityIds: createdActivityIds,
+    );
   }
 
   /// Çoklu kayıt ve yapılacakları tek bir SQLite transaction'ında yazar.
@@ -3750,7 +3855,8 @@ class AppStore extends ChangeNotifier {
         at: targetTime,
       );
     }
-    final lastMeasureId = stats[activityId]?.lastMeasureId;
+    final defaultPhys = defaultPhysicalMeasureFor(activityId);
+    final lastMeasureId = stats[activityId]?.lastMeasureId ?? defaultPhys?.id;
     return addEntry(
       activityId,
       measureId: lastMeasureId,
@@ -3794,7 +3900,9 @@ class AppStore extends ChangeNotifier {
         : DateTime(targetDay.year, targetDay.month, targetDay.day, 12, 0);
 
     // Kural: Süreli aktivite çipine dokunulduğunda saatsiz süreli kayıt şimdi biter (başlangıç = şimdi - süre)
-    final m = measureById(q.measureId) ?? defaultMeasureFor(q.activityId);
+    final autoM = defaultPhysicalMeasureFor(q.activityId);
+    final effectiveMId = q.measureId ?? autoM?.id;
+    final m = measureById(effectiveMId) ?? defaultMeasureFor(q.activityId);
     final unitId = m?.unitId;
     final val = m != null ? m.amount * q.qty : q.qty;
     DateTime effectiveAt = entryTime;
@@ -3807,7 +3915,7 @@ class AppStore extends ChangeNotifier {
 
     final r = await addEntry(
       q.activityId,
-      measureId: q.measureId,
+      measureId: effectiveMId,
       qty: q.qty,
       at: effectiveAt,
       endAt: effectiveEndAt,
@@ -3997,6 +4105,13 @@ class AppStore extends ChangeNotifier {
         if (last != null && last.unitId != null && last.value != null) {
           effectiveUnitId = last.unitId;
           effectiveValue = (last.value! / (last.qty > 0 ? last.qty : 1.0)) * effectiveQty;
+        }
+      }
+
+      if (effectiveMeasureId == null && effectiveValue == null) {
+        final autoM = defaultPhysicalMeasureFor(it.activityId);
+        if (autoM != null) {
+          effectiveMeasureId = autoM.id;
         }
       }
 
@@ -4323,30 +4438,52 @@ class AppStore extends ChangeNotifier {
     } catch (_) {}
   }
 
+  /// Aktivitenin varsayılan ölçüsünün boyutunu denetler.
+  /// Hacim (volume), kütle (mass), mesafe (distance) ve özel (custom) boyutundaki ölçüler tek dokunuşluk yollarda
+  /// otomatik uygulanır; süre (time) ve adet/olay (count/times) boyutlu aktivitelere dokunulmaz.
+  bool isAutoApplyDimension(String dim) {
+    return dim == 'volume' || dim == 'mass' || dim == 'distance' || dim == 'custom';
+  }
+
+  /// Verilen aktivite için otomatik uygulanacak varsayılan fiziksel ölçüyü döner;
+  /// eğer aktivitenin varsayılan ölçüsü yoksa veya boyutu süre/adet ise null döner.
+  Measure? defaultPhysicalMeasureFor(int activityId) {
+    final defM = defaultMeasureFor(activityId);
+    if (defM == null) return null;
+    final dim = unit(defM.unitId).dim;
+    return isAutoApplyDimension(dim) ? defM : null;
+  }
+
   /// Eski ölçüsüz kayıtları (measure_id ve value boş olanlar) varsayılan ölçüyle bir defalık düzeltir.
   /// Ölçülü aktiviteler (hacim, kütle, mesafe, özel ölçü) kapsanır.
   /// Olay/adet, süreli aktiviteler ve dolu kayıtlar atlanır.
   Future<int> fixUnmeasuredEntries() async {
+    final d = await db;
+    // Düzeltme yalnızca bir kez çalışır (ayarlar tablosunda bayrak tutulur).
+    final settingsRows = await d.query('settings', where: 'key = ?', whereArgs: ['unmeasured_entries_fixed']);
+    if (settingsRows.isNotEmpty && settingsRows.first['value'] == 'true') {
+      return 0;
+    }
+
     final toFix = <Entry>[];
     for (final e in entries) {
       if (e.measureId != null || e.value != null) continue;
       if (!activities.containsKey(e.activityId)) continue;
-      final act = activities[e.activityId]!;
 
-      final defM = defaultMeasureFor(act.id);
-      if (defM == null) continue;
-
-      final dim = unit(defM.unitId).dim;
-      // Süreli aktivitelere ve adet/olay aktivitelerine dokunulmaz
-      if (dim == 'time' || dim == 'count' || dim == 'times') continue;
-
-      // Hacim, kütle, mesafe ve özel ölçülü aktiviteler
-      if (dim == 'volume' || dim == 'mass' || dim == 'distance' || dim == 'custom') {
+      final defM = defaultPhysicalMeasureFor(e.activityId);
+      if (defM != null) {
         toFix.add(e);
       }
     }
 
-    if (toFix.isEmpty) return 0;
+    if (toFix.isEmpty) {
+      await d.insert(
+        'settings',
+        {'key': 'unmeasured_entries_fixed', 'value': 'true'},
+        conflictAlgorithm: ConflictAlgorithm.replace,
+      );
+      return 0;
+    }
 
     // Güvenlik: Veri kaybını önlemek için değiştirilecek kayıt varsa önce tam bir yedek al
     try {
@@ -4357,11 +4494,10 @@ class AppStore extends ChangeNotifier {
     }
 
     // Değişikliği tek transaction'da yap
-    final d = await db;
     try {
       await d.transaction((tx) async {
         for (final e in toFix) {
-          final defM = defaultMeasureFor(e.activityId)!;
+          final defM = defaultPhysicalMeasureFor(e.activityId)!;
           final finalVal = defM.amount * e.qty;
           await tx.update(
             'entries',
@@ -4374,6 +4510,11 @@ class AppStore extends ChangeNotifier {
             whereArgs: [e.id],
           );
         }
+        await tx.insert(
+          'settings',
+          {'key': 'unmeasured_entries_fixed', 'value': 'true'},
+          conflictAlgorithm: ConflictAlgorithm.replace,
+        );
       });
     } catch (err, st) {
       debugPrint('Ölçüsüz kayıt düzeltme transaction hatası: $err\n$st');
@@ -4382,7 +4523,7 @@ class AppStore extends ChangeNotifier {
 
     // Bellek nesnelerini güncelle
     for (final e in toFix) {
-      final defM = defaultMeasureFor(e.activityId)!;
+      final defM = defaultPhysicalMeasureFor(e.activityId)!;
       e.measureId = defM.id;
       e.unitId = defM.unitId;
       e.value = defM.amount * e.qty;

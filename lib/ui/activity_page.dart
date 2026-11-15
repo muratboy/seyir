@@ -1349,6 +1349,7 @@ class _ActivityPageState extends State<ActivityPage> {
 
   Future<void> _showQuickAddDialog(BuildContext context, Activity act, bool isTr) async {
     final noteCtrl = TextEditingController();
+    bool saving = false;
     await showDialog<void>(
       context: context,
       builder: (c) => AlertDialog(
@@ -1379,6 +1380,8 @@ class _ActivityPageState extends State<ActivityPage> {
           ),
           FilledButton(
             onPressed: () async {
+              if (saving) return;
+              saving = true;
               Navigator.pop(c);
               await store.addEntry(
                 act.id,

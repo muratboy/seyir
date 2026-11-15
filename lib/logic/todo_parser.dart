@@ -38,13 +38,13 @@ class TodoInputParser {
   }) {
     final currentNow = now ?? DateTime.now();
 
-    final raw = input.trim();
-    if (raw.isEmpty) {
+    final trimmed = input.trim();
+    if (trimmed.isEmpty) {
       return const TodoParsedResult(cleanTitle: '');
     }
 
     final timeResult = TimeParser.parse(
-      raw,
+      trimmed,
       direction: TemporalDirection.future,
       now: currentNow,
     );
@@ -53,19 +53,21 @@ class TodoInputParser {
         ? DateTime(timeResult.dateTime.year, timeResult.dateTime.month, timeResult.dateTime.day)
         : null;
     final matchedKeyword = timeResult.dateKeyword;
-    String cleaned = timeResult.cleanedText;
-    if (cleaned.isEmpty) {
-      cleaned = raw;
+    String cleanTitle = timeResult.cleanedText;
+    if (cleanTitle.isEmpty) {
+      cleanTitle = trimmed;
     }
 
-    // 3. Aktivite ve miktar çıkarımı
+    // 3. Aktivite ve miktar çıkarımı: hedef miktar hesabı için süreler birleştirilir
     Activity? matchedAct;
     double? suggestedAmount;
     String? suggestedUnit;
 
+    final analysisText = TimeParser.collapseCompoundDurations(cleanTitle);
+
     if (activities.isNotEmpty) {
       final nlResult = NaturalLanguageParser.parse(
-        cleaned,
+        analysisText,
         activities: activities,
         measures: measures,
         allowCommands: true,
@@ -75,7 +77,7 @@ class TodoInputParser {
         matchedAct = nlResult.matchedActivity;
       } else {
         // text_match matchScore ile mevcut aktiviteler taranır
-        final cleanWords = cleaned
+        final cleanWords = analysisText
             .toLowerCase()
             .split(' ')
             .where((w) => !w.contains(RegExp(r'\d')) && w != 'dk' && w != 'dakika' && w != 'saat' && w != 'sa')
@@ -103,7 +105,7 @@ class TodoInputParser {
       final mUnitId = m?.unitId;
       final mUnit = mUnitId != null ? builtinUnits.where((u) => u.id == mUnitId).firstOrNull : null;
 
-      final wordsLower = cleaned.toLowerCase().split(RegExp(r'\s+'));
+      final wordsLower = analysisText.toLowerCase().split(RegExp(r'\s+'));
       final hasSecond = wordsLower.any((w) => w.contains('saniye') || w == 'sn' || w.startsWith('sn'));
       final hasMinute = wordsLower.any((w) => w.contains('dakika') || w == 'dk' || w.startsWith('dk'));
       final hasHour = wordsLower.any((w) => w.contains('saat') || w == 'sa');
@@ -134,7 +136,7 @@ class TodoInputParser {
     }
 
     return TodoParsedResult(
-      cleanTitle: cleaned,
+      cleanTitle: cleanTitle,
       date: detectedDate,
       dateKeyword: matchedKeyword,
       suggestedActivity: matchedAct,

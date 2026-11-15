@@ -511,6 +511,49 @@ void main() {
       expect(r2.suggestedUnit, 'dk');
     });
 
+    test('Bileşik süreli yapılacak girdisinde kullanıcının yazdığı süre başlıkta korunur, hedef toplanır', () {
+      final act = Activity(id: 1, name: 'Ders çalışma', emoji: '📚', createdAt: 0);
+      final mMin = Measure(id: 1, name: 'Dakika', unitId: 'dk', amount: 1.0, sort: 0);
+      final mHour = Measure(id: 2, name: 'Saat', unitId: 'sa', amount: 1.0, sort: 1);
+
+      // 1. Hızlı yapılacak ekleme / TodoInputParser
+      final parsed = TodoInputParser.parse(
+        '2 saat 15 dk ders çalış',
+        activities: [act],
+        measures: [mMin, mHour],
+      );
+      expect(parsed.cleanTitle, '2 saat 15 dk ders çalış');
+      expect(parsed.suggestedAmount, 135.0);
+      expect(parsed.suggestedUnit, 'dk');
+      expect(parsed.suggestedActivity?.name, 'Ders çalışma');
+
+      // Tarih kelimesi ayıklanırken süre korunur
+      final parsedWithDate = TodoInputParser.parse(
+        'yarın 2 saat 15 dk ders çalış',
+        activities: [act],
+        measures: [mMin, mHour],
+      );
+      expect(parsedWithDate.cleanTitle, '2 saat 15 dk ders çalış');
+      expect(parsedWithDate.suggestedAmount, 135.0);
+      expect(parsedWithDate.suggestedUnit, 'dk');
+      expect(parsedWithDate.date, isNotNull);
+
+      // 2. Kutunun Yapılacak modu (forceTodo = true)
+      final multiRes = NaturalLanguageParser.parseMulti(
+        '2 saat 15 dk ders çalış',
+        activities: [act],
+        measures: [mMin, mHour],
+        forceTodo: true,
+      );
+      expect(multiRes.isTodoMode, isTrue);
+      expect(multiRes.items.length, 1);
+      final item = multiRes.items.first as TodoParsedItem;
+      expect(item.title, '2 saat 15 dk ders çalış');
+      expect(item.suggestedAmount, 135.0);
+      expect(item.suggestedUnit, 'dk');
+      expect(item.suggestedActivity?.name, 'Ders çalışma');
+    });
+
     test('Birim Genelliği: Mesafe (km) bağlı yapılacak, dönüşüm ve açılan kayıt', () async {
       final s = AppStore();
       await s.load();

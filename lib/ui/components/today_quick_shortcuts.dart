@@ -8,6 +8,8 @@ import '../common.dart';
 import '../app_font.dart';
 
 /// Hızlı kısayollar ve günlük yapılacaklar şeridi (Shortcuts & To-Dos)
+bool _isTappingQuickItem = false;
+
 class TodayQuickShortcuts extends StatelessWidget {
   final DateTime currentDay;
   final Future<void> Function(Activity) onStartTimer;
@@ -77,23 +79,29 @@ class TodayQuickShortcuts extends StatelessWidget {
                 return InkWell(
                   borderRadius: BorderRadius.circular(16),
                   onTap: () async {
-                    final res = await store.tapQuickItem(item.id, at: currentDay);
-                    if (context.mounted) {
-                      if (res.added != null) {
-                        showSnack(
-                          context,
-                          '${act.name} ${s.isTr ? "kaydedildi" : "logged"}',
-                          achieved: res.achieved,
-                          exceeded: res.exceeded,
-                          undo: () => store.deleteEntry(res.added!),
-                        );
-                      } else if (res.removed != null) {
-                        showSnack(
-                          context,
-                          '${act.name} ${s.isTr ? "işareti kaldırıldı" : "unticked"}',
-                          undo: () => store.restoreEntry(res.removed!),
-                        );
+                    if (_isTappingQuickItem) return;
+                    _isTappingQuickItem = true;
+                    try {
+                      final res = await store.tapQuickItem(item.id, at: currentDay);
+                      if (context.mounted) {
+                        if (res.added != null) {
+                          showSnack(
+                            context,
+                            '${act.name} ${s.isTr ? "kaydedildi" : "logged"}',
+                            achieved: res.achieved,
+                            exceeded: res.exceeded,
+                            undo: () => store.deleteEntry(res.added!),
+                          );
+                        } else if (res.removed != null) {
+                          showSnack(
+                            context,
+                            '${act.name} ${s.isTr ? "işareti kaldırıldı" : "unticked"}',
+                            undo: () => store.restoreEntry(res.removed!),
+                          );
+                        }
                       }
+                    } finally {
+                      _isTappingQuickItem = false;
                     }
                   },
                   onLongPress: () => _showQuickItemOptions(context, item),
@@ -163,6 +171,7 @@ class TodayQuickShortcuts extends StatelessWidget {
     var daily = true;
     int? measureId = store.stats[act.id]?.lastMeasureId;
     double qty = 1.0;
+    bool isSaving = false;
 
     await showDialog<void>(
       context: context,
@@ -224,19 +233,31 @@ class TodayQuickShortcuts extends StatelessWidget {
           actions: [
             TextButton(onPressed: () => Navigator.pop(c), child: Text(s.cancel)),
             FilledButton(
-              onPressed: () async {
-                final qItem = QuickItem(
-                  id: 0,
-                  activityId: act.id,
-                  kind: kind,
-                  daily: daily,
-                  measureId: measureId,
-                  qty: qty,
-                  createdAt: DateTime.now().millisecondsSinceEpoch,
-                );
-                await store.saveQuickItem(qItem);
-                if (c.mounted) Navigator.pop(c);
-              },
+              onPressed: isSaving
+                  ? null
+                  : () async {
+                      if (isSaving) return;
+                      setS(() => isSaving = true);
+                      try {
+                        final qItem = QuickItem(
+                          id: 0,
+                          activityId: act.id,
+                          kind: kind,
+                          daily: daily,
+                          measureId: measureId,
+                          qty: qty,
+                          createdAt: DateTime.now().millisecondsSinceEpoch,
+                        );
+                        await store.saveQuickItem(qItem);
+                        if (c.mounted) Navigator.pop(c);
+                      } finally {
+                        if (c.mounted) {
+                          setS(() => isSaving = false);
+                        } else {
+                          isSaving = false;
+                        }
+                      }
+                    },
               child: Text(s.save),
             ),
           ],
