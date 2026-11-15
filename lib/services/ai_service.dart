@@ -237,7 +237,7 @@ class AiService {
       if (p == 'gemini') {
         final cleanModel = activeModel.startsWith('models/') ? activeModel.substring(7) : activeModel;
         final uri = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/$cleanModel:generateContent?key=$key',
+          'https://generativelanguage.googleapis.com/v1beta/models/$cleanModel:generateContent',
         );
         final payload = jsonEncode({
           'contents': [
@@ -251,6 +251,7 @@ class AiService {
 
         final req = await client.postUrl(uri).timeout(const Duration(seconds: 15));
         req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+        req.headers.set('x-goog-api-key', key);
         req.add(utf8.encode(payload));
         final resp = await req.close().timeout(const Duration(seconds: 15));
         final body = await utf8.decodeStream(resp);
@@ -262,6 +263,7 @@ class AiService {
             isTr: isTr,
             provider: provider,
             activeModel: activeModel,
+            apiKey: key,
           );
         }
         return true;
@@ -296,6 +298,7 @@ class AiService {
             isTr: isTr,
             provider: provider,
             activeModel: activeModel,
+            apiKey: key,
           );
         }
         return true;
@@ -310,7 +313,9 @@ class AiService {
     } on IOException catch (e) {
       throw AiException(
         AiProblem.networkError,
-        isTr ? 'Ağ hatası: Sunucuya ulaşılamadı (${e.toString()})' : 'Network error: Cannot reach server (${e.toString()})',
+        isTr
+            ? 'Ağ hatası: Sunucuya ulaşılamadı (${_sanitizeError(e, key)})'
+            : 'Network error: Cannot reach server (${_sanitizeError(e, key)})',
       );
     } finally {
       if (customClient == null) {
@@ -358,7 +363,7 @@ class AiService {
       if (p == 'gemini') {
         final cleanModel = activeModel.startsWith('models/') ? activeModel.substring(7) : activeModel;
         final uri = Uri.parse(
-          'https://generativelanguage.googleapis.com/v1beta/models/$cleanModel:generateContent?key=$key',
+          'https://generativelanguage.googleapis.com/v1beta/models/$cleanModel:generateContent',
         );
         final payload = jsonEncode({
           'contents': [
@@ -375,6 +380,7 @@ class AiService {
 
         final req = await client.postUrl(uri).timeout(timeoutDuration);
         req.headers.set(HttpHeaders.contentTypeHeader, 'application/json');
+        req.headers.set('x-goog-api-key', key);
         req.add(utf8.encode(payload));
         final resp = await req.close().timeout(timeoutDuration);
         final body = await utf8.decodeStream(resp);
@@ -386,6 +392,7 @@ class AiService {
             isTr: isTr,
             provider: provider,
             activeModel: activeModel,
+            apiKey: key,
           );
         }
 
@@ -442,6 +449,7 @@ class AiService {
             isTr: isTr,
             provider: provider,
             activeModel: activeModel,
+            apiKey: key,
           );
         }
 
@@ -483,8 +491,8 @@ class AiService {
       throw AiException(
         AiProblem.networkError,
         isTr
-            ? 'İnternet bağlantısı kurulamadı. Lütfen ağınızı kontrol edin (${e.toString()})'
-            : 'Network connection failed. Please check your network (${e.toString()})',
+            ? 'İnternet bağlantısı kurulamadı. Lütfen ağınızı kontrol edin (${_sanitizeError(e, key)})'
+            : 'Network connection failed. Please check your network (${_sanitizeError(e, key)})',
       );
     } finally {
       if (customClient == null) {
@@ -590,12 +598,23 @@ Important rules:
     }
   }
 
+  /// Hata iletilerinde API anahtarının veya sorgu parametrelerinin görünmesini engeller.
+  static String _sanitizeError(Object error, [String? apiKey]) {
+    var msg = error.toString();
+    if (apiKey != null && apiKey.trim().isNotEmpty) {
+      msg = msg.replaceAll(apiKey.trim(), '***');
+    }
+    msg = msg.replaceAll(RegExp(r'key=[^\s&)]+'), 'key=***');
+    return msg;
+  }
+
   static AiException _parseErrorResponse(
     int status,
     String body, {
     required bool isTr,
     String? provider,
     String? activeModel,
+    String? apiKey,
   }) {
     String detail = '';
     try {
@@ -611,6 +630,9 @@ Important rules:
         }
       }
     } catch (_) {}
+
+    final sanitizedDetail = _sanitizeError(detail, apiKey);
+    final sanitizedBody = _sanitizeError(body, apiKey);
 
     final lower = (detail + body).toLowerCase();
     if (status == 401 || status == 403 || lower.contains('api_key') || lower.contains('invalid api key')) {
@@ -639,8 +661,8 @@ Important rules:
       return AiException(
         AiProblem.modelNotFound,
         isTr
-            ? 'Seçilen yapay zekâ modeli bulunamadı$modelStr. Önerilen model: "$rec". Hata: $detail'
-            : 'Selected AI model not found$modelStr. Recommended model: "$rec". Error: $detail',
+            ? 'Seçilen yapay zekâ modeli bulunamadı$modelStr. Önerilen model: "$rec". Hata: $sanitizedDetail'
+            : 'Selected AI model not found$modelStr. Recommended model: "$rec". Error: $sanitizedDetail',
         statusCode: status,
       );
     }
@@ -648,8 +670,8 @@ Important rules:
     return AiException(
       AiProblem.serverError,
       isTr
-          ? 'Sunucu hatası ($status): ${detail.isNotEmpty ? detail : body}'
-          : 'Server error ($status): ${detail.isNotEmpty ? detail : body}',
+          ? 'Sunucu hatası ($status): ${sanitizedDetail.isNotEmpty ? sanitizedDetail : sanitizedBody}'
+          : 'Server error ($status): ${sanitizedDetail.isNotEmpty ? sanitizedDetail : sanitizedBody}',
       statusCode: status,
     );
   }

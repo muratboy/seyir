@@ -4152,7 +4152,11 @@ class AppStore extends ChangeNotifier {
       'exportedAt': DateTime.now().toIso8601String(),
     };
     for (final t in AppDb.tables) {
-      out[t] = await d.query(t);
+      if (t == 'settings') {
+        out[t] = await d.query(t, where: "key != 'llm_api_key'");
+      } else {
+        out[t] = await d.query(t);
+      }
     }
     return const JsonEncoder.withIndent(' ').convert(out);
   }
@@ -4257,12 +4261,41 @@ class AppStore extends ChangeNotifier {
     }
 
     final d = await db;
+    final existingSettingsRows = await d.query('settings');
+    final existingSettings = {
+      for (final r in existingSettingsRows) r['key'] as String: r['value'] as String,
+    };
+    final currentKey = (existingSettings['llm_api_key'] ?? llmApiKey).trim();
+    final hasCurrentKey = currentKey.isNotEmpty;
+
+    final settingsRows = List<Map<String, Object?>>.from(tables['settings']!);
+    if (hasCurrentKey) {
+      // Cihazda API anahtarı varsa: cihazdaki dört yapay zekâ ayarının hepsi
+      // (sağlayıcı, anahtar, model, uç nokta) korunur; yedektekiler yok sayılır.
+      const aiKeys = {'llm_provider', 'llm_api_key', 'llm_model', 'llm_custom_endpoint'};
+      settingsRows.removeWhere((r) => aiKeys.contains(r['key']));
+      for (final k in aiKeys) {
+        final val = existingSettings[k] ??
+            switch (k) {
+              'llm_provider' => llmProvider,
+              'llm_api_key' => llmApiKey,
+              'llm_model' => llmModel,
+              'llm_custom_endpoint' => llmCustomEndpoint,
+              _ => null,
+            };
+        if (val != null) {
+          settingsRows.add({'key': k, 'value': val});
+        }
+      }
+    }
+
     await d.transaction((tx) async {
       for (final t in AppDb.tables.reversed) {
         await tx.delete(t);
       }
       for (final t in AppDb.tables) {
-        for (final row in tables[t]!) {
+        final rows = t == 'settings' ? settingsRows : tables[t]!;
+        for (final row in rows) {
           await tx.insert(t, row);
         }
       }

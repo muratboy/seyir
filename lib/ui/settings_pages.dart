@@ -865,6 +865,19 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
                   ],
                 ),
               ),
+              const SizedBox(height: 10),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  s.isTr
+                      ? 'Yapay zekâ API anahtarı yedeğe dahil edilmez; geri yüklemede bu cihazdaki anahtar korunur.'
+                      : 'The AI API key is not included in backups; restoring keeps the key on this device.',
+                  style: TextStyle(
+                    fontSize: AppFont.caption,
+                    color: Theme.of(context).colorScheme.onSurfaceVariant,
+                  ),
+                ),
+              ),
               const SizedBox(height: 24),
             ],
           ),

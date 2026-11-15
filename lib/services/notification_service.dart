@@ -123,7 +123,7 @@ class NotificationService {
   static Future<void> handleNotificationAction(NotificationResponse response) async {
     final actionId = response.actionId;
     final payload = response.payload;
-    debugPrint('Notification action: actionId=$actionId, payload=$payload, input=${response.input}');
+    debugPrint('Notification action: actionId=$actionId');
 
     final timerId = int.tryParse(payload ?? '');
     final isQuickLog = actionId != null && actionId.startsWith('quick_log_');
