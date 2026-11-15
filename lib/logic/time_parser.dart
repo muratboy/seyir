@@ -119,17 +119,31 @@ class TimeParser {
     });
 
     // 4. Dakika + Saniye
-    // İngilizce dakika parçası: yalın s kabul edilir ("1m 30s", "1 min 30 s")
-    final msEnRegex = RegExp(
-      r'(?:^|\b)(\d+)\s*(minutes?|mins?|min|m)\s*(\d+)\s*(seconds?|secs?|sec|s|saniye|sn)(?:\b|$)',
+    // İngilizce dakika parçası:
+    // Açık dakika birimi ("1 min 30 s", "2 minutes 10 sn")
+    final msExplicitEnRegex = RegExp(
+      r'(?:^|\b)(\d+)\s*(minutes?|mins?|min)\s*(\d+)\s*(seconds?|secs?|sec|s|saniye|sn)(?:\b|$)',
       caseSensitive: false,
     );
-    text = text.replaceAllMapped(msEnRegex, (m) {
+    text = text.replaceAllMapped(msExplicitEnRegex, (m) {
       final min = int.parse(m.group(1)!);
       final s = int.parse(m.group(3)!);
       final total = min * 60 + s;
       final en = isEnUnit(m.group(2)!) || isEnUnit(m.group(4)!);
       return '$total ${en ? "sec" : "sn"}';
+    });
+
+    // Yalın m yalnızca saniye parçası da İngilizce yazılmışsa dakika sayılır ("1m 30s", "1 m 30 sec").
+    // Saniye parçası sn / saniye ise m metre kabul edilir ("100 m 30 sn yüzme" toplanmaz).
+    final msShortEnRegex = RegExp(
+      r'(?:^|\b)(\d+)\s*m\s*(\d+)\s*(seconds?|secs?|sec|s)(?:\b|$)',
+      caseSensitive: false,
+    );
+    text = text.replaceAllMapped(msShortEnRegex, (m) {
+      final min = int.parse(m.group(1)!);
+      final s = int.parse(m.group(2)!);
+      final total = min * 60 + s;
+      return '$total sec';
     });
 
     // Türkçe dakika parçası: yalın s kabul edilmez ("1 dk 30 sn" geçerli, "1 dk 30 s" yalın s geçersiz)

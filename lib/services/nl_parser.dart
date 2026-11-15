@@ -26,6 +26,7 @@ class EntryParsedItem extends ParsedItem {
   final double quantity;
   final DateTime at;
   final DateTime? endAt;
+  final bool hasTimeRange;
   final bool hasExplicitTime;
   final bool hasExplicitDate;
   final bool isExplicitFuture;
@@ -46,6 +47,7 @@ class EntryParsedItem extends ParsedItem {
     required this.quantity,
     required this.at,
     this.endAt,
+    this.hasTimeRange = false,
     this.hasExplicitTime = false,
     this.hasExplicitDate = false,
     this.isExplicitFuture = false,
@@ -57,7 +59,7 @@ class EntryParsedItem extends ParsedItem {
     List<Todo>? willCompleteTodos,
   }) : willCompleteTodos = willCompleteTodos ?? (willCompleteTodo != null ? [willCompleteTodo] : const []);
 
-  TodoParsedItem toTodoItem() {
+  TodoParsedItem toTodoItem({bool autoConvertedFromFuture = false}) {
     return TodoParsedItem(
       rawText: rawText,
       title: activity?.name ?? activityName,
@@ -66,6 +68,7 @@ class EntryParsedItem extends ParsedItem {
       suggestedActivity: activity,
       suggestedAmount: quantity > 0 ? quantity : null,
       suggestedUnit: measure?.unitId ?? measure?.name ?? activity?.name,
+      autoConvertedFromFuture: autoConvertedFromFuture,
     );
   }
 
@@ -76,6 +79,7 @@ class EntryParsedItem extends ParsedItem {
     double? quantity,
     DateTime? at,
     DateTime? endAt,
+    bool? hasTimeRange,
     bool? hasExplicitTime,
     bool? hasExplicitDate,
     bool? isExplicitFuture,
@@ -94,6 +98,7 @@ class EntryParsedItem extends ParsedItem {
         quantity: quantity ?? this.quantity,
         at: at ?? this.at,
         endAt: endAt ?? this.endAt,
+        hasTimeRange: hasTimeRange ?? this.hasTimeRange,
         hasExplicitTime: hasExplicitTime ?? this.hasExplicitTime,
         hasExplicitDate: hasExplicitDate ?? this.hasExplicitDate,
         isExplicitFuture: isExplicitFuture ?? this.isExplicitFuture,
@@ -114,6 +119,7 @@ class TodoParsedItem extends ParsedItem {
   final Activity? suggestedActivity;
   final double? suggestedAmount;
   final String? suggestedUnit;
+  final bool autoConvertedFromFuture;
 
   TodoParsedItem({
     required this.rawText,
@@ -123,6 +129,7 @@ class TodoParsedItem extends ParsedItem {
     this.suggestedActivity,
     this.suggestedAmount,
     this.suggestedUnit,
+    this.autoConvertedFromFuture = false,
   });
 
   TodoParsedItem copyWith({
@@ -132,6 +139,7 @@ class TodoParsedItem extends ParsedItem {
     Activity? suggestedActivity,
     double? suggestedAmount,
     String? suggestedUnit,
+    bool? autoConvertedFromFuture,
   }) =>
       TodoParsedItem(
         rawText: rawText,
@@ -141,6 +149,7 @@ class TodoParsedItem extends ParsedItem {
         suggestedActivity: suggestedActivity ?? this.suggestedActivity,
         suggestedAmount: suggestedAmount ?? this.suggestedAmount,
         suggestedUnit: suggestedUnit ?? this.suggestedUnit,
+        autoConvertedFromFuture: autoConvertedFromFuture ?? this.autoConvertedFromFuture,
       );
 }
 
@@ -1214,7 +1223,7 @@ class NaturalLanguageParser {
     }
 
     // Kayıt modu (Record mode)
-    final cleanInput = TimeParser.collapseCompoundDurations(trimmedInput);
+    final cleanInput = trimmedInput;
     TimeParseResult? sharedTime;
     String workingInput = cleanInput;
 
@@ -1357,6 +1366,7 @@ class NaturalLanguageParser {
           quantity: effectiveQty,
           at: itemStartAt,
           endAt: itemEndAt,
+          hasTimeRange: effectiveTime.rangeMinutes != null,
           hasExplicitTime: effectiveTime.hasExplicitTime,
           hasExplicitDate: effectiveTime.hasExplicitDate,
           isExplicitFuture: effectiveTime.isExplicitFuture,
@@ -1388,5 +1398,47 @@ class NaturalLanguageParser {
       isTodoMode: false,
       items: items,
     );
+  }
+
+  /// Açıkça gelecek bir zamanı gösteren kayıt öğelerini yapılacak öğesine dönüştürür.
+  /// Kutu ayrıştırması, zaman çipi seçimi ve hızlı bildirim kaydı bu ortak kuralı kullanır.
+  static List<ParsedItem> convertFutureEntriesToTodos(
+    List<ParsedItem> items, {
+    List<Activity> activities = const [],
+    List<Measure> measures = const [],
+    DateTime? now,
+  }) {
+    return items.map((item) {
+      if (item is EntryParsedItem && item.isExplicitFuture) {
+        final acts = activities.isNotEmpty
+            ? activities
+            : (item.activity != null ? [item.activity!] : const <Activity>[]);
+        final ms = measures.isNotEmpty
+            ? measures
+            : (item.measure != null ? [item.measure!] : const <Measure>[]);
+
+        final todoParsed = TodoInputParser.parse(
+          item.rawText,
+          activities: acts,
+          measures: ms,
+          now: now,
+        );
+
+        final dueDate = item.at;
+        final dateKeyword = todoParsed.dateKeyword ?? item.timeKeyword;
+
+        return TodoParsedItem(
+          rawText: item.rawText,
+          title: todoParsed.cleanTitle.isNotEmpty ? todoParsed.cleanTitle : (item.activity?.name ?? item.activityName),
+          dueDate: dueDate,
+          dateKeyword: dateKeyword,
+          suggestedActivity: todoParsed.suggestedActivity ?? item.activity,
+          suggestedAmount: todoParsed.suggestedAmount,
+          suggestedUnit: todoParsed.suggestedUnit,
+          autoConvertedFromFuture: true,
+        );
+      }
+      return item;
+    }).toList();
   }
 }

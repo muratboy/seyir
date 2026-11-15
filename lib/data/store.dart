@@ -710,12 +710,11 @@ class AppStore extends ChangeNotifier {
     if (multiResult.items.isEmpty) return null;
 
     // Açıkça gelecek bir zamanı gösteren kayıt öğeleri hızlı kayıtta yapılacak olarak eklenir
-    final itemsToSave = multiResult.items.map((item) {
-      if (item is EntryParsedItem && item.isExplicitFuture) {
-        return item.toTodoItem();
-      }
-      return item;
-    }).toList();
+    final itemsToSave = NaturalLanguageParser.convertFutureEntriesToTodos(
+      multiResult.items,
+      activities: activities.values.toList(),
+      measures: measures,
+    );
 
     // Tek öğeli sayaç komutuysa sayaç başlar
     if (itemsToSave.length == 1 && itemsToSave.first is EntryParsedItem) {

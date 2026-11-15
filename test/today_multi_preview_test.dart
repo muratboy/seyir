@@ -74,23 +74,16 @@ void main() {
     await finish(tester);
   });
 
-  testWidgets('future entry shows warning and can be converted to todo with chip', (tester) async {
+  testWidgets('future entry automatically converts to todo with explanation and saves as todo', (tester) async {
     await pumpToday(tester);
 
     await tester.enterText(composerField, 'yarin 2 kahve');
     await tester.pump();
 
-    // Gelecek zaman uyarısı ve dönüştürme çipi görünür
-    expect(find.text('Gelecek zaman'), findsOneWidget);
-    expect(find.text('Yapılacak olarak ekle'), findsOneWidget);
-
-    // Dönüştürme çipine dokun
-    await tester.tap(find.text('Yapılacak olarak ekle'));
-    await tester.pump();
-
-    // Artık to-do öğesine dönüştü, "Gelecek zaman" uyarısı kalktı
-    expect(find.text('Gelecek zaman'), findsNothing);
+    // Kendiliğinden yapılacak öğesine dönüşür, açıklama satırı görünür
+    expect(find.text('Gelecek zamanlı olduğu için yapılacak olarak eklenecek'), findsOneWidget);
     expect(find.byIcon(Icons.check_circle_outline), findsOneWidget);
+    expect(tester.widget<IconButton>(submitButton).tooltip, 'Yapılacak ekle');
 
     // Kaydet düğmesine bas
     await tester.tap(submitButton);
@@ -98,6 +91,7 @@ void main() {
 
     // Yapılacak oluştu, kayıt oluşmadı
     expect(store.todos.any((t) => t.title.toLowerCase().contains('kahve')), isTrue);
+    expect(store.entries.isEmpty, isTrue);
 
     await finish(tester);
   });

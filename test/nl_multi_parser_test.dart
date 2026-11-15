@@ -302,12 +302,20 @@ void main() {
       final t2 = TimeParser.collapseCompoundDurations('2 saat 500 m yürüyüş');
       expect(t2, '2 saat 500 m yürüyüş');
 
+      // "100 m 30 sn yüzme" girdisinde m metre olduğu için sn ile birleşmez
+      final tMeter = TimeParser.collapseCompoundDurations('100 m 30 sn yüzme');
+      expect(tMeter, '100 m 30 sn yüzme');
+
       // İngilizce saat kısaltmasıyla yalın m ve s geçerlidir
       final t3 = TimeParser.collapseCompoundDurations('1h 30m study');
       expect(t3, '90 min study');
 
       final t4 = TimeParser.collapseCompoundDurations('1 hr 30 min');
       expect(t4, '90 min');
+
+      // Yalın m ve s İngilizce birleşimi
+      final tMsEn = TimeParser.collapseCompoundDurations('1m 30s');
+      expect(tMsEn, '90 sec');
 
       // Türkçe bileşik süreler
       final t5 = TimeParser.collapseCompoundDurations('2 saat 15 dk');

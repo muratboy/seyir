@@ -49,12 +49,16 @@ class _ComposerPlan {
   /// Metin sayaç komutu olarak da okunabiliyor: önizleme öbür okumaya geçmeyi önerir.
   final bool canBeCommand;
 
+  /// Metinde, zaman aralığında veya kullanıcının dokunuşunda miktar/ölçü açıkça belirtildi mi.
+  final bool hasExplicitAmount;
+
   const _ComposerPlan({
     required this.parsed,
     required this.existing,
     required this.measureId,
     required this.qty,
     required this.canBeCommand,
+    required this.hasExplicitAmount,
   });
 
   /// Sayaç başlatılacaksa modu ve süresi; kayıt eklenecekse null.
@@ -425,7 +429,12 @@ class _TodayViewState extends State<_TodayView> {
       predictCompletedTodos: store.predictCompletedTodos,
       forceTodo: _isTodoMode,
     );
-    return multi.items;
+    return NaturalLanguageParser.convertFutureEntriesToTodos(
+      multi.items,
+      activities: _forceNew ? const [] : store.activities.values.toList(),
+      measures: store.measures,
+      now: DateTime.now(),
+    );
   }
 
   /// Kutuya yazılanın gönder düğmesine basılınca neye dönüşeceği; aktivite listeden seçildiyse ya da kutu
@@ -451,21 +460,31 @@ class _TodayViewState extends State<_TodayView> {
     final canBeCommand = withCommands.timerCommand != null;
     final parsed = canBeCommand && _asEntry ? read(commands: false) : withCommands;
 
-    final hasExplicitAmount = parsed.hasExplicitQuantity || parsed.matchedMeasure != null;
+    final hasExplicitAmount = parsed.hasExplicitQuantity ||
+        parsed.hasExplicitMeasure ||
+        firstItem.parseResult.hasExplicitQuantity ||
+        firstItem.parseResult.hasExplicitMeasure ||
+        firstItem.hasTimeRange;
     final existingAct = firstItem.activity ?? store.exactMatch(firstItem.activityName);
     final defMeasureId = (existingAct != null && hasExplicitAmount)
         ? store.defaultMeasureFor(existingAct.id)?.id
         : null;
     final effMeasureId = _measureTouched
         ? _selectedMeasureId
-        : (parsed.matchedMeasure?.id ?? defMeasureId ?? _selectedMeasureId);
+        : (firstItem.measure?.id ?? parsed.matchedMeasure?.id ?? defMeasureId ?? _selectedMeasureId);
+    final effQty = _qtyTouched
+        ? _qty
+        : (firstItem.quantity > 0
+            ? firstItem.quantity
+            : (parsed.quantity > 0 ? parsed.quantity : _qty));
 
     return _ComposerPlan(
       parsed: parsed,
       existing: existingAct,
       measureId: effMeasureId,
-      qty: _qtyTouched ? _qty : (parsed.quantity > 0 ? parsed.quantity : _qty),
+      qty: effQty,
       canBeCommand: canBeCommand,
+      hasExplicitAmount: hasExplicitAmount,
     );
   }
 
@@ -516,13 +535,21 @@ class _TodayViewState extends State<_TodayView> {
       if (index >= 0 && index < items.length) {
         final item = items[index];
         if (item is EntryParsedItem) {
+          final dur = item.endAt?.difference(item.at);
+          final newEndDt = dur != null ? newDt.add(dur) : null;
           items[index] = item.copyWith(
             at: newDt,
+            endAt: newEndDt,
             hasExplicitDate: true,
             hasExplicitTime: true,
             isExplicitFuture: newDt.isAfter(DateTime.now()),
           );
-          _customItems = items;
+          _customItems = NaturalLanguageParser.convertFutureEntriesToTodos(
+            items,
+            activities: _forceNew ? const [] : store.activities.values.toList(),
+            measures: store.measures,
+            now: DateTime.now(),
+          );
         }
       }
     });
@@ -542,19 +569,24 @@ class _TodayViewState extends State<_TodayView> {
       if (index >= 0 && index < items.length) {
         final item = items[index];
         if (item is TodoParsedItem) {
-          items[index] = item.copyWith(dueDate: pickedDate);
+          items[index] = item.copyWith(
+            dueDate: pickedDate,
+            autoConvertedFromFuture: false,
+          );
           _customItems = items;
         }
       }
     });
   }
 
-  String _formatTimeChip(DateTime dt, {required bool isTr}) {
+  String _formatTimeChip(DateTime dt, {DateTime? endDt, required bool isTr}) {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final targetDay = DateTime(dt.year, dt.month, dt.day);
-    final diffDays = targetDay.difference(today).inDays;
-    final timeStr = DateFormat('HH:mm').format(dt);
+    final diffDays = calendarDaysBetween(today, targetDay);
+    final timeStr = endDt != null
+        ? '${DateFormat('HH:mm').format(dt)}–${DateFormat('HH:mm').format(endDt)}'
+        : DateFormat('HH:mm').format(dt);
 
     if (diffDays == 0) {
       return timeStr;
@@ -574,7 +606,7 @@ class _TodayViewState extends State<_TodayView> {
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
     final targetDay = DateTime(dt.year, dt.month, dt.day);
-    final diffDays = targetDay.difference(today).inDays;
+    final diffDays = calendarDaysBetween(today, targetDay);
 
     if (diffDays == 0) {
       return isTr ? 'Bugün' : 'Today';
@@ -634,7 +666,7 @@ class _TodayViewState extends State<_TodayView> {
       return '$who: $what';
     }
 
-    final hasAmountInText = plan.parsed.hasExplicitQuantity || plan.parsed.hasExplicitMeasure || _measureTouched || _qtyTouched;
+    final hasAmountInText = plan.hasExplicitAmount || _measureTouched || _qtyTouched;
     final amount = hasAmountInText
         ? store.amountDetail(plan.measureId, plan.qty, activityId: act?.id)
         : '';
@@ -667,15 +699,11 @@ class _TodayViewState extends State<_TodayView> {
 
     final allTodos = items.every((i) => i is TodoParsedItem);
     if (!allTodos && items.length == 1 && items.first is EntryParsedItem) {
-      final entryItem = items.first as EntryParsedItem;
-      if (!entryItem.isExplicitFuture) {
-        final plan = _plan();
-        final hasExplicitAmount = plan != null &&
-            (plan.parsed.hasExplicitQuantity || plan.parsed.hasExplicitMeasure);
-        if (!_showOptions && plan != null && plan.timer == null && !hasExplicitAmount) {
-          setState(() => _showOptions = true);
-          return;
-        }
+      final plan = _plan();
+      final hasExplicitAmount = plan != null && plan.hasExplicitAmount;
+      if (!_showOptions && plan != null && plan.timer == null && !hasExplicitAmount) {
+        setState(() => _showOptions = true);
+        return;
       }
     }
 
@@ -732,22 +760,6 @@ class _TodayViewState extends State<_TodayView> {
       }
 
       _resetComposer();
-      return;
-    }
-
-    // Gelecek zaman kontrolü
-    final hasUnconvertedFuture = items.any((i) => i is EntryParsedItem && i.isExplicitFuture);
-    if (hasUnconvertedFuture) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(
-            s.isTr
-                ? 'Gelecek zamanlı kayıtlar eklenemez. Lütfen "Yapılacak olarak ekle"ye dokunun.'
-                : 'Future entries cannot be logged. Please tap "Add as to-do".',
-          ),
-          duration: const Duration(seconds: 3),
-        ),
-      );
       return;
     }
 
@@ -947,49 +959,33 @@ class _TodayViewState extends State<_TodayView> {
                         amountStr,
                         style: TextStyle(fontSize: AppFont.small, color: scheme.onSurfaceVariant),
                       ),
-                    if (item.isExplicitFuture) ...[
-                      Container(
+                    InkWell(
+                      onTap: () => _convertToTodo(idx),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
                         padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: scheme.errorContainer,
+                          color: scheme.primaryContainer,
                           borderRadius: BorderRadius.circular(6),
                         ),
-                        child: Text(
-                          isTr ? 'Gelecek zaman' : 'Future time',
-                          style: TextStyle(
-                            fontSize: AppFont.micro,
-                            color: scheme.onErrorContainer,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
-                      InkWell(
-                        onTap: () => _convertToTodo(idx),
-                        borderRadius: BorderRadius.circular(6),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                          decoration: BoxDecoration(
-                            color: scheme.primaryContainer,
-                            borderRadius: BorderRadius.circular(6),
-                          ),
-                          child: Row(
-                            mainAxisSize: MainAxisSize.min,
-                            children: [
-                              Icon(Icons.add_task, size: 12, color: scheme.primary),
-                              const SizedBox(width: 3),
-                              Text(
-                                isTr ? 'Yapılacak olarak ekle' : 'Add as to-do',
-                                style: TextStyle(
-                                  fontSize: AppFont.micro,
-                                  color: scheme.primary,
-                                  fontWeight: FontWeight.bold,
-                                ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.add_task, size: 12, color: scheme.primary),
+                            const SizedBox(width: 3),
+                            Text(
+                              isTr ? 'Yapılacak olarak ekle' : 'Add as to-do',
+                              style: TextStyle(
+                                fontSize: AppFont.micro,
+                                color: scheme.primary,
+                                fontWeight: FontWeight.bold,
                               ),
-                            ],
-                          ),
+                            ),
+                          ],
                         ),
                       ),
-                    ] else if (item.hasExplicitDate || item.hasExplicitTime || item.isRelative) ...[
+                    ),
+                    if (item.hasExplicitDate || item.hasExplicitTime || item.hasTimeRange || item.isRelative) ...[
                       InkWell(
                         onTap: () => _pickDateTime(idx, item.at),
                         borderRadius: BorderRadius.circular(6),
@@ -1005,7 +1001,7 @@ class _TodayViewState extends State<_TodayView> {
                               Icon(Icons.access_time, size: 12, color: scheme.primary),
                               const SizedBox(width: 3),
                               Text(
-                                _formatTimeChip(item.at, isTr: isTr),
+                                _formatTimeChip(item.at, endDt: item.hasTimeRange ? item.endAt : null, isTr: isTr),
                                 style: TextStyle(
                                   fontSize: AppFont.micro,
                                   color: scheme.primary,
@@ -1066,82 +1062,110 @@ class _TodayViewState extends State<_TodayView> {
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 4),
-      child: Row(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
         children: [
-          Icon(Icons.check_circle_outline, size: 18, color: scheme.primary),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Wrap(
-              crossAxisAlignment: WrapCrossAlignment.center,
-              spacing: 6,
-              runSpacing: 2,
-              children: [
-                Text(
-                  item.title,
-                  style: const TextStyle(fontSize: AppFont.body, fontWeight: FontWeight.bold),
-                ),
-                InkWell(
-                  onTap: () => _pickTodoDate(idx, item.dueDate ?? DateTime.now()),
-                  borderRadius: BorderRadius.circular(6),
-                  child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: scheme.primary.withValues(alpha: 0.12),
-                      borderRadius: BorderRadius.circular(6),
+          Row(
+            children: [
+              Icon(Icons.check_circle_outline, size: 18, color: scheme.primary),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Wrap(
+                  crossAxisAlignment: WrapCrossAlignment.center,
+                  spacing: 6,
+                  runSpacing: 2,
+                  children: [
+                    Text(
+                      item.title,
+                      style: const TextStyle(fontSize: AppFont.body, fontWeight: FontWeight.bold),
                     ),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.calendar_today, size: 12, color: scheme.primary),
-                        const SizedBox(width: 3),
-                        Text(
-                          dateText,
-                          style: TextStyle(fontSize: AppFont.micro, color: scheme.primary, fontWeight: FontWeight.w600),
+                    InkWell(
+                      onTap: () => _pickTodoDate(idx, item.dueDate ?? DateTime.now()),
+                      borderRadius: BorderRadius.circular(6),
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: scheme.primary.withValues(alpha: 0.12),
+                          borderRadius: BorderRadius.circular(6),
                         ),
-                      ],
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.calendar_today, size: 12, color: scheme.primary),
+                            const SizedBox(width: 3),
+                            Text(
+                              dateText,
+                              style: TextStyle(fontSize: AppFont.micro, color: scheme.primary, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ),
+                      ),
                     ),
-                  ),
+                    if (item.suggestedActivity != null)
+                      Container(
+                        constraints: const BoxConstraints(maxWidth: 220),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${item.suggestedActivity!.emoji ?? ""} ${item.suggestedActivity!.name}${item.suggestedAmount != null ? " · ${fmtNum(item.suggestedAmount!)}$unitSymbol" : ""}'.trim(),
+                          style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      )
+                    else if (item.suggestedAmount != null)
+                      Container(
+                        constraints: const BoxConstraints(maxWidth: 120),
+                        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: scheme.surfaceContainerHighest,
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: Text(
+                          '${fmtNum(item.suggestedAmount!)}$unitSymbol'.trim(),
+                          style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
+                          overflow: TextOverflow.ellipsis,
+                          maxLines: 1,
+                        ),
+                      ),
+                  ],
                 ),
-                if (item.suggestedActivity != null)
-                  Container(
-                    constraints: const BoxConstraints(maxWidth: 220),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
+              ),
+              IconButton(
+                icon: const Icon(Icons.close, size: 16),
+                visualDensity: VisualDensity.compact,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
+                onPressed: () => _removeItem(idx),
+              ),
+            ],
+          ),
+          if (item.autoConvertedFromFuture && !_isTodoMode)
+            Padding(
+              padding: const EdgeInsets.only(left: 26, top: 2),
+              child: Row(
+                children: [
+                  Icon(Icons.info_outline, size: 12, color: scheme.primary),
+                  const SizedBox(width: 4),
+                  Expanded(
                     child: Text(
-                      '${item.suggestedActivity!.emoji ?? ""} ${item.suggestedActivity!.name}${item.suggestedAmount != null ? " · ${fmtNum(item.suggestedAmount!)}$unitSymbol" : ""}'.trim(),
-                      style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
-                    ),
-                  )
-                else if (item.suggestedAmount != null)
-                  Container(
-                    constraints: const BoxConstraints(maxWidth: 120),
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                    decoration: BoxDecoration(
-                      color: scheme.surfaceContainerHighest,
-                      borderRadius: BorderRadius.circular(6),
-                    ),
-                    child: Text(
-                      '${fmtNum(item.suggestedAmount!)}$unitSymbol'.trim(),
-                      style: TextStyle(fontSize: AppFont.micro, color: scheme.onSurfaceVariant),
-                      overflow: TextOverflow.ellipsis,
-                      maxLines: 1,
+                      isTr
+                          ? 'Gelecek zamanlı olduğu için yapılacak olarak eklenecek'
+                          : 'Future time: will be added as a to-do',
+                      style: TextStyle(
+                        fontSize: AppFont.micro,
+                        color: scheme.primary,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
-              ],
+                ],
+              ),
             ),
-          ),
-          IconButton(
-            icon: const Icon(Icons.close, size: 16),
-            visualDensity: VisualDensity.compact,
-            padding: EdgeInsets.zero,
-            constraints: const BoxConstraints(minWidth: 24, minHeight: 24),
-            onPressed: () => _removeItem(idx),
-          ),
         ],
       ),
     );
@@ -1444,75 +1468,53 @@ class _TodayViewState extends State<_TodayView> {
               if (items.length > 1 || (items.isNotEmpty && items.first is TodoParsedItem)) ...[
                 _buildMultiItemPreview(items),
               ] else if (plan != null) ...[
-                if (singleEntry != null && singleEntry.isExplicitFuture) ...[
-                  Padding(
-                    padding: const EdgeInsets.only(left: 6, bottom: 6),
-                    child: Wrap(
-                      crossAxisAlignment: WrapCrossAlignment.center,
-                      spacing: 6,
-                      runSpacing: 4,
-                      children: [
-                        Row(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.warning_amber_rounded, size: 16, color: Theme.of(context).colorScheme.error),
-                            const SizedBox(width: 6),
-                            Text(
-                              s.isTr ? 'Gelecek zaman' : 'Future time',
-                              style: TextStyle(
-                                fontSize: AppFont.small,
-                                color: Theme.of(context).colorScheme.error,
-                                fontWeight: FontWeight.bold,
-                              ),
+                _ComposerPreview(
+                  startsTimer: startsTimer,
+                  text: _planText(plan),
+                  otherLabel: plan.canBeCommand ? (startsTimer ? s.previewAsEntry : s.previewAsTimer) : null,
+                  onOther: () => setState(() => _asEntry = !_asEntry),
+                  onToggleOptions: () => setState(() => _showOptions = !_showOptions),
+                  optionsOpen: _showOptions,
+                  timeChip: singleEntry != null &&
+                          !startsTimer &&
+                          (!plan.canBeCommand ||
+                              singleEntry.hasExplicitDate ||
+                              singleEntry.hasExplicitTime ||
+                              singleEntry.hasTimeRange ||
+                              singleEntry.isRelative)
+                      ? InkWell(
+                          key: const Key('composer-time-chip'),
+                          onTap: () => _pickDateTime(0, singleEntry.at),
+                          borderRadius: BorderRadius.circular(6),
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                            decoration: BoxDecoration(
+                              color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
+                              borderRadius: BorderRadius.circular(6),
                             ),
-                          ],
-                        ),
-                        ActionChip(
-                          avatar: const Icon(Icons.add_task, size: 14),
-                          label: Text(s.isTr ? 'Yapılacak olarak ekle' : 'Add as to-do'),
-                          onPressed: () => _convertToTodo(0),
-                        ),
-                      ],
-                    ),
-                  ),
-                ] else ...[
-                  _ComposerPreview(
-                    startsTimer: startsTimer,
-                    text: _planText(plan),
-                    otherLabel: plan.canBeCommand ? (startsTimer ? s.previewAsEntry : s.previewAsTimer) : null,
-                    onOther: () => setState(() => _asEntry = !_asEntry),
-                    onToggleOptions: () => setState(() => _showOptions = !_showOptions),
-                    optionsOpen: _showOptions,
-                    timeChip: singleEntry != null &&
-                            (singleEntry.hasExplicitDate || singleEntry.hasExplicitTime || singleEntry.isRelative)
-                        ? InkWell(
-                            onTap: () => _pickDateTime(0, singleEntry.at),
-                            borderRadius: BorderRadius.circular(6),
-                            child: Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Theme.of(context).colorScheme.primary.withValues(alpha: 0.12),
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(Icons.access_time, size: 12, color: Theme.of(context).colorScheme.primary),
-                                  const SizedBox(width: 3),
-                                  Text(
-                                    _formatTimeChip(singleEntry.at, isTr: s.isTr),
-                                    style: TextStyle(
-                                      fontSize: AppFont.micro,
-                                      color: Theme.of(context).colorScheme.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
+                            child: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.access_time, size: 12, color: Theme.of(context).colorScheme.primary),
+                                const SizedBox(width: 3),
+                                Text(
+                                  _formatTimeChip(
+                                    singleEntry.at,
+                                    endDt: singleEntry.hasTimeRange ? singleEntry.endAt : null,
+                                    isTr: s.isTr,
                                   ),
-                                ],
-                              ),
+                                  style: TextStyle(
+                                    fontSize: AppFont.micro,
+                                    color: Theme.of(context).colorScheme.primary,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ],
                             ),
-                          )
-                        : null,
-                  ),
+                          ),
+                        )
+                      : null,
+                ),
                   Builder(builder: (c) {
                     final willCompletes = singleEntry?.willCompleteTodos ?? const [];
                     if (willCompletes.isEmpty || startsTimer) return const SizedBox.shrink();
@@ -1545,7 +1547,6 @@ class _TodayViewState extends State<_TodayView> {
                     );
                   }),
                 ],
-              ],
 
               Row(
                 children: [

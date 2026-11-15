@@ -346,15 +346,15 @@ void main() {
       expect(isSegmentSelected(tester, const Key('mode-selector-entry')), isFalse);
       expect(tester.widget<IconButton>(submitButton).tooltip, 'Yapılacak ekle');
 
-      // Kayıt'a bas
+      // Kayıt'a bas (metin geleceği gösterdiği için öğe yapılacak kalır ve açıklama satırı çıkar)
       await tester.tap(find.byKey(const Key('mode-selector-entry')));
       await tester.pump();
 
       expect(tester.widget<TextField>(composerField).controller?.text, 'yarın dişçiyi ara');
-      expect(isSegmentSelected(tester, const Key('mode-selector-entry')), isTrue);
-      expect(isSegmentSelected(tester, const Key('mode-selector-todo')), isFalse);
-      // Gelecek zaman uyarısı çıkmalı
-      expect(find.text('Gelecek zaman'), findsOneWidget);
+      expect(isSegmentSelected(tester, const Key('mode-selector-todo')), isTrue);
+      expect(isSegmentSelected(tester, const Key('mode-selector-entry')), isFalse);
+      expect(find.text('Gelecek zamanlı olduğu için yapılacak olarak eklenecek'), findsOneWidget);
+      expect(tester.widget<IconButton>(submitButton).tooltip, 'Yapılacak ekle');
 
       await finish(tester);
     });
@@ -404,8 +404,8 @@ void main() {
       });
       await pumpToday(tester);
 
-      // 'koşu ve yarın yüzme' yaz (ikinci öğe gelecek zamanlı olduğu için 'Yapılacak olarak ekle' çipi çıkar)
-      await tester.enterText(composerField, 'koşu ve yarın yüzme');
+      // 'koşu ve yüzme' yaz (iki öğe de geçmiş/şimdiki zamanlı kayıt olarak başlar)
+      await tester.enterText(composerField, 'koşu ve yüzme');
       await tester.pump();
 
       expect(isSegmentSelected(tester, const Key('mode-selector-entry')), isTrue);

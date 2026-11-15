@@ -253,7 +253,7 @@ void main() {
       expect(store.todos.length, todosBefore + 1);
 
       final addedTodo = store.todos.last;
-      expect(addedTodo.title, 'Koşu');
+      expect(addedTodo.title, '30 dk koşu');
       expect(addedTodo.targetAmount, 30.0);
       expect(addedTodo.targetUnit, 'dk');
       expect(addedTodo.dueDate, isNotNull);
