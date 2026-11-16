@@ -45,7 +45,17 @@ List<TrendInsight> computeWeeklyInsights({
   // Bu hafta şu ana kadar
   final thisWeekEntries = store.entriesIn(thisWeekStart, thisWeekEnd).where((e) => !e.time.isAfter(now)).toList();
   // Geçen hafta aynı ana kadar olan karşılaştırma anı
-  final sameMomentInPrevWeek = prevWeekStart.add(now.difference(thisWeekStart));
+  final daysPassed = calendarDaysBetween(thisWeekStart, now);
+  final sameMomentInPrevWeek = DateTime(
+    prevWeekStart.year,
+    prevWeekStart.month,
+    prevWeekStart.day + daysPassed,
+    now.hour,
+    now.minute,
+    now.second,
+    now.millisecond,
+    now.microsecond,
+  );
   final prevWeekEntries = store.entriesIn(prevWeekStart, sameMomentInPrevWeek).toList();
 
   final thisCounts = <int, int>{};

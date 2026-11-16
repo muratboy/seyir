@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 
 import '../../data/models.dart';
 import '../../data/store.dart';
+import '../../logic/format.dart';
 import '../../logic/l10n.dart';
 import '../app_font.dart';
 import '../components/todo_quick_add_sheet.dart';
@@ -13,6 +14,17 @@ class TodosView extends StatefulWidget {
   final bool showFab;
 
   const TodosView({super.key, this.showFab = true});
+
+  static String tomorrowDateStr({DateTime? now}) {
+    final refNow = now ?? DateTime.now();
+    return DateFormat('yyyy-MM-dd').format(addDays(refNow, 1));
+  }
+
+  static String endOfWeekDateStr({DateTime? now}) {
+    final refNow = now ?? DateTime.now();
+    final endOfWeek = addDays(refNow, 7 - refNow.weekday);
+    return DateFormat('yyyy-MM-dd').format(endOfWeek);
+  }
 
   @override
   State<TodosView> createState() => _TodosViewState();
@@ -30,9 +42,8 @@ class _TodosViewState extends State<TodosView> {
         final scheme = Theme.of(context).colorScheme;
         final now = DateTime.now();
         final todayStr = DateFormat('yyyy-MM-dd').format(now);
-        final tomorrowStr = DateFormat('yyyy-MM-dd').format(now.add(const Duration(days: 1)));
-        final endOfWeek = now.add(Duration(days: (7 - now.weekday)));
-        final endOfWeekStr = DateFormat('yyyy-MM-dd').format(endOfWeek);
+        final tomorrowStr = TodosView.tomorrowDateStr(now: now);
+        final endOfWeekStr = TodosView.endOfWeekDateStr(now: now);
 
         final thirtyDaysAgoMs = now.subtract(const Duration(days: 30)).millisecondsSinceEpoch;
 

@@ -27,6 +27,36 @@ class TodoTile extends StatefulWidget {
     this.dense = false,
   });
 
+  static String formatDueLabel(String? dueDate, bool isTr, {DateTime? now}) {
+    if (dueDate == null || dueDate.isEmpty) return '';
+    final refNow = now ?? DateTime.now();
+    final today = DateTime(refNow.year, refNow.month, refNow.day);
+    final due = DateTime.tryParse(dueDate);
+    if (due == null) return dueDate;
+    final dueDay = DateTime(due.year, due.month, due.day);
+
+    final diff = calendarDaysBetween(today, dueDay);
+    if (diff == 0) return isTr ? 'bugün' : 'today';
+    if (diff == 1) return isTr ? 'yarın' : 'tomorrow';
+    if (diff == -1) return isTr ? 'dün' : 'yesterday';
+    if (diff < -1) return isTr ? '${-diff} gün gecikti' : '${-diff} days overdue';
+    if (diff <= 6) {
+      final pattern = DateFormat.E(isTr ? 'tr_TR' : 'en_US');
+      return pattern.format(due);
+    }
+    final pattern = DateFormat.MMMd(isTr ? 'tr_TR' : 'en_US');
+    return pattern.format(due);
+  }
+
+  static int? dueDiffDays(String? dueDate, {DateTime? now}) {
+    if (dueDate == null || dueDate.isEmpty) return null;
+    final due = DateTime.tryParse(dueDate);
+    if (due == null) return null;
+    final refNow = now ?? DateTime.now();
+    final todayDay = DateTime(refNow.year, refNow.month, refNow.day);
+    return calendarDaysBetween(todayDay, DateTime(due.year, due.month, due.day));
+  }
+
   @override
   State<TodoTile> createState() => _TodoTileState();
 }
@@ -50,26 +80,7 @@ class _TodoTileState extends State<TodoTile> with SingleTickerProviderStateMixin
     super.dispose();
   }
 
-  String _formatDueLabel(String? dueDate, bool isTr) {
-    if (dueDate == null || dueDate.isEmpty) return '';
-    final now = DateTime.now();
-    final today = DateTime(now.year, now.month, now.day);
-    final due = DateTime.tryParse(dueDate);
-    if (due == null) return dueDate;
-    final dueDay = DateTime(due.year, due.month, due.day);
-
-    final diff = dueDay.difference(today).inDays;
-    if (diff == 0) return isTr ? 'bugün' : 'today';
-    if (diff == 1) return isTr ? 'yarın' : 'tomorrow';
-    if (diff == -1) return isTr ? 'dün' : 'yesterday';
-    if (diff < -1) return isTr ? '${-diff} gün gecikti' : '${-diff} days overdue';
-    if (diff <= 6) {
-      final pattern = DateFormat.E(isTr ? 'tr_TR' : 'en_US');
-      return pattern.format(due);
-    }
-    final pattern = DateFormat.MMMd(isTr ? 'tr_TR' : 'en_US');
-    return pattern.format(due);
-  }
+  String _formatDueLabel(String? dueDate, bool isTr) => TodoTile.formatDueLabel(dueDate, isTr);
 
   Future<void> _handleCheckTap(BuildContext context, TodoProgress progress) async {
     if (_isToggling) return;
@@ -132,10 +143,7 @@ class _TodoTileState extends State<TodoTile> with SingleTickerProviderStateMixin
         !isDone;
     final isDueToday = widget.todo.dueDate == todayStr && !isDone;
 
-    final today = DateTime.now();
-    final todayDay = DateTime(today.year, today.month, today.day);
-    final due = widget.todo.dueDate != null ? DateTime.tryParse(widget.todo.dueDate!) : null;
-    final diff = due != null ? DateTime(due.year, due.month, due.day).difference(todayDay).inDays : null;
+    final diff = TodoTile.dueDiffDays(widget.todo.dueDate);
     final shouldHideDue = !isOverdue && diff != null && (widget.hiddenDueDiffs?.contains(diff) ?? false);
     final dueLabel = shouldHideDue ? '' : _formatDueLabel(widget.todo.dueDate, s.isTr);
 

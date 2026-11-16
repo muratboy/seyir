@@ -33,8 +33,10 @@ String get minuteWord => _isTr ? 'dk' : 'min';
 
 DateTime dayStart(DateTime d) => DateTime(d.year, d.month, d.day);
 DateTime dayEnd(DateTime d) => DateTime(d.year, d.month, d.day, 23, 59, 59, 999);
-DateTime addDays(DateTime d, int days) => DateTime(d.year, d.month, d.day + days);
-DateTime subDays(DateTime d, int days) => DateTime(d.year, d.month, d.day - days);
+/// Takvim günü kaydırır; günün saati ve dakikası aynı kalır, 24 saat eklemez.
+DateTime addDays(DateTime d, int days) =>
+    DateTime(d.year, d.month, d.day + days, d.hour, d.minute, d.second, d.millisecond, d.microsecond);
+DateTime subDays(DateTime d, int days) => addDays(d, -days);
 DateTime weekStart(DateTime d) => DateTime(d.year, d.month, d.day - (d.weekday - 1));
 DateTime monthStart(DateTime d) => DateTime(d.year, d.month);
 DateTime yearStart(DateTime d) => DateTime(d.year);
@@ -55,9 +57,9 @@ String fmtDateShort(DateTime d, {bool isTr = true}) =>
     DateFormat('d MMM', isTr ? 'tr_TR' : 'en_US').format(d);
 
 /// "Bugün", "Dün", "Yarın" ya da "8 Ekim Perşembe"
-String fmtDayTitle(DateTime d, {bool isTr = true}) {
-  final today = dayStart(DateTime.now());
-  final diff = dayStart(d).difference(today).inDays;
+String fmtDayTitle(DateTime d, {bool isTr = true, DateTime? now}) {
+  final today = dayStart(now ?? DateTime.now());
+  final diff = calendarDaysBetween(today, dayStart(d));
   if (diff == 0) return isTr ? 'Bugün' : 'Today';
   if (diff == -1) return isTr ? 'Dün' : 'Yesterday';
   if (diff == 1) return isTr ? 'Yarın' : 'Tomorrow';

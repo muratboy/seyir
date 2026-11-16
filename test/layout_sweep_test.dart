@@ -42,15 +42,6 @@ Future<void> seedSampleData() async {
   Future<void> add(Activity a, DateTime t, Measure m, double qty, {int? minutes}) => store.addEntry(a.id,
       measureId: m.id, qty: qty, at: t, endAt: minutes == null ? null : t.add(Duration(minutes: minutes)));
 
-  // Today's entries lie a fixed time before now (never before midnight), so the page shows the same rows
-  // whatever the time of day. With fixed clock hours a morning run had an almost empty timeline and missed
-  // the rows that are hardest to fit: an entry with a time range whose activity is being timed.
-  final midnight = at(0, 0);
-  DateTime earlier(int minutes) {
-    final t = now.subtract(Duration(minutes: minutes));
-    return t.isBefore(midnight) ? midnight : t;
-  }
-
   for (var d = 9; d >= 1; d--) {
     for (var i = 0; i < 3; i++) {
       await add(su, at(d, 8 + i * 3), glass, 1);
@@ -58,13 +49,15 @@ Future<void> seedSampleData() async {
     await add(ders, at(d, 14), minute, 50, minutes: 50);
     if (d.isEven) await add(kosu, at(d, 7), km, 5);
   }
-  await add(kosu, earlier(480), km, 5);
-  await add(su, earlier(360), glass, 1);
-  await add(su, earlier(240), glass, 1);
-  await add(ders, earlier(110), minute, 50, minutes: 50);
-  await add(su, earlier(45), glass, 1);
+  // Today's entries use fixed clock hours (07:00–17:00). Because the page displays all entries of the day,
+  // the timeline is identical regardless of what time of day the test runs.
+  await add(kosu, at(0, 7), km, 5);
+  await add(su, at(0, 9), glass, 1);
+  await add(su, at(0, 11), glass, 1);
+  await add(ders, at(0, 13), minute, 50, minutes: 50);
+  await add(su, at(0, 15), glass, 1);
   await store.addEntry(su.id,
-      measureId: glass.id, at: now.subtract(const Duration(minutes: 2)), note: 'öğle yemeğinden sonra');
+      measureId: glass.id, at: at(0, 17), note: 'öğle yemeğinden sonra');
 
   final from = at(9, 0).millisecondsSinceEpoch;
   final ms = now.millisecondsSinceEpoch;
@@ -121,7 +114,7 @@ Future<void> seedSampleData() async {
     Todo(
       id: 0,
       title: 'Dün yapılması gereken önemli proje teslimi ve sunum hazırlığı',
-      createdAt: ms - 86400000 * 2,
+      createdAt: at(2, 10).millisecondsSinceEpoch,
       dueDate: yesterdayStr,
     ),
   );
@@ -129,7 +122,7 @@ Future<void> seedSampleData() async {
     Todo(
       id: 0,
       title: 'Çok uzun başlık: haftalık toplantı notlarını düzenle, sunum slaytlarını hazırla ve ekip liderine e-posta gönder',
-      createdAt: ms - 3600000,
+      createdAt: at(0, 14).millisecondsSinceEpoch,
       dueDate: todayStr,
       targetAmount: 50,
     ),
@@ -139,7 +132,7 @@ Future<void> seedSampleData() async {
     Todo(
       id: 0,
       title: 'Su içme görevi',
-      createdAt: ms - 1800000,
+      createdAt: at(0, 16).millisecondsSinceEpoch,
       dueDate: todayStr,
     ),
     activityIds: [su.id],
@@ -311,6 +304,7 @@ void main() {
         await tester.pump(const Duration(milliseconds: 200));
 
         await scrollThrough('today', steps: 6);
+        expect(find.text('öğle yemeğinden sonra'), findsOneWidget);
 
         // Arama sayfası (TakipSearchDelegate)
         await tester.tap(find.byIcon(Icons.search));

@@ -1,5 +1,6 @@
 import 'package:intl/intl.dart';
 
+import 'format.dart';
 import 'text_match.dart';
 
 enum TemporalDirection {
@@ -344,7 +345,7 @@ class TimeParser {
     );
     final twoDaysAgoMatch = twoDaysAgoRegex.firstMatch(workingText);
     if (twoDaysAgoMatch != null) {
-      detectedDate = today.subtract(const Duration(days: 2));
+      detectedDate = subDays(today, 2);
       matchedKeyword = twoDaysAgoMatch.group(2)!;
       hasExplicitDate = true;
       workingText = _removeMatch(workingText, twoDaysAgoMatch);
@@ -356,7 +357,7 @@ class TimeParser {
       final oburRegex = RegExp(r'(^|\s)(öbür\s+gün|obur\s+gun|oburgun|day\s+after\s+tomorrow)($|\s)', caseSensitive: false);
       final oburMatch = oburRegex.firstMatch(workingText);
       if (oburMatch != null) {
-        detectedDate = today.add(const Duration(days: 2));
+        detectedDate = addDays(today, 2);
         matchedKeyword = oburMatch.group(2)!;
         hasExplicitDate = true;
         if (direction == TemporalDirection.past) {
@@ -375,11 +376,11 @@ class TimeParser {
         final wd = today.weekday;
         if (direction == TemporalDirection.future) {
           final offset = (wd == 6 || wd == 7) ? 0 : (6 - wd);
-          detectedDate = today.add(Duration(days: offset));
+          detectedDate = addDays(today, offset);
         } else {
           // past
           final offset = (wd == 6 || wd == 7) ? 0 : -(wd + 1); // last Saturday
-          detectedDate = today.add(Duration(days: offset));
+          detectedDate = addDays(today, offset);
         }
         matchedKeyword = 'hafta sonu';
         hasExplicitDate = true;
@@ -393,7 +394,7 @@ class TimeParser {
       final nextWeekRegex = RegExp(r'(^|\s)(haftaya|next\s+week)($|\s)', caseSensitive: false);
       final nwMatch = nextWeekRegex.firstMatch(workingText);
       if (nwMatch != null) {
-        detectedDate = today.add(const Duration(days: 7));
+        detectedDate = addDays(today, 7);
         matchedKeyword = nwMatch.group(2)!;
         hasExplicitDate = true;
         if (direction == TemporalDirection.past) {
@@ -409,7 +410,7 @@ class TimeParser {
       final lastWeekRegex = RegExp(r'(^|\s)(geçen\s+hafta|gecen\s+hafta|last\s+week)($|\s)', caseSensitive: false);
       final lwMatch = lastWeekRegex.firstMatch(workingText);
       if (lwMatch != null) {
-        detectedDate = today.subtract(const Duration(days: 7));
+        detectedDate = subDays(today, 7);
         matchedKeyword = lwMatch.group(2)!;
         hasExplicitDate = true;
         workingText = _removeMatch(workingText, lwMatch);
@@ -431,7 +432,7 @@ class TimeParser {
         final pastDiff = curWd == targetWd
             ? 7
             : (curWd > targetWd ? curWd - targetWd : curWd + 7 - targetWd);
-        detectedDate = today.subtract(Duration(days: pastDiff));
+        detectedDate = subDays(today, pastDiff);
         matchedKeyword = ldMatch.group(0)!.trim();
         hasExplicitDate = true;
         workingText = _removeMatch(workingText, ldMatch);
@@ -453,7 +454,7 @@ class TimeParser {
 
         if (detectedDate == null) {
           if (norm == 'dun' || norm == 'dün' || norm == 'yesterday') {
-            detectedDate = today.subtract(const Duration(days: 1));
+            detectedDate = subDays(today, 1);
             matchedKeyword = 'dün';
             hasExplicitDate = true;
             matchedTokens.add(rawWord);
@@ -466,7 +467,7 @@ class TimeParser {
             matchedTokens.add(rawWord);
             continue;
           } else if (norm == 'yarin' || norm == 'yarın' || norm == 'tomorrow') {
-            detectedDate = today.add(const Duration(days: 1));
+            detectedDate = addDays(today, 1);
             matchedKeyword = 'yarın';
             hasExplicitDate = true;
             if (direction == TemporalDirection.past) {
@@ -487,7 +488,7 @@ class TimeParser {
               } else {
                 offset = 7 - (curWd - targetWd);
               }
-              detectedDate = today.add(Duration(days: offset));
+              detectedDate = addDays(today, offset);
             } else {
               // past: en yakın GEÇMİŞ gün. Bugünün adıysa bugün.
               int offset;
@@ -498,7 +499,7 @@ class TimeParser {
               } else {
                 offset = (targetWd - curWd) - 7;
               }
-              detectedDate = today.add(Duration(days: offset));
+              detectedDate = addDays(today, offset);
             }
 
             matchedKeyword = norm;
@@ -728,7 +729,7 @@ class TimeParser {
         // Eğer saat refNow'dan ilerideyse ve yön geçmişse:
         // Örtük gelecek bir önceki güne kayar: sabah 09:00'da "akşam" -> dün 19:00.
         if (direction == TemporalDirection.past && candidate.isAfter(refNow)) {
-          final prevDay = targetDate.subtract(const Duration(days: 1));
+          final prevDay = subDays(targetDate, 1);
           finalDateTime = DateTime(prevDay.year, prevDay.month, prevDay.day, h, m);
         } else {
           finalDateTime = candidate;
@@ -790,8 +791,8 @@ class TimeParser {
     } else {
       // İkisi de gelecekte (örn: saat 07:00 iken "saat 8" dendi)
       // Dünün adaylarına bak:
-      final d1Yesterday = dt1.subtract(const Duration(days: 1));
-      final d2Yesterday = dt2.subtract(const Duration(days: 1));
+      final d1Yesterday = subDays(dt1, 1);
+      final d2Yesterday = subDays(dt2, 1);
       final diffY1 = refNow.difference(d1Yesterday).inMinutes;
       final diffY2 = refNow.difference(d2Yesterday).inMinutes;
       return diffY1 < diffY2 ? c1Hour : c2Hour;

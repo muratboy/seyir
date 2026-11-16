@@ -34,9 +34,9 @@ void main() {
   testWidgets('ActivityPage renders duration metrics for time-based activity', (tester) async {
     final act = Activity(id: 1, name: 'Ders Çalışma', emoji: '📚', createdAt: 0);
     final now = DateTime.now();
-
-    final t1 = now.subtract(const Duration(hours: 3));
-    final t2 = now.subtract(const Duration(hours: 1));
+    final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final t1 = startOfWeek.add(const Duration(hours: 4));
+    final t2 = startOfWeek.add(const Duration(hours: 6));
 
     seed([act], [
       Entry(
@@ -68,19 +68,22 @@ void main() {
   testWidgets('ActivityPage renders quantity metrics for measure/volume activity', (tester) async {
     final act = Activity(id: 2, name: 'Su İçme', emoji: '💧', createdAt: 0);
     final now = DateTime.now();
+    final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final t1 = startOfWeek.add(const Duration(hours: 4));
+    final t2 = startOfWeek.add(const Duration(hours: 6));
 
     seed([act], [
       Entry(
         id: 1,
         activityId: act.id,
-        ts: now.subtract(const Duration(hours: 4)).millisecondsSinceEpoch,
+        ts: t1.millisecondsSinceEpoch,
         value: 0.5,
         unitId: 'l',
       ),
       Entry(
         id: 2,
         activityId: act.id,
-        ts: now.subtract(const Duration(hours: 2)).millisecondsSinceEpoch,
+        ts: t2.millisecondsSinceEpoch,
         value: 1.0,
         unitId: 'l',
       ),
@@ -135,7 +138,8 @@ void main() {
   testWidgets('ActivityPage allows user to switch format views via segmented buttons', (tester) async {
     final act = Activity(id: 4, name: 'Kitap Okuma', emoji: '📖', createdAt: 0);
     final now = DateTime.now();
-    final t1 = now.subtract(const Duration(hours: 2));
+    final startOfWeek = DateTime(now.year, now.month, now.day).subtract(Duration(days: now.weekday - 1));
+    final t1 = startOfWeek.add(const Duration(hours: 4));
 
     seed([act], [
       Entry(

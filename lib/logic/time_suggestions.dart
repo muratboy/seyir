@@ -26,7 +26,7 @@ class TimeSuggestions {
     if (nonArchived.isEmpty) return const [];
 
     // Son 60 günün kayıtları (veya veri azsa tümü)
-    final cutoff = subDays(current, 60);
+    final cutoff = subDays(dayStart(current), 60);
     final recentEntries = entries.where((e) => !e.time.isBefore(cutoff)).toList();
 
     // Aktivite bazında saat ve gün uyumu puanlaması
@@ -109,7 +109,7 @@ class TimeSuggestions {
 
   /// Belirli bir aktivitenin şu anki saatle uyum katsayısı (0.0 - 5.0)
   static double timeAffinity(int activityId, List<Entry> entries, DateTime now) {
-    final cutoff = subDays(now, 60);
+    final cutoff = subDays(dayStart(now), 60);
     final actEntries = entries.where((e) => e.activityId == activityId && !e.time.isBefore(cutoff));
     if (actEntries.isEmpty) return 0.0;
 

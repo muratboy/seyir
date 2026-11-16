@@ -34,6 +34,10 @@ class ActivityPage extends StatefulWidget {
     this.initialRange = StatRange.week,
   });
 
+  static int elapsedDaysForPeriod(StatPeriod period) {
+    return max(1, calendarDaysBetween(period.from, period.to));
+  }
+
   @override
   State<ActivityPage> createState() => _ActivityPageState();
 }
@@ -93,7 +97,7 @@ class _ActivityPageState extends State<ActivityPage> {
         final periodEntries = allEntries.where((e) => e.ts >= fromTs && e.ts < toTs).toList();
 
         // Karşılaştırma için elapsedDays
-        final elapsedDays = max(1, period.to.difference(period.from).inDays);
+        final elapsedDays = ActivityPage.elapsedDaysForPeriod(period);
 
         final analysis = ActivityFormatAnalysis.compute(
           activity: act,

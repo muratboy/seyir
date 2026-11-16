@@ -14,6 +14,18 @@ import '../common.dart';
 class TodoQuickAddSheet extends StatefulWidget {
   const TodoQuickAddSheet({super.key});
 
+  static DateTime tomorrowDate({DateTime? now}) {
+    final today = now != null ? DateTime(now.year, now.month, now.day) : dayStart(DateTime.now());
+    return addDays(today, 1);
+  }
+
+  static DateTime weekendDate({DateTime? now}) {
+    final today = now != null ? DateTime(now.year, now.month, now.day) : dayStart(DateTime.now());
+    final wd = today.weekday;
+    final offset = (wd == 6 || wd == 7) ? 0 : (6 - wd);
+    return addDays(today, offset);
+  }
+
   static Future<void> show(BuildContext context) {
     return showModalBottomSheet(
       context: context,
@@ -180,6 +192,8 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
     final scheme = Theme.of(context).colorScheme;
     final now = DateTime.now();
     final today = DateTime(now.year, now.month, now.day);
+    final tomorrow = TodoQuickAddSheet.tomorrowDate(now: now);
+    final weekend = TodoQuickAddSheet.weekendDate(now: now);
 
     return Container(
       padding: EdgeInsets.fromLTRB(
@@ -271,41 +285,33 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
               FilterChip(
                 avatar: const Icon(Icons.wb_sunny_outlined, size: 16),
                 label: Text(s.isTr ? 'Yarın' : 'Tomorrow'),
-                selected: _selectedDate != null && sameDay(_selectedDate!, today.add(const Duration(days: 1))),
+                selected: _selectedDate != null && sameDay(_selectedDate!, tomorrow),
                 onSelected: (sel) {
                   setState(() {
-                    _selectedDate = sel ? today.add(const Duration(days: 1)) : null;
+                    _selectedDate = sel ? tomorrow : null;
                     _manualDateOverridden = true;
                   });
                 },
               ),
 
               // 3. Hafta sonu çipi
-              Builder(builder: (c) {
-                final wd = today.weekday;
-                final offset = (wd == 6 || wd == 7) ? 0 : (6 - wd);
-                final weekendDate = today.add(Duration(days: offset));
-                final isWeekendSel = _selectedDate != null && sameDay(_selectedDate!, weekendDate);
-                return FilterChip(
-                  avatar: const Icon(Icons.weekend_outlined, size: 16),
-                  label: Text(s.isTr ? 'Hafta sonu' : 'Weekend'),
-                  selected: isWeekendSel,
-                  onSelected: (sel) {
-                    setState(() {
-                      _selectedDate = sel ? weekendDate : null;
-                      _manualDateOverridden = true;
-                    });
-                  },
-                );
-              }),
+              FilterChip(
+                avatar: const Icon(Icons.weekend_outlined, size: 16),
+                label: Text(s.isTr ? 'Hafta sonu' : 'Weekend'),
+                selected: _selectedDate != null && sameDay(_selectedDate!, weekend),
+                onSelected: (sel) {
+                  setState(() {
+                    _selectedDate = sel ? weekend : null;
+                    _manualDateOverridden = true;
+                  });
+                },
+              ),
 
               // 4. Özel tarih çipi veya Tarih... seçici
               Builder(builder: (c) {
                 final isToday = _selectedDate != null && sameDay(_selectedDate!, today);
-                final isTomorrow = _selectedDate != null && sameDay(_selectedDate!, today.add(const Duration(days: 1)));
-                final wd = today.weekday;
-                final offset = (wd == 6 || wd == 7) ? 0 : (6 - wd);
-                final isWeekend = _selectedDate != null && sameDay(_selectedDate!, today.add(Duration(days: offset)));
+                final isTomorrow = _selectedDate != null && sameDay(_selectedDate!, tomorrow);
+                final isWeekend = _selectedDate != null && sameDay(_selectedDate!, weekend);
                 final isCustomDate = _selectedDate != null && !isToday && !isTomorrow && !isWeekend;
 
                 if (isCustomDate) {

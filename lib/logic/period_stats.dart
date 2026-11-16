@@ -137,7 +137,17 @@ class PeriodStats {
     final ongoing = period.contains(now);
     var prevTo = prev.to;
     if (ongoing) {
-      final sameMoment = prev.from.add(now.difference(period.from));
+      final daysPassed = calendarDaysBetween(period.from, now);
+      final sameMoment = DateTime(
+        prev.from.year,
+        prev.from.month,
+        prev.from.day + daysPassed,
+        now.hour,
+        now.minute,
+        now.second,
+        now.millisecond,
+        now.microsecond,
+      );
       if (sameMoment.isBefore(prevTo)) prevTo = sameMoment;
     }
 

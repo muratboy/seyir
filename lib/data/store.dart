@@ -139,8 +139,7 @@ class HabitStreakInfo {
   });
 }
 
-int daysBetween(DateTime a, DateTime b) =>
-    (dayStart(b).difference(dayStart(a)).inHours / 24).round();
+int daysBetween(DateTime a, DateTime b) => calendarDaysBetween(a, b);
 
 class AppStore extends ChangeNotifier {
   Database? _db;
@@ -3132,9 +3131,9 @@ class AppStore extends ChangeNotifier {
     return makeDone;
   }
 
-  GoalStatus goalStatus(Goal g, {DateTime? at, Map<int, double>? byActivity}) {
-    final now = DateTime.now();
-    final targetDate = at ?? now;
+  GoalStatus goalStatus(Goal g, {DateTime? at, Map<int, double>? byActivity, DateTime? now}) {
+    final refNow = now ?? DateTime.now();
+    final targetDate = at ?? refNow;
     final (from, to) = goalRange(g, targetDate);
     var (v, ign) = goalValue(g, from, to, byActivity: byActivity);
     final isManual = isGoalCheckinDone(g, at: targetDate);
@@ -3145,9 +3144,9 @@ class AppStore extends ChangeNotifier {
     if (g.endDate != null) {
       final end = dayStart(DateTime.fromMillisecondsSinceEpoch(g.endDate!));
       final start = dayStart(DateTime.fromMillisecondsSinceEpoch(g.startDate));
-      st.daysLeft = daysBetween(now, end);
-      final total = end.add(const Duration(days: 1)).difference(start).inMinutes;
-      final passed = now.difference(start).inMinutes;
+      st.daysLeft = daysBetween(refNow, end);
+      final total = addDays(end, 1).difference(start).inMinutes;
+      final passed = refNow.difference(start).inMinutes;
       st.timeRatio = total <= 0 ? 1 : (passed / total).clamp(0.0, 1.0);
       if (g.period == GoalPeriod.total && !st.done && st.daysLeft! >= 0) {
         st.perDayNeeded = (g.target - v) / (st.daysLeft! + 1);
@@ -4672,7 +4671,7 @@ class AppStore extends ChangeNotifier {
 
   /// Adımın, bağlı hedefinden, bağlı aktivitesinin kayıtlarından ya da geçen süreden hesaplanan ilerlemesi.
   /// Adım herhangi bir hedefe/aktiviteye bağlı değilse ve başlatılmış bir süresi yoksa veya yolculuk başlamadıysa null döner.
-  StepProgress? stepProgress(Roadmap r, RoadmapStep step) {
+  StepProgress? stepProgress(Roadmap r, RoadmapStep step, {DateTime? now}) {
     if (r.isNotStarted) return null;
 
     final hasGoal = step.linkedGoalId != null && goals.any((g) => g.id == step.linkedGoalId);
@@ -4692,13 +4691,13 @@ class AppStore extends ChangeNotifier {
     if (hasGoal) {
       final g = goals.firstWhere((x) => x.id == step.linkedGoalId);
       final startDate = dayStart(DateTime.fromMillisecondsSinceEpoch(since));
-      final today = dayStart(DateTime.now());
+      final today = dayStart(now ?? DateTime.now());
       var done = 0.0;
 
       if (!startDate.isAfter(today)) {
-        final totalDays = today.difference(startDate).inDays;
+        final totalDays = calendarDaysBetween(startDate, today);
         for (var i = 0; i <= totalDays; i++) {
-          final day = startDate.add(Duration(days: i));
+          final day = addDays(startDate, i);
           final st = goalStatus(g, at: day);
           if (st.done) {
             done += 1.0;
@@ -4764,8 +4763,8 @@ class AppStore extends ChangeNotifier {
     // 3. DURUM: Süreli Adım / Meydan Okuma (Ne hedef ne aktivite bağlı, sadece süre başlatılmış)
     if (hasStarted) {
       final startDate = dayStart(DateTime.fromMillisecondsSinceEpoch(step.startedAt!));
-      final today = dayStart(DateTime.now());
-      final daysPassed = today.isBefore(startDate) ? 0 : today.difference(startDate).inDays + 1;
+      final today = dayStart(now ?? DateTime.now());
+      final daysPassed = today.isBefore(startDate) ? 0 : calendarDaysBetween(startDate, today) + 1;
       final done = daysPassed.clamp(0, targetVal.toInt()).toDouble();
       return StepProgress(done, targetVal, defaultUnit);
     }
@@ -5520,20 +5519,20 @@ bool isTargetReached(double current, double target, {double epsilon = 1e-9}) =>
   }
 
   /// Yapılacağı bir sonraki güne erteler: yeni son gün = max(son gün, bugün) + 1 gün; tarihsizse yarın.
-  Future<void> postponeTodo(int id) async {
+  Future<void> postponeTodo(int id, {DateTime? now}) async {
     final todo = todos.where((t) => t.id == id).firstOrNull;
     if (todo == null) return;
-    final now = DateTime.now();
+    final refNow = now ?? DateTime.now();
     DateTime baseDate;
     if (todo.dueDate == null || todo.dueDate!.isEmpty) {
-      baseDate = now;
+      baseDate = refNow;
     } else {
-      final cur = DateTime.tryParse(todo.dueDate!) ?? now;
+      final cur = DateTime.tryParse(todo.dueDate!) ?? refNow;
       final curDay = DateTime(cur.year, cur.month, cur.day);
-      final todayDay = DateTime(now.year, now.month, now.day);
+      final todayDay = DateTime(refNow.year, refNow.month, refNow.day);
       baseDate = curDay.isAfter(todayDay) ? curDay : todayDay;
     }
-    final nextDate = baseDate.add(const Duration(days: 1));
+    final nextDate = addDays(baseDate, 1);
     final nextDueDate = DateFormat('yyyy-MM-dd').format(nextDate);
     todo.dueDate = nextDueDate;
     await (await db).update('todos', {'due_date': nextDueDate}, where: 'id = ?', whereArgs: [id]);

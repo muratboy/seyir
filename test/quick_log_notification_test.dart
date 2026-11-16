@@ -54,8 +54,7 @@ void main() {
       expect(msg, contains('Kitap'));
       expect(msg, contains('kaydedildi'));
 
-      final todayEntries = store.entriesOfDay(DateTime.now());
-      final entry = todayEntries.firstWhere((e) => e.activityId == act.id);
+      final entry = store.entries.firstWhere((e) => e.activityId == act.id);
       expect(entry.value, equals(25));
     });
 
