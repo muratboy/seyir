@@ -439,7 +439,7 @@ class ExportService {
                   mainAxisAlignment: pw.MainAxisAlignment.spaceAround,
                   children: [
                     _buildStatCard(isTr ? 'Kayıtlı Belirti Sayısı' : 'Symptom Logs', symptomEntries.length.toString()),
-                    _buildStatCard(isTr ? 'Ortalama Uyku' : 'Avg Sleep', avgSleepHours > 0 ? '${avgSleepHours.toStringAsFixed(1)} sa' : '-'),
+                    _buildStatCard(isTr ? 'Ortalama Uyku' : 'Avg Sleep', avgSleepHours > 0 ? '${avgSleepHours.toStringAsFixed(1)} ${isTr ? "sa" : "h"}' : '-'),
                     _buildStatCard(isTr ? 'Tespit Edilen İlişkiler' : 'Correlations', correlations.length.toString()),
                     _buildStatCard(isTr ? 'Toplam Kayıt' : 'Total Entries', entries.length.toString()),
                   ],

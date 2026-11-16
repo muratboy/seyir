@@ -1030,8 +1030,12 @@ class _ActivityPageState extends State<ActivityPage> {
                         value: p.id,
                         child: Text(
                           p.perUnitId != null && p.perUnitId != 'adet'
-                              ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
-                              : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)',
+                              ? (isTr
+                                  ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
+                                  : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (per ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})')
+                              : (isTr
+                                  ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)'
+                                  : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (per ${fmtNum(p.perQty)} ${store.unit("adet").symbol})'),
                           style: const TextStyle(fontSize: AppFont.small),
                           overflow: TextOverflow.ellipsis,
                         ),
@@ -1219,8 +1223,12 @@ class _ActivityPageState extends State<ActivityPage> {
                             value: p.id,
                             child: Text(
                               p.perUnitId != null && p.perUnitId != 'adet'
-                                  ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
-                                  : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)',
+                                  ? (isTr
+                                      ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
+                                      : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (per ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})')
+                                  : (isTr
+                                      ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)'
+                                      : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (per ${fmtNum(p.perQty)} ${store.unit("adet").symbol})'),
                               style: const TextStyle(fontSize: AppFont.small),
                               overflow: TextOverflow.ellipsis,
                             ),

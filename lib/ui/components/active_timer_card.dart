@@ -966,7 +966,7 @@ Future<MidnightSplitChoice?> _showMidnightSplitDialog(
                         style: const TextStyle(fontWeight: FontWeight.bold, fontSize: AppFont.subtitle),
                       ),
                       Text(
-                        '${act.name} · Toplam $totalStr',
+                        '${act.name} · ${s.isTr ? "Toplam" : "Total"} $totalStr',
                         style: TextStyle(fontSize: AppFont.caption, color: scheme.onSurfaceVariant),
                       ),
                     ],

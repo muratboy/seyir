@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
+import 'package:takip/data/models.dart';
 import 'package:takip/data/store.dart';
+import 'package:takip/logic/l10n.dart';
 import 'package:takip/services/nl_parser.dart';
 
 import 'support/real_db.dart';
@@ -289,5 +291,229 @@ void main() {
       now: fixedNow,
     );
     expect(multi3.items.length, 2);
+  });
+
+  group('İngilizce Saat Yazımı ve Fiil Kökü Örnekleri', () {
+    final fixedNow = DateTime(2026, 11, 11, 15, 0); // 15:00 Çarşamba
+
+    test('İngilizce saat ve kök eşleşmeleri beklenen kayda çevrilir', () async {
+      await store.load();
+      await store.setLanguage(AppLanguage.en);
+      addTearDown(() => store.setLanguage(AppLanguage.tr));
+
+      final enActNames = ['Running', 'Walking', 'Swimming', 'Coffee', 'Reading', 'Study'];
+      for (final name in enActNames) {
+        if (store.exactMatch(name) == null) {
+          await store.addActivity(name);
+        }
+      }
+
+      final enActivities = store.activities.values.toList();
+      final measures = store.measures;
+
+      final testCases = <_TestCase>[
+        _TestCase(
+          input: 'ran 5 km',
+          expectedType: 'entry',
+          expectedActivity: 'Running',
+          expectedQty: 5.0,
+          expectedUnit: 'km',
+        ),
+        _TestCase(
+          input: 'walked 2 km at 7am',
+          expectedType: 'entry',
+          expectedActivity: 'Walking',
+          expectedQty: 2.0,
+          expectedUnit: 'km',
+          expectedStart: DateTime(2026, 11, 11, 7, 0),
+        ),
+        _TestCase(
+          input: '7am coffee',
+          expectedType: 'entry',
+          expectedActivity: 'Coffee',
+          expectedQty: 1.0,
+          expectedStart: DateTime(2026, 11, 11, 7, 0),
+        ),
+        _TestCase(
+          input: 'coffee at 7:30pm',
+          expectedType: 'entry',
+          expectedActivity: 'Coffee',
+          expectedQty: 1.0,
+          expectedStart: DateTime(2026, 11, 10, 19, 30),
+        ),
+        _TestCase(
+          input: '2 coffee at 7am',
+          expectedType: 'entry',
+          expectedActivity: 'Coffee',
+          expectedQty: 2.0,
+          expectedStart: DateTime(2026, 11, 11, 7, 0),
+        ),
+        _TestCase(
+          input: 'swam 30 min',
+          expectedType: 'entry',
+          expectedActivity: 'Swimming',
+          expectedQty: 30.0,
+          expectedUnit: 'dk',
+        ),
+        _TestCase(
+          input: 'studied 2 hours',
+          expectedType: 'entry',
+          expectedActivity: 'Study',
+          expectedQty: 2.0,
+          expectedUnit: 'sa',
+        ),
+        _TestCase(
+          input: 'ran 5 km yesterday at 7pm',
+          expectedType: 'entry',
+          expectedActivity: 'Running',
+          expectedQty: 5.0,
+          expectedUnit: 'km',
+          expectedStart: DateTime(2026, 11, 10, 19, 0),
+        ),
+        _TestCase(
+          input: '12am coffee',
+          expectedType: 'entry',
+          expectedActivity: 'Coffee',
+          expectedQty: 1.0,
+          expectedStart: DateTime(2026, 11, 11, 0, 0),
+        ),
+        _TestCase(
+          input: '12pm coffee',
+          expectedType: 'entry',
+          expectedActivity: 'Coffee',
+          expectedQty: 1.0,
+          expectedStart: DateTime(2026, 11, 11, 12, 0),
+        ),
+        _TestCase(
+          input: 'at 19:30 coffee',
+          expectedType: 'entry',
+          expectedActivity: 'Coffee',
+          expectedQty: 1.0,
+          expectedStart: DateTime(2026, 11, 10, 19, 30),
+        ),
+      ];
+
+      for (final tc in testCases) {
+        final multi = NaturalLanguageParser.parseMulti(
+          tc.input,
+          activities: enActivities,
+          measures: measures,
+          openTodos: store.todos,
+          now: fixedNow,
+          fallbackDay: fixedNow,
+          defaultMeasureFor: store.defaultMeasureFor,
+          predictCompletedTodos: store.predictCompletedTodos,
+        );
+
+        final items = multi.items;
+        expect(items, isNotEmpty, reason: 'Girdi ayrıştırılamadı: "${tc.input}"');
+        final first = items.first;
+        expect(first, isA<EntryParsedItem>(), reason: 'Tür EntryParsedItem olmalı: "${tc.input}"');
+        final entryItem = first as EntryParsedItem;
+
+        if (tc.expectedActivity != null) {
+          final actName = entryItem.activity?.name ?? entryItem.activityName;
+          expect(actName.toLowerCase(), tc.expectedActivity!.toLowerCase(),
+              reason: 'Aktivite adı eşleşmedi: "${tc.input}"');
+        }
+
+        if (tc.expectedQty != null) {
+          expect(entryItem.quantity, closeTo(tc.expectedQty!, 0.001),
+              reason: 'Miktar eşleşmedi: "${tc.input}"');
+        }
+
+        if (tc.expectedUnit != null) {
+          final u = entryItem.measure?.unitId ?? entryItem.parseResult.matchedMeasure?.unitId;
+          expect(u, tc.expectedUnit, reason: 'Birim eşleşmedi: "${tc.input}"');
+        }
+
+        if (tc.expectedStart != null) {
+          expect(entryItem.at, tc.expectedStart,
+              reason: 'Başlangıç saati eşleşmedi: "${tc.input}"');
+        }
+      }
+    });
+
+    test('Gelecek saat: sabit now 15:00 iken coffee at 7pm ile 19:00 kahve aynı davranır', () async {
+      await store.load();
+      final coffeeAct = Activity(id: 994, name: 'Coffee', createdAt: 1000);
+      final trCoffeeAct = Activity(id: 995, name: 'Kahve', createdAt: 1000);
+
+      final trRes = NaturalLanguageParser.parseMulti(
+        '19:00 kahve',
+        activities: [trCoffeeAct],
+        measures: store.measures,
+        now: fixedNow,
+      );
+      final enRes = NaturalLanguageParser.parseMulti(
+        'coffee at 7pm',
+        activities: [coffeeAct],
+        measures: store.measures,
+        now: fixedNow,
+      );
+
+      expect(trRes.items, isNotEmpty);
+      expect(enRes.items, isNotEmpty);
+      expect(enRes.items.first.runtimeType, trRes.items.first.runtimeType);
+
+      final trEntry = trRes.items.first as EntryParsedItem;
+      final enEntry = enRes.items.first as EntryParsedItem;
+      expect(enEntry.at.hour, trEntry.at.hour);
+      expect(enEntry.at.minute, trEntry.at.minute);
+      expect(enEntry.at.day, trEntry.at.day);
+    });
+
+    test('Eşleşmemesi gereken durumlar doğru şekilde ayrıştırılır', () async {
+      await store.load();
+      final ranchAct = Activity(id: 991, name: 'Ranch', createdAt: 1000);
+      final readingAct = Activity(id: 992, name: 'Reading', createdAt: 1000);
+      final coffeeAct = Activity(id: 993, name: 'Coffee', createdAt: 1000);
+
+      // 1. Yalnızca "Ranch" varken `ran 5 km`: "Ranch" ile eşleşmez, yeni öneri olur
+      final resRanch = NaturalLanguageParser.parseMulti(
+        'ran 5 km',
+        activities: [ranchAct],
+        measures: store.measures,
+        now: fixedNow,
+      );
+      expect(resRanch.items, isNotEmpty);
+      final itemRanch = resRanch.items.first as EntryParsedItem;
+      expect(itemRanch.activity, isNull);
+      expect(itemRanch.activityName.toLowerCase(), 'ran');
+
+      // 2. "Reading" varken `red 3`: "Reading" ile eşleşmez
+      final resReading = NaturalLanguageParser.parseMulti(
+        'red 3',
+        activities: [readingAct],
+        measures: store.measures,
+        now: fixedNow,
+      );
+      expect(resReading.items, isNotEmpty);
+      final itemReading = resReading.items.first as EntryParsedItem;
+      expect(itemReading.activity, isNull);
+
+      // 3. `at 7 coffee`: yalın "at 7" saat okunmaz, miktar 7 sayılır
+      final resAt7 = NaturalLanguageParser.parseMulti(
+        'at 7 coffee',
+        activities: [coffeeAct],
+        measures: store.measures,
+        now: fixedNow,
+      );
+      expect(resAt7.items, isNotEmpty);
+      final itemAt7 = resAt7.items.first as EntryParsedItem;
+      expect(itemAt7.quantity, 7.0);
+      expect(itemAt7.at.hour, fixedNow.hour); // Saat 7 okunmadı
+
+      // 4. `13pm coffee`: 13pm saat okunmaz
+      final res13pm = NaturalLanguageParser.parseMulti(
+        '13pm coffee',
+        activities: [coffeeAct],
+        measures: store.measures,
+        now: fixedNow,
+      );
+      expect(res13pm.items, isNotEmpty);
+      final item13pm = res13pm.items.first as EntryParsedItem;
+      expect(item13pm.at.hour, fixedNow.hour); // Saat 13 okunmadı
+    });
   });
 }

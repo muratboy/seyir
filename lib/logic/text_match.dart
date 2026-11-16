@@ -130,3 +130,118 @@ double? parseNum(String s, {bool? isEn}) {
   // 3. Standart ondalık sayı (hem nokta hem virgül kabul edilir)
   return double.tryParse(t.replaceAll(',', '.'));
 }
+
+/// İngilizce yaygın düzensiz fiillerin temel kökleri.
+const irregularVerbRoots = <String, String>{
+  'ran': 'run',
+  'swam': 'swim',
+  'ate': 'eat',
+  'drank': 'drink',
+  'slept': 'sleep',
+  'rode': 'ride',
+  'wrote': 'write',
+  'went': 'go',
+  'did': 'do',
+  'took': 'take',
+  'drove': 'drive',
+  'sang': 'sing',
+  'bought': 'buy',
+  'paid': 'pay',
+  'made': 'make',
+  'met': 'meet',
+  'spoke': 'speak',
+  'taught': 'teach',
+  'read': 'read',
+  'run': 'run',
+  'swim': 'swim',
+  'eat': 'eat',
+  'drink': 'drink',
+  'sleep': 'sleep',
+  'ride': 'ride',
+  'write': 'write',
+  'go': 'go',
+  'do': 'do',
+  'take': 'take',
+  'drive': 'drive',
+  'sing': 'sing',
+  'buy': 'buy',
+  'pay': 'pay',
+  'make': 'make',
+  'meet': 'meet',
+  'speak': 'speak',
+  'teach': 'teach',
+};
+
+const _englishVowels = {'a', 'e', 'i', 'o', 'u'};
+
+/// İngilizce bir kelimenin kök ve çekim adayları kümesini üretir.
+/// Düzenli ekler (-s, -es, -ed, -ing; çift ünsüz; düşen e; -ied/-ies) ve düzensiz fiiller listesini kullanır.
+Set<String> englishWordCandidates(String word) {
+  final w = word.trim().toLowerCase();
+  if (w.isEmpty) return const {};
+
+  final candidates = <String>{w};
+
+  if (irregularVerbRoots.containsKey(w)) {
+    candidates.add(irregularVerbRoots[w]!);
+  }
+
+  // -ied / -ies (en az 5 harf) -> …y ("studied" -> "study", "studies" -> "study")
+  if (w.length >= 5 && (w.endsWith('ied') || w.endsWith('ies'))) {
+    candidates.add('${w.substring(0, w.length - 3)}y');
+  }
+
+  // -ing (en az 5 harf) için gövde, gövde + e, gövde çift ünsüzle bitiyorsa tek ünsüzlü hâli
+  if (w.length >= 5 && w.endsWith('ing')) {
+    final base = w.substring(0, w.length - 3);
+    candidates.add(base);
+    candidates.add('${base}e');
+    if (base.length >= 2 &&
+        base[base.length - 1] == base[base.length - 2] &&
+        !_englishVowels.contains(base[base.length - 1])) {
+      candidates.add(base.substring(0, base.length - 1));
+    }
+  }
+
+  // -ed (en az 5 harf) için gövde, gövde + e, gövde çift ünsüzle bitiyorsa tek ünsüzlü hâli
+  if (w.length >= 5 && w.endsWith('ed')) {
+    final base = w.substring(0, w.length - 2);
+    candidates.add(base);
+    candidates.add('${base}e');
+    if (base.length >= 2 &&
+        base[base.length - 1] == base[base.length - 2] &&
+        !_englishVowels.contains(base[base.length - 1])) {
+      candidates.add(base.substring(0, base.length - 1));
+    }
+  }
+
+  // -es (en az 4 harf) için hem -es hem -s atılmış hâl
+  if (w.length >= 4 && w.endsWith('es')) {
+    candidates.add(w.substring(0, w.length - 2));
+    candidates.add(w.substring(0, w.length - 1));
+  }
+
+  // -s (en az 4 harf, -ss değil) için -s atılmış hâl
+  if (w.length >= 4 && w.endsWith('s') && !w.endsWith('ss')) {
+    candidates.add(w.substring(0, w.length - 1));
+  }
+
+  // Adaylar düzensiz fiil listesinden de geçirilir
+  final irregulars = <String>{};
+  for (final c in candidates) {
+    if (irregularVerbRoots.containsKey(c)) {
+      irregulars.add(irregularVerbRoots[c]!);
+    }
+  }
+  candidates.addAll(irregulars);
+
+  return candidates;
+}
+
+/// Girdinin adaylarıyla tek kelimelik aktivite adının adayları kesişiyorsa ve ortak aday EN AZ 3 HARFLİ ise eşleşir.
+bool matchesEnglishCandidates(String word1, String word2) {
+  final cands1 = englishWordCandidates(word1);
+  final cands2 = englishWordCandidates(word2);
+  final common = cands1.intersection(cands2);
+  return common.any((c) => c.length >= 3);
+}

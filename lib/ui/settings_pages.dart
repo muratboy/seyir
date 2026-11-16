@@ -1235,8 +1235,8 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
           _isTesting = false;
           if (ok) {
             _testSuccess = isTr
-                ? '✓ Bağlantı başarılı! ${AiService.providerDisplayName(_selectedProvider)} yanıt verdi.'
-                : '✓ Connection successful! ${AiService.providerDisplayName(_selectedProvider)} responded.';
+                ? '✓ Bağlantı başarılı! ${AiService.providerDisplayName(_selectedProvider, isTr: true)} yanıt verdi.'
+                : '✓ Connection successful! ${AiService.providerDisplayName(_selectedProvider, isTr: false)} responded.';
           }
         });
       }
@@ -1400,7 +1400,10 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                           ),
                           DropdownMenuItem(
                             value: 'openrouter',
-                            child: const Text('OpenRouter (Çoklu Model)', overflow: TextOverflow.ellipsis),
+                            child: Text(
+                              isTr ? 'OpenRouter (Çoklu Model)' : 'OpenRouter (Multi-Model)',
+                              overflow: TextOverflow.ellipsis,
+                            ),
                           ),
                           DropdownMenuItem(
                             value: 'custom',

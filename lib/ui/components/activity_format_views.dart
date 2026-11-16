@@ -567,7 +567,7 @@ class ActivityFormatView extends StatelessWidget {
         ),
         const SizedBox(width: 4),
         Text(
-          '$label: $count (%$pct)',
+          isTr ? '$label: $count (%$pct)' : '$label: $count ($pct%)',
           style: const TextStyle(fontSize: AppFont.micro, fontWeight: FontWeight.w500),
         ),
       ],

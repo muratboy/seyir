@@ -225,10 +225,11 @@ class AppStore extends ChangeNotifier {
   String get activeLlmModel => AiService.normalizeModelName(llmProvider, llmModel);
 
   String get llmProviderDisplayName {
+    final isTr = strings.value.isTr;
     return switch (llmProvider) {
       'openai' => 'OpenAI',
       'openrouter' => 'OpenRouter',
-      'custom' => 'Özel Uç Nokta',
+      'custom' => isTr ? 'Özel Uç Nokta' : 'Custom Endpoint',
       _ => 'Google Gemini',
     };
   }

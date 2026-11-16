@@ -1,6 +1,7 @@
 import 'package:intl/intl.dart';
 
 import 'format.dart';
+import 'l10n.dart';
 import 'text_match.dart';
 
 enum TemporalDirection {
@@ -246,7 +247,9 @@ class TimeParser {
     required TemporalDirection direction,
     DateTime? now,
     DateTime? fallbackDay,
+    bool? isEn,
   }) {
+    final isEnLocale = isEn ?? (strings.value.lang == AppLanguage.en);
     final refNow = now ?? DateTime.now();
     final today = DateTime(refNow.year, refNow.month, refNow.day);
     final baseDay = fallbackDay != null
@@ -630,6 +633,59 @@ class TimeParser {
       }
     }
 
+    // İngilizce saat yazımı: "7am", "7 am", "7:30pm", "7.30 pm", "7:30 a.m.", "at 7am", "12am", "12pm"
+    // Ekten sonra boşluk, metin sonu ya da noktalama gelebilir ("7:30 p.m. coffee", "kahve 7 a.m. içtim").
+    final enAmPmRegex = RegExp(
+      r'(?:^|\s)(?<prefix>at\s+)?(?<h>\d{1,2})(?:(?<sep>[:.])(?<m>\d{2}))?\s*(?<meridiem>am|pm|a\.m\.|p\.m\.)(?=$|[\s\p{P}])',
+      caseSensitive: false,
+      unicode: true,
+    );
+    for (final m in enAmPmRegex.allMatches(workingText)) {
+      final rawH = m.namedGroup('h')!;
+      final rawM = m.namedGroup('m');
+      final meridiem = m.namedGroup('meridiem')!.toLowerCase().replaceAll('.', '').trim();
+      final fullMatch = m.group(0)!;
+
+      final h = int.parse(rawH);
+      if (h < 1 || h > 12) continue; // 13pm, 0am geçersiz
+
+      int mVal = 0;
+      if (rawM != null) {
+        mVal = int.parse(rawM);
+        if (mVal < 0 || mVal >= 60) continue; // 7:75pm geçersiz
+      }
+
+      if (meridiem == 'am') {
+        resolvedHour = (h == 12) ? 0 : h;
+      } else {
+        resolvedHour = (h == 12) ? 12 : h + 12;
+      }
+      resolvedMinute = mVal;
+      hasExplicitTime = true;
+      workingText = _removeMatch(workingText, m);
+      matchedTokens.add(fullMatch.trim());
+      break;
+    }
+
+    // am / pm eki olmayan saatin önündeki "at" yalnızca arayüz dili İngilizce iken edat sayılır.
+    // Türkçe arayüzde "at" sıradan bir kelimedir ("çöp at 19:30", "at 19:30").
+    // İngilizce arayüzde "at" edatı ayıklanır; saati aşağıdaki standart saat kuralı çözer.
+    if (!hasExplicitTime && isEnLocale) {
+      final atPrepositionRegex = RegExp(
+        r'(?:^|\s)at\s+(?=(?:[01]?\d|2[0-3])[:.][0-5]\d(?!\d))',
+        caseSensitive: false,
+      );
+      final atMatch = atPrepositionRegex.firstMatch(workingText);
+      if (atMatch != null) {
+        final matchStr = atMatch.group(0)!;
+        final atIndex = matchStr.toLowerCase().indexOf('at');
+        final exactAtStart = atMatch.start + atIndex;
+        final exactAtEnd = exactAtStart + 2;
+        workingText = '${workingText.substring(0, exactAtStart)} ${workingText.substring(exactAtEnd)}';
+        matchedTokens.add('at');
+      }
+    }
+
     // Specific Clock Hours:
     // "saat 8'de", "saat 8", "saat 8:30", "14.30", "20:15'te", "saat sekizde", "saat iki buçukta"
     final clockRegex = RegExp(
@@ -692,7 +748,8 @@ class TimeParser {
       } else if (matchedPod != null && matchedPod.contains('ogleden sonra') && hVal >= 1 && hVal <= 11) {
         // "öğleden sonra 3" -> 15
         resolvedHour = hVal + 12;
-      } else if (hVal > 12) {
+      } else if (hVal > 12 || (rawH.length == 2 && rawH.startsWith('0') && sep != null)) {
+        // Başında sıfır olan yazım 24 saatlik yazımdır; "07:30" yazan kişi akşam 19:30'u kastetmez.
         resolvedHour = hVal;
       } else {
         // 12 saat belirsizliği (ambiguity):

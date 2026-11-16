@@ -920,6 +920,42 @@ class NaturalLanguageParser {
       }
     }
 
+    // 5. İngilizce fiil çekimi / kök eşleşmesi
+    // Girdideki kelime bugünkü kurallarla hiçbir aktiviteyle eşleşmiyorsa (yalnızca o durumda)
+    // İngilizce aday kümeleri karşılaştırılır: aday kümeleri kesişiyorsa ve ortak aday en az 3 harfli ise o aktivite seçilir.
+    if (textWords.length == 1) {
+      final inputWord = textWords.first;
+      final inputCands = englishWordCandidates(inputWord);
+      if (inputCands.isNotEmpty) {
+        final stemMatches = <Activity>[];
+        for (final act in activities) {
+          final actWords = normalizeTr(act.name).split(' ');
+          // Yalnızca tek kelimelik aktivite adları karşılaştırılır
+          if (actWords.length == 1) {
+            final actCands = englishWordCandidates(actWords.first);
+            final common = inputCands.intersection(actCands);
+            if (common.any((c) => c.length >= 3)) {
+              stemMatches.add(act);
+            }
+          }
+        }
+
+        if (stemMatches.length == 1) {
+          return (stemMatches.first, 0.80);
+        } else if (stemMatches.length > 1) {
+          // Aynı köke birden çok aktivite düşüyorsa (Run ve Running birlikte varsa)
+          // adı girdideki kelimeyle birebir aynı olan seçilir; o da yoksa hiçbiri seçilmez
+          final exactInMatches = stemMatches
+              .where((a) => normalizeTr(a.name) == inputWord)
+              .firstOrNull;
+          if (exactInMatches != null) {
+            return (exactInMatches, 1.0);
+          }
+          return (null, 0.5);
+        }
+      }
+    }
+
     return (null, 0.5);
   }
 

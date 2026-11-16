@@ -380,8 +380,12 @@ class GoalEditDialog {
                                         value: p.id,
                                         child: Text(
                                           p.perUnitId != null && p.perUnitId != 'adet'
-                                              ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
-                                              : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)',
+                                              ? (s.isTr
+                                                  ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})'
+                                                  : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (per ${fmtNum(p.perQty)} ${store.unit(p.perUnitId!).symbol})')
+                                              : (s.isTr
+                                                  ? '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (her ${fmtNum(p.perQty)} adet)'
+                                                  : '${p.name}: ${fmtNum(p.value)} ${store.unit(p.unitId).symbol} (per ${fmtNum(p.perQty)} ${store.unit("adet").symbol})'),
                                           style: const TextStyle(fontSize: AppFont.small),
                                           overflow: TextOverflow.ellipsis,
                                         ),

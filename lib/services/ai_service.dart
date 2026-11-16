@@ -70,7 +70,7 @@ class AiService {
       'gemini' => [
           AiModelOption(
             id: 'gemini-flash-latest',
-            displayName: 'Gemini Flash (En Güncel)',
+            displayName: isTr ? 'Gemini Flash (En Güncel)' : 'Gemini Flash (Latest)',
             badge: isTr ? '⚡ Önerilen (Hızlı & Ücretsiz)' : '⚡ Recommended (Fast & Free)',
             isRecommended: true,
           ),
@@ -81,7 +81,7 @@ class AiService {
           ),
           AiModelOption(
             id: 'gemini-pro-latest',
-            displayName: 'Gemini Pro (En Güncel)',
+            displayName: isTr ? 'Gemini Pro (En Güncel)' : 'Gemini Pro (Latest)',
             badge: isTr ? '🧠 Gelişmiş Akıl Yürütme' : '🧠 Advanced Reasoning',
           ),
         ],
@@ -203,11 +203,11 @@ class AiService {
   }
 
   /// Sağlayıcı adının kullanıcı dostu görünümü.
-  static String providerDisplayName(String provider) {
+  static String providerDisplayName(String provider, {bool isTr = true}) {
     return switch (provider.toLowerCase()) {
       'openai' => 'OpenAI',
       'openrouter' => 'OpenRouter',
-      'custom' => 'Özel Uç Nokta (Ollama/Yerel)',
+      'custom' => isTr ? 'Özel Uç Nokta (Ollama/Yerel)' : 'Custom Endpoint (Ollama/Local)',
       _ => 'Google Gemini',
     };
   }
