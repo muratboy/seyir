@@ -6,6 +6,7 @@ import 'package:home_widget/home_widget.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
 
+import 'data/db.dart';
 import 'data/store.dart';
 import 'logic/l10n.dart';
 import 'ui/goals_page.dart';
@@ -22,6 +23,7 @@ import 'widget_sync.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  AppDb.preferredLanguage = resolveInitialLanguage();
   await initializeDateFormatting('tr_TR');
   await initializeDateFormatting('en_US');
   Intl.defaultLocale = 'tr_TR';

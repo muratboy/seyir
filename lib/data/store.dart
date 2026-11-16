@@ -1847,22 +1847,41 @@ class AppStore extends ChangeNotifier {
     final targetDim = unit(baseUnit).dim;
     final actNorm = activity(activityId).norm;
 
-    if (actNorm.contains('kahve')) {
+    // Aktivite adında kelime sınırlarını gözetir; "steak" veya "teaching" içindeki "tea" çay sanılmaz.
+    bool hasWord(String s, String word) =>
+        s == word || s.startsWith('$word ') || s.endsWith(' $word') || s.contains(' $word ');
+
+    if (actNorm.contains('kahve') || hasWord(actNorm, 'coffee')) {
       final coffeeM = measures.where((m) {
         final mn = normalizeTr(m.name);
-        return mn.contains('fincan') || mn.contains('kupa');
-      }).firstOrNull;
+        return mn.contains('fincan') || mn == 'cup';
+      }).firstOrNull ?? measures.where((m) {
+        final mn = normalizeTr(m.name);
+        return mn.contains('kupa') || mn == 'mug';
+      }).firstOrNull ?? measures.where((m) =>
+        m.unitId == 'l' && m.amount == 0.08,
+      ).firstOrNull ?? measures.where((m) =>
+        m.unitId == 'l' && m.amount == 0.3,
+      ).firstOrNull;
       if (coffeeM != null) return coffeeM;
     }
-    if (actNorm.contains('cay')) {
-      final teaM = measures.where((m) => normalizeTr(m.name).contains('cay')).firstOrNull;
+    if (actNorm.contains('cay') || hasWord(actNorm, 'tea')) {
+      final teaM = measures.where((m) {
+        final mn = normalizeTr(m.name);
+        return mn.contains('cay') || mn == 'tea glass';
+      }).firstOrNull ?? measures.where((m) =>
+        m.unitId == 'l' && m.amount == 0.1,
+      ).firstOrNull;
       if (teaM != null) return teaM;
     }
-    if (actNorm == 'su' || actNorm.startsWith('su ') || actNorm.endsWith(' su')) {
+    if (hasWord(actNorm, 'su') || hasWord(actNorm, 'water')) {
+      // Su için "glass" tam ad olarak eşleşmeli; contains('glass') "Tea glass"ı su bardağı sanıyordu.
       final waterM = measures.where((m) {
         final mn = normalizeTr(m.name);
-        return mn.contains('su bardag') || mn == 'bardak';
-      }).firstOrNull;
+        return mn == 'glass' || mn == 'bardak' || mn.contains('su bardag');
+      }).firstOrNull ?? measures.where((m) =>
+        m.unitId == 'l' && m.amount == 0.2,
+      ).firstOrNull;
       if (waterM != null) return waterM;
     }
 

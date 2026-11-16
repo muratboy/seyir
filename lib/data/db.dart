@@ -4,6 +4,10 @@ import 'package:sqflite/sqflite.dart';
 class AppDb {
   static const int currentVersion = 3;
 
+  /// Yeni kurulumda (veritabanı ilk kez oluşturulurken) kullanılacak dil tercihi ('tr' veya 'en').
+  /// main() içinden cihaz diline göre bildirilir; bildirilmezse (null) bugünkü gibi Türkçe kurulur.
+  static String? preferredLanguage;
+
   static Future<Database> open() async {
     final path = p.join(await getDatabasesPath(), 'takip.db');
     return openDatabase(
@@ -15,7 +19,13 @@ class AppDb {
       },
       onCreate: (db, _) async {
         await createSchema(db);
-        await seed(db);
+        final lang = preferredLanguage == null
+            ? null
+            : (preferredLanguage!.toLowerCase() == 'tr' ? 'tr' : 'en');
+        if (lang != null) {
+          await db.insert('settings', {'key': 'lang', 'value': lang});
+        }
+        await seed(db, lang ?? 'tr');
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         await upgradeSchema(db, oldVersion, newVersion);
@@ -244,13 +254,15 @@ class AppDb {
   /// Doğal dilde yazılan birimlerin ("500 ml", "2 kg", "45 sn", "500 m") doğru ölçüye bağlanabilmesi için
   /// 1 birimlik temel ölçülerin veritabanında bulunmasını sağlar.
   static Future<void> _ensureDefaultMeasures(DatabaseExecutor db) async {
-    const essentialMeasures = [
-      ['Mililitre', 'ml', 1.0],
-      ['Miligram', 'mg', 1.0],
-      ['Kilogram', 'kg', 1.0],
-      ['Saniye', 'sn', 1.0],
-      ['Metre', 'm', 1.0],
-      ['Kalori', 'kcal', 1.0],
+    final settingsRows = await db.query('settings', where: 'key = ?', whereArgs: ['lang'], limit: 1);
+    final isEn = settingsRows.isNotEmpty && settingsRows.first['value'] == 'en';
+    final essentialMeasures = [
+      [isEn ? 'Millilitre' : 'Mililitre', 'ml', 1.0],
+      [isEn ? 'Milligram' : 'Miligram', 'mg', 1.0],
+      [isEn ? 'Kilogram' : 'Kilogram', 'kg', 1.0],
+      [isEn ? 'Second' : 'Saniye', 'sn', 1.0],
+      [isEn ? 'Metre' : 'Metre', 'm', 1.0],
+      [isEn ? 'Calorie' : 'Kalori', 'kcal', 1.0],
     ];
     for (final m in essentialMeasures) {
       final existing = await db.query(
@@ -369,8 +381,8 @@ class AppDb {
       sort INTEGER NOT NULL DEFAULT 0)''');
   }
 
-  static Future<void> seed(DatabaseExecutor db) async {
-    const measures = [
+  static Future<void> seed(DatabaseExecutor db, [String languageCode = 'tr']) async {
+    const measuresTr = [
       ['Çay bardağı', 'l', 0.1],
       ['Su bardağı', 'l', 0.2],
       ['Fincan', 'l', 0.08],
@@ -389,6 +401,28 @@ class AppDb {
       ['Kilometre', 'km', 1.0],
       ['Kalori', 'kcal', 1.0],
     ];
+
+    const measuresEn = [
+      ['Tea glass', 'l', 0.1],
+      ['Glass', 'l', 0.2],
+      ['Cup', 'l', 0.08],
+      ['Mug', 'l', 0.3],
+      ['Bottle', 'l', 0.5],
+      ['Bowl', 'l', 0.25],
+      ['Litre', 'l', 1.0],
+      ['Millilitre', 'ml', 1.0],
+      ['Minute', 'dk', 1.0],
+      ['Hour', 'sa', 1.0],
+      ['Second', 'sn', 1.0],
+      ['Piece', 'adet', 1.0],
+      ['Gram', 'g', 1.0],
+      ['Kilogram', 'kg', 1.0],
+      ['Metre', 'm', 1.0],
+      ['Kilometre', 'km', 1.0],
+      ['Calorie', 'kcal', 1.0],
+    ];
+
+    final measures = languageCode == 'en' ? measuresEn : measuresTr;
     for (var i = 0; i < measures.length; i++) {
       final m = measures[i];
       await db.insert('measures', {'name': m[0], 'unit_id': m[1], 'amount': m[2], 'sort': i});

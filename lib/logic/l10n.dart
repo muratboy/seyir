@@ -2,6 +2,16 @@ import 'package:flutter/material.dart';
 
 enum AppLanguage { tr, en }
 
+/// Cihazın birincil diline göre başlangıç dil kodunu belirler ('tr' veya 'en').
+/// [primaryLocaleCode] dışarıdan verilebilir (testler veya özel durumlar için);
+/// verilmezse platformun geçerli yerel ayarından (WidgetsBinding / PlatformDispatcher) okunur.
+String resolveInitialLanguage([String? primaryLocaleCode]) {
+  final code = primaryLocaleCode ??
+      WidgetsBinding.instance.platformDispatcher.locales.firstOrNull?.languageCode ??
+      WidgetsBinding.instance.platformDispatcher.locale.languageCode;
+  return code.toLowerCase() == 'tr' ? 'tr' : 'en';
+}
+
 class AppStrings {
   final AppLanguage lang;
   const AppStrings(this.lang);

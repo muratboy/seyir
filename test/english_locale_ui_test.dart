@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
+import 'package:takip/data/db.dart';
 import 'package:takip/data/models.dart';
 import 'package:takip/data/store.dart';
 import 'package:takip/logic/l10n.dart';
@@ -43,37 +44,11 @@ Future<void> seedEnglishData() async {
     ),
   );
 
-  // Ölçü adlarını İngilizce örnek veri olarak güncelle
-  for (final m in List.of(store.measures)) {
-    final enName = switch (m.name) {
-      'Su bardağı' => 'Glass',
-      'Çay bardağı' => 'Tea glass',
-      'Fincan' => 'Cup',
-      'Kupa' => 'Mug',
-      'Şişe' => 'Bottle',
-      'Kase' => 'Bowl',
-      'Litre' => 'Liter',
-      'Mililitre' => 'Milliliter',
-      'Dakika' => 'Minute',
-      'Saat' => 'Hour',
-      'Saniye' => 'Second',
-      'Adet' => 'Piece',
-      'Gram' => 'Gram',
-      'Kilogram' => 'Kilogram',
-      'Metre' => 'Meter',
-      'Kilometre' => 'Kilometer',
-      'Kalori' => 'Calorie',
-      _ => m.name,
-    };
-    m.name = enName;
-    await store.updateMeasure(m);
-  }
-
   // Ölçüler
   Measure measure(String name) => store.measures.firstWhere((m) => m.name == name);
   final glass = measure('Glass');
   final minute = measure('Minute');
-  final km = measure('Kilometer');
+  final km = measure('Kilometre');
 
   Future<void> add(Activity a, DateTime t, Measure m, double qty, {int? minutes, String? note}) =>
       store.addEntry(a.id,
@@ -223,6 +198,7 @@ void main() {
   useRealDatabase();
 
   setUpAll(() async {
+    AppDb.preferredLanguage = 'en';
     await loadRealFont();
     await initializeDateFormatting('tr_TR');
     await initializeDateFormatting('en_US');
@@ -231,6 +207,10 @@ void main() {
     for (final name in ['home_widget', 'home_widget/updates']) {
       messenger.setMockMethodCallHandler(MethodChannel(name), (call) async => null);
     }
+  });
+
+  tearDownAll(() {
+    AppDb.preferredLanguage = null;
   });
 
   testWidgets('verify English locale contains no Turkish text in UI', (tester) async {

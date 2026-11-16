@@ -643,12 +643,22 @@ class NaturalLanguageParser {
       matchedMeasure = measures.where((m) => m.unitId == 'dk' && m.amount == 1).firstOrNull;
     }
 
+    // Ölçü ile aktivite arasındaki "of" kelimesi yok sayılır (yalnızca ölçüden hemen sonra geldiğinde)
+    int? ofWordIndex;
+    if (measureWords.isNotEmpty) {
+      final maxMeasureIdx = measureWords.reduce((a, b) => a > b ? a : b);
+      if (maxMeasureIdx + 1 < words.length && words[maxMeasureIdx + 1] == 'of') {
+        ofWordIndex = maxMeasureIdx + 1;
+      }
+    }
+
     // 4. Extract Activity Name by filtering out numbers, measures, timer triggers and fillers
     final remainingWords = <String>[];
     final remainingRawWords = <String>[];
     for (var i = 0; i < words.length; i++) {
       final w = words[i];
       if (w.isEmpty) continue;
+      if (i == ofWordIndex) continue;
 
       // Ignore digits
       if (parseNum(w) != null || parseNum(rawWords[i]) != null) continue;
@@ -839,20 +849,25 @@ class NaturalLanguageParser {
     }
     if (named != null) return (named, namedAt);
 
-    // 2. Yaygın anahtar kelimeler ve eş anlamlılar üzerinden güvenli arama (firstOrNull)
+    // 2. Yaygın anahtar kelimeler ve eş anlamlılar üzerinden güvenli arama (öncelikle birim/miktarla, ardından adla)
     Measure? byName(String part) => measures.where((m) => normalizeTr(m.name).contains(part)).firstOrNull;
     if (lower.contains('cay bardagi')) {
-      return (byName('cay'), indicesWhere((w) => w == 'cay' || w.startsWith('bardag')));
+      final teaGlass = measures.where((m) => m.unitId == 'l' && m.amount == 0.1).firstOrNull ?? byName('cay');
+      return (teaGlass, indicesWhere((w) => w == 'cay' || w.startsWith('bardag')));
     } else if (lower.contains('su bardagi') || words.any((w) => w.startsWith('bardak') || w.startsWith('bardag'))) {
       // Yalın "bardak": çay içiliyorsa çay bardağı, değilse su bardağı. Ölçü adlarında sözcük yumuşamış
       // hâliyle geçer ("Su bardağı"); "bardak" diye aramak onları bulmuyordu.
-      final glass = (words.contains('cay') ? byName('cay bardag') : null) ??
+      final glass = (words.contains('cay')
+              ? (measures.where((m) => m.unitId == 'l' && m.amount == 0.1).firstOrNull ?? byName('cay bardag'))
+              : null) ??
+          measures.where((m) => m.unitId == 'l' && m.amount == 0.2).firstOrNull ??
           byName('su bardag') ??
           byName('bardak') ??
           byName('bardag');
       return (glass, indicesWhere((w) => w.startsWith('bardak') || w.startsWith('bardag')));
     } else if (words.any((w) => w.startsWith('kupa'))) {
-      return (byName('kupa'), indicesWhere((w) => w.startsWith('kupa')));
+      final mug = measures.where((m) => m.unitId == 'l' && m.amount == 0.3).firstOrNull ?? byName('kupa');
+      return (mug, indicesWhere((w) => w.startsWith('kupa')));
     } else if (words.any((w) => w.startsWith('demlik'))) {
       return (byName('demlik'), indicesWhere((w) => w.startsWith('demlik')));
     }
@@ -864,6 +879,31 @@ class NaturalLanguageParser {
       if (unitId == null) continue;
       final measure = measures.where((m) => m.unitId == unitId && m.amount == 1).firstOrNull;
       if (measure != null) return (measure, {i});
+    }
+
+    // 4. İngilizce tek kelimelik ölçü adlarının çoğul hâlleri (ör. "glasses" -> Glass, "cups" -> Cup, "bottles" -> Bottle).
+    // Ölçüler ad olduğundan yalnızca çoğul ekleri (-s, -es) ayıklanır; fiil çekimleri ("bowling", "cupping") eşleştirilmez.
+    for (var i = 0; i < words.length; i++) {
+      final w = words[i];
+      if (w.length < 3) continue;
+      for (final m in measures) {
+        final mWords = normalizeTr(m.name).split(' ');
+        if (mWords.length != 1) continue;
+        final mName = mWords.first;
+        if (mName.length < 3) continue;
+
+        bool matches = false;
+        if (w.endsWith('es') && w.length >= 5 && w.substring(0, w.length - 2) == mName) {
+          matches = true;
+        }
+        if (!matches && w.endsWith('s') && !w.endsWith('ss') && w.length >= 4 && w.substring(0, w.length - 1) == mName) {
+          matches = true;
+        }
+
+        if (matches) {
+          return (m, {i});
+        }
+      }
     }
 
     return (null, const {});
