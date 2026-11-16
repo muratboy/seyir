@@ -1,5 +1,7 @@
 import 'dart:math';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import '../data/models.dart';
 import '../logic/text_match.dart';
 import '../logic/time_parser.dart';
@@ -1170,6 +1172,15 @@ class NaturalLanguageParser {
     return content;
   }
 
+  /// Testlerde bir çizim (build) esnasında kaç kez ayrıştırma yapıldığını denetlemek için sayaç.
+  @visibleForTesting
+  static int parseMultiCallCount = 0;
+
+  @visibleForTesting
+  static void resetParseMultiCallCount() {
+    parseMultiCallCount = 0;
+  }
+
   /// Birden fazla kayıt veya yapılacak içeren serbest metni ayrıştırır.
   /// Zaman paylaşımı, geçmiş yönlü çözümleme ve kutudan yapılacak modunu destekler.
   static MultiParseResult parseMulti(
@@ -1183,6 +1194,7 @@ class NaturalLanguageParser {
     List<Todo> Function(Iterable<dynamic> items)? predictCompletedTodos,
     bool forceTodo = false,
   }) {
+    parseMultiCallCount++;
     final trimmedInput = input.trim();
     if (trimmedInput.isEmpty) {
       return const MultiParseResult(rawText: '', items: []);

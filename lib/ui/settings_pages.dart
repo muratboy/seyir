@@ -138,6 +138,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                           }
                         }
                         await store.setPersistentQuickLogEnabled(val);
+                        if (!mounted) return;
                         setState(() {});
                       },
                     ),
@@ -169,6 +170,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                       value: store.waterReminderEnabled,
                       onChanged: (val) async {
                         await store.setWaterReminder(enabled: val);
+                        if (!mounted) return;
                         setState(() {});
                       },
                     ),
@@ -194,6 +196,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                   selected: isSelected,
                                   onSelected: (_) async {
                                     await store.setWaterReminder(enabled: true, intervalHours: hours);
+                                    if (!mounted) return;
                                     setState(() {});
                                   },
                                 );
@@ -218,6 +221,7 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                       value: store.dailySummaryReminderEnabled,
                       onChanged: (val) async {
                         await store.setDailySummaryReminder(enabled: val);
+                        if (!mounted) return;
                         setState(() {});
                       },
                     ),
@@ -245,10 +249,12 @@ class _NotificationSettingsPageState extends State<NotificationSettingsPage> {
                                   context: context,
                                   initialTime: TimeOfDay(hour: initH, minute: initM),
                                 );
+                                if (!mounted) return;
                                 if (picked != null) {
                                   final h = picked.hour.toString().padLeft(2, '0');
                                   final m = picked.minute.toString().padLeft(2, '0');
                                   await store.setDailySummaryReminder(enabled: true, time: '$h:$m');
+                                  if (!mounted) return;
                                   setState(() {});
                                 }
                               },
@@ -495,6 +501,7 @@ class _HealthSettingsPageState extends State<HealthSettingsPage> {
                                   selected: isSelected,
                                   onSelected: (_) async {
                                     await store.setStepDailyGoal(goal);
+                                    if (!mounted) return;
                                     setState(() {});
                                   },
                                 );
@@ -512,6 +519,7 @@ class _HealthSettingsPageState extends State<HealthSettingsPage> {
                                   label: Text(s.isTr ? '+500 Adım' : '+500 Steps'),
                                   onPressed: () async {
                                     await store.addManualSteps(500);
+                                    if (!mounted) return;
                                     setState(() {});
                                   },
                                 ),
@@ -521,6 +529,7 @@ class _HealthSettingsPageState extends State<HealthSettingsPage> {
                                   label: Text(s.isTr ? '+1000 Adım' : '+1000 Steps'),
                                   onPressed: () async {
                                     await store.addManualSteps(1000);
+                                    if (!mounted) return;
                                     setState(() {});
                                   },
                                 ),
@@ -564,6 +573,7 @@ class _HealthSettingsPageState extends State<HealthSettingsPage> {
                       value: store.sleepTrackerEnabled,
                       onChanged: (val) async {
                         await store.setSleepTrackerEnabled(val);
+                        if (!mounted) return;
                         setState(() {});
                       },
                     ),
@@ -588,6 +598,7 @@ class _HealthSettingsPageState extends State<HealthSettingsPage> {
                                   selected: isSelected,
                                   onSelected: (_) async {
                                     await store.setSleepDailyGoalHours(hours);
+                                    if (!mounted) return;
                                     setState(() {});
                                   },
                                 );
@@ -1292,6 +1303,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
 
     if (ok && mounted) {
       await store.clearLlmConfig();
+      if (!mounted) return;
       setState(() {
         _apiKeyCtrl.clear();
         _modelCtrl.clear();
@@ -1451,6 +1463,7 @@ class _AiSettingsPageState extends State<AiSettingsPage> {
                                 icon: const Icon(Icons.paste_rounded),
                                 onPressed: () async {
                                   final data = await Clipboard.getData(Clipboard.kTextPlain);
+                                  if (!mounted) return;
                                   if (data?.text != null && data!.text!.isNotEmpty) {
                                     _apiKeyCtrl.text = data.text!.trim();
                                     setState(() {

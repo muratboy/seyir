@@ -99,6 +99,7 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
       firstDate: now.subtract(const Duration(days: 365)),
       lastDate: now.add(const Duration(days: 365 * 3)),
     );
+    if (!mounted) return;
     if (picked != null) {
       setState(() {
         _selectedDate = picked;
@@ -113,6 +114,7 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
       context,
       title: s.isTr ? 'Aktivite Bağla' : 'Link Activity',
     );
+    if (!mounted) return;
     if (act != null) {
       setState(() {
         _linkedActivity = act;
@@ -150,6 +152,8 @@ class _TodoQuickAddSheetState extends State<TodoQuickAddSheet> {
       todo,
       activityIds: _linkedActivity != null ? [_linkedActivity!.id] : null,
     );
+
+    if (!mounted) return;
 
     // Alanı temizle ve açık bırak (art arda ekleme)
     _controller.clear();

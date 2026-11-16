@@ -435,6 +435,7 @@ class _RoutineEditSheetState extends State<RoutineEditSheet> {
                         ],
                       ),
                     );
+                    if (!mounted) return;
                     if (picked != null) setState(() => _emoji = picked);
                   },
                   child: Container(
@@ -521,6 +522,7 @@ class _RoutineEditSheetState extends State<RoutineEditSheet> {
                       context,
                       title: isTr ? 'Rutine Aktivite Ekle' : 'Add Activity to Routine',
                     );
+                    if (!mounted) return;
                     if (act != null) {
                       final (usedMeasures, otherMeasures) = store.measuresFor(act.id);
                       final defaultMeasure = store.stats[act.id]?.lastMeasureId != null

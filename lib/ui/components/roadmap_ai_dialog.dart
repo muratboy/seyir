@@ -409,6 +409,7 @@ class _RoadmapAiDialogState extends State<RoadmapAiDialog> {
                                 model: AiService.defaultModelFor(store.llmProvider),
                                 customEndpoint: store.llmCustomEndpoint,
                               );
+                              if (!mounted) return;
                               setState(() {
                                 _errorMessage = null;
                               });

@@ -44,46 +44,7 @@ class ExportService {
         return;
       }
 
-      final rows = <List<dynamic>>[];
-      // Başlık satırı
-      rows.add(isTr
-          ? ['ID', 'Tarih', 'Saat', 'Aktivite', 'Kategori', 'Adet / Çarpan', 'Ölçü Adı', 'Hesaplanan Miktar', 'Birim', 'Detay', 'Not']
-          : ['ID', 'Date', 'Time', 'Activity', 'Category', 'Quantity', 'Measure', 'Amount', 'Unit', 'Detail', 'Note']);
-
-      final dateFmt = DateFormat('yyyy-MM-dd');
-      final timeFmt = DateFormat('HH:mm:ss');
-
-      for (final e in entries) {
-        final act = store.activities[e.activityId];
-        final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
-        final dateStr = dateFmt.format(dt);
-        final timeStr = timeFmt.format(dt);
-        final actName = '${act?.emoji ?? ''} ${act?.name ?? (isTr ? 'Bilinmeyen' : 'Unknown')}'.trim();
-        final catName = act?.categoryDef.name(isTr) ?? (isTr ? 'Genel' : 'General');
-        final m = store.measureById(e.measureId);
-        final measureName = m?.name ?? '';
-        final unitStr = e.unitId == null ? '' : store.unit(e.unitId!).symbol;
-        final note = e.note ?? '';
-        final calculatedVal = e.value != null ? fmtNum(e.value!) : fmtNum(e.qty);
-        final detail = store.entryDetail(e);
-
-        rows.add([
-          e.id,
-          dateStr,
-          timeStr,
-          actName,
-          catName,
-          fmtNum(e.qty),
-          measureName,
-          calculatedVal,
-          unitStr,
-          detail,
-          note,
-        ]);
-      }
-
-      // UTF-8 BOM (\uFEFF) eklenerek Excel ve Türkçe karakter uyumluluğu sağlanır
-      final csvContent = '\uFEFF${excel.encode(rows)}';
+      final csvContent = generateCsvContent(store, entries: entries, isTr: isTr);
       final tempDir = await getTemporaryDirectory();
       final nowStr = DateFormat('yyyyMMdd_HHmmss').format(DateTime.now());
       final filePath = '${tempDir.path}/seyir_kayitlar_$nowStr.csv';
@@ -103,6 +64,70 @@ class ExportService {
         );
       }
     }
+  }
+
+  /// Formül enjeksiyonunu (CSV Injection) önlemek için =, +, -, @, sekme veya satır başı
+  /// ile başlayan metin hücrelerinin başına tek tırnak (') ekler. Sayı hücrelerine uygulanmaz.
+  static String sanitizeCsvCell(String text) {
+    if (text.isEmpty) return text;
+    final first = text.codeUnitAt(0);
+    // = (61), + (43), - (45), @ (64), \t (9), \r (13), \n (10)
+    if (first == 61 || first == 43 || first == 45 || first == 64 || first == 9 || first == 13 || first == 10) {
+      return "'$text";
+    }
+    return text;
+  }
+
+  /// CSV içeriğini tek bir UTF-8 BOM ile üretir; metin hücrelerinde formül enjeksiyonu koruması uygular.
+  static String generateCsvContent(
+    AppStore store, {
+    List<Entry>? entries,
+    bool? isTr,
+  }) {
+    final tr = isTr ?? (store.language == AppLanguage.tr);
+    final targetEntries = entries ?? store.entries;
+
+    final rows = <List<dynamic>>[];
+    // Başlık satırı
+    rows.add(tr
+        ? ['ID', 'Tarih', 'Saat', 'Aktivite', 'Kategori', 'Adet / Çarpan', 'Ölçü Adı', 'Hesaplanan Miktar', 'Birim', 'Detay', 'Not']
+        : ['ID', 'Date', 'Time', 'Activity', 'Category', 'Quantity', 'Measure', 'Amount', 'Unit', 'Detail', 'Note']);
+
+    final dateFmt = DateFormat('yyyy-MM-dd');
+    final timeFmt = DateFormat('HH:mm:ss');
+
+    for (final e in targetEntries) {
+      final act = store.activities[e.activityId];
+      final dt = DateTime.fromMillisecondsSinceEpoch(e.ts);
+      final dateStr = dateFmt.format(dt);
+      final timeStr = timeFmt.format(dt);
+      final actName = '${act?.emoji ?? ''} ${act?.name ?? (tr ? 'Bilinmeyen' : 'Unknown')}'.trim();
+      final catName = act?.categoryDef.name(tr) ?? (tr ? 'Genel' : 'General');
+      final m = store.measureById(e.measureId);
+      final measureName = m?.name ?? '';
+      final unitStr = e.unitId == null ? '' : store.unit(e.unitId!).symbol;
+      final note = e.note ?? '';
+      final calculatedVal = e.value != null ? fmtNum(e.value!) : fmtNum(e.qty);
+      final detail = store.entryDetail(e);
+
+      rows.add([
+        e.id,
+        dateStr,
+        timeStr,
+        sanitizeCsvCell(actName),
+        sanitizeCsvCell(catName),
+        fmtNum(e.qty),
+        sanitizeCsvCell(measureName),
+        calculatedVal,
+        sanitizeCsvCell(unitStr),
+        sanitizeCsvCell(detail),
+        sanitizeCsvCell(note),
+      ]);
+    }
+
+    // excel.encode çıktısı zaten UTF-8 BOM (\uFEFF) içerir; fazladan eklenmeyerek tek BOM korunur
+    final encoded = excel.encode(rows);
+    return encoded.startsWith('\uFEFF') ? encoded : '\uFEFF$encoded';
   }
 
   /// PDF Raporu oluşturur ve paylaşır.

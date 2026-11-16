@@ -174,6 +174,7 @@ class _TodoEditPageState extends State<TodoEditPage> {
                               firstDate: now.subtract(const Duration(days: 365)),
                               lastDate: now.add(const Duration(days: 365 * 3)),
                             );
+                            if (!mounted) return;
                             if (picked != null) {
                               setState(() => _dueDate = picked);
                             }
@@ -202,6 +203,7 @@ class _TodoEditPageState extends State<TodoEditPage> {
                           title: s.isTr ? 'Aktivite Bağla' : 'Link Activity',
                           exclude: _linkedActivityIds.toSet(),
                         );
+                        if (!mounted) return;
                         if (act != null) {
                           setState(() => _linkedActivityIds.add(act.id));
                         }

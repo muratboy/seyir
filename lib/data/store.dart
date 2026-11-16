@@ -4360,6 +4360,13 @@ class AppStore extends ChangeNotifier {
             : 'This backup was made with a newer version of the app. Update the app first.',
       );
     }
+    if (m['activities'] is! List || m['entries'] is! List) {
+      throw FormatException(
+        strings.value.isTr
+            ? 'Yedek dosyası eksik: aktiviteler ya da kayıtlar yok.'
+            : 'Backup file is incomplete: activities or entries are missing.',
+      );
+    }
     final tables = _validatedBackupTables(m);
     _pauseBackupTimers(tables['active_timers']!, m['exportedAt']);
 

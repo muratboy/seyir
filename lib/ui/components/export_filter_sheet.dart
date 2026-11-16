@@ -197,6 +197,7 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
                           end: DateTime.now(),
                         ),
                   );
+                  if (!mounted) return;
                   if (picked != null) {
                     setState(() {
                       _customDateRange = picked;
@@ -222,6 +223,7 @@ class _ExportFilterSheetState extends State<ExportFilterSheet> {
                 context,
                 title: isTr ? 'Filtrelenecek Aktiviteyi Seç' : 'Select Activity to Filter',
               );
+              if (!mounted) return;
               if (act != null) {
                 setState(() => _selectedActivityId = act.id);
               }

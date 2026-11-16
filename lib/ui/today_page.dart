@@ -285,6 +285,12 @@ class _TodayViewState extends State<_TodayView> {
   final _previewScrollController = ScrollController();
   bool _isSubmitting = false;
 
+  // Çizim (build) esnasında yinelenen ayrıştırmaları önlemek için paylaşılan geçici önbellek.
+  // Bir çizimden uzun yaşamaz; build sonunda veya olay işleyicilerinde daima boştur.
+  bool _isBuilding = false;
+  List<ParsedItem>? _buildCachedItems;
+  _ComposerPlan? _buildCachedPlan;
+
   @override
   void initState() {
     super.initState();
@@ -413,10 +419,15 @@ class _TodayViewState extends State<_TodayView> {
   }
 
   /// Serbest metinden ayrıştırılan öğelerin güncel listesi.
+  /// Çizim (build) esnasında aynı metin birden fazla kez ayrıştırılmaz; sonuç o çizim boyunca paylaşılır.
   List<ParsedItem> _currentItems() {
     if (_customItems != null) return _customItems!;
     final text = _textController.text.trim();
     if (_selectedActivity != null || text.isEmpty) return const [];
+
+    if (_isBuilding && _buildCachedItems != null) {
+      return _buildCachedItems!;
+    }
 
     final multi = NaturalLanguageParser.parseMulti(
       text,
@@ -429,24 +440,32 @@ class _TodayViewState extends State<_TodayView> {
       predictCompletedTodos: store.predictCompletedTodos,
       forceTodo: _isTodoMode,
     );
-    return NaturalLanguageParser.convertFutureEntriesToTodos(
+    final items = NaturalLanguageParser.convertFutureEntriesToTodos(
       multi.items,
       activities: _forceNew ? const [] : store.activities.values.toList(),
       measures: store.measures,
       now: DateTime.now(),
     );
+    if (_isBuilding) {
+      _buildCachedItems = items;
+    }
+    return items;
   }
 
   /// Kutuya yazılanın gönder düğmesine basılınca neye dönüşeceği; aktivite listeden seçildiyse ya da kutu
   /// boşsa null. Önizleme satırı da kaydetme de bu planı kullanır: ekranda yazan ile yapılan aynıdır.
-  _ComposerPlan? _plan() {
+  _ComposerPlan? _plan([List<ParsedItem>? items]) {
     if (_isTodoMode) return null;
     final text = _textController.text.trim();
     if (_selectedActivity != null || text.isEmpty) return null;
 
-    final items = _currentItems();
-    if (items.length != 1 || items.first is! EntryParsedItem) return null;
-    final firstItem = items.first as EntryParsedItem;
+    if (_isBuilding && _buildCachedPlan != null) {
+      return _buildCachedPlan;
+    }
+
+    final resolvedItems = items ?? _currentItems();
+    if (resolvedItems.length != 1 || resolvedItems.first is! EntryParsedItem) return null;
+    final firstItem = resolvedItems.first as EntryParsedItem;
 
     final activities = _forceNew ? const <Activity>[] : store.activities.values.toList();
     NlParseResult read({required bool commands}) => NaturalLanguageParser.parse(
@@ -456,7 +475,7 @@ class _TodayViewState extends State<_TodayView> {
           allowCommands: commands,
           defaultMeasureFor: store.defaultMeasureFor,
         );
-    final withCommands = read(commands: !_forceNew);
+    final withCommands = !_forceNew ? firstItem.parseResult : read(commands: false);
     final canBeCommand = withCommands.timerCommand != null;
     final parsed = canBeCommand && _asEntry ? read(commands: false) : withCommands;
 
@@ -478,7 +497,7 @@ class _TodayViewState extends State<_TodayView> {
             ? firstItem.quantity
             : (parsed.quantity > 0 ? parsed.quantity : _qty));
 
-    return _ComposerPlan(
+    final computedPlan = _ComposerPlan(
       parsed: parsed,
       existing: existingAct,
       measureId: effMeasureId,
@@ -486,6 +505,10 @@ class _TodayViewState extends State<_TodayView> {
       canBeCommand: canBeCommand,
       hasExplicitAmount: hasExplicitAmount,
     );
+    if (_isBuilding) {
+      _buildCachedPlan = computedPlan;
+    }
+    return computedPlan;
   }
 
   void _removeItem(int index) {
@@ -1267,7 +1290,7 @@ class _TodayViewState extends State<_TodayView> {
     final isTodoSelected = allTodos || (items.isEmpty && _isTodoMode);
     final isSingleEntry = items.length == 1 && items.first is EntryParsedItem;
     final singleEntry = isSingleEntry ? (items.first as EntryParsedItem) : null;
-    final plan = _plan();
+    final plan = _plan(items);
     final startsTimer = plan?.timer != null;
     final hasText = q.isNotEmpty;
     final modeSelector = hasText
@@ -1340,6 +1363,7 @@ class _TodayViewState extends State<_TodayView> {
                       borderRadius: BorderRadius.circular(12),
                       onTap: () async {
                         final chosen = await showEmojiPicker(context, currentEmoji: _draftEmoji);
+                        if (!mounted) return;
                         if (chosen != null) setState(() => _draftEmoji = chosen);
                       },
                       child: Container(
@@ -1644,34 +1668,40 @@ class _TodayViewState extends State<_TodayView> {
           if (daySummary.totalTimeMinutes > 0) fmtAmount(daySummary.totalTimeMinutes, 'time'),
         ];
         return LayoutBuilder(
-          builder: (context, constraints) => Scaffold(
-            appBar: AppBar(
-              automaticallyImplyLeading: false,
-              titleSpacing: 0,
-              title: Row(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  IconButton(
-                    icon: const Icon(Icons.chevron_left, size: 22),
-                    tooltip: s.isTr ? 'Önceki gün' : 'Previous day',
-                    padding: EdgeInsets.zero,
-                    visualDensity: VisualDensity.compact,
-                    constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
-                    onPressed: () => setState(() => _currentDay = subDays(_currentDay, 1)),
-                  ),
-                  Expanded(
-                    child: InkWell(
-                      borderRadius: BorderRadius.circular(10),
-                      onTap: () async {
-                        final picked = await showDatePicker(
-                          context: context,
-                          initialDate: _currentDay,
-                          firstDate: DateTime(2020),
-                          lastDate: DateTime.now(),
-                        );
-                        if (picked != null) setState(() => _currentDay = dayStart(picked));
-                      },
-                      child: Padding(
+          builder: (context, constraints) {
+            _isBuilding = true;
+            _buildCachedItems = null;
+            _buildCachedPlan = null;
+            try {
+              return Scaffold(
+                appBar: AppBar(
+                  automaticallyImplyLeading: false,
+                  titleSpacing: 0,
+                  title: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      IconButton(
+                        icon: const Icon(Icons.chevron_left, size: 22),
+                        tooltip: s.isTr ? 'Önceki gün' : 'Previous day',
+                        padding: EdgeInsets.zero,
+                        visualDensity: VisualDensity.compact,
+                        constraints: const BoxConstraints(minWidth: 28, minHeight: 32),
+                        onPressed: () => setState(() => _currentDay = subDays(_currentDay, 1)),
+                      ),
+                      Expanded(
+                        child: InkWell(
+                          borderRadius: BorderRadius.circular(10),
+                          onTap: () async {
+                            final picked = await showDatePicker(
+                              context: context,
+                              initialDate: _currentDay,
+                              firstDate: DateTime(2020),
+                              lastDate: DateTime.now(),
+                            );
+                            if (!mounted) return;
+                            if (picked != null) setState(() => _currentDay = dayStart(picked));
+                          },
+                          child: Padding(
                         padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
@@ -1786,9 +1816,15 @@ class _TodayViewState extends State<_TodayView> {
             // Giriş kutusu kaydırılan içeriğin dışında, altta sabit durur; sayaçlar ve paneller ne kadar
             // uzarsa uzasın yeni kayıt tek dokunuş uzaktadır.
             bottomNavigationBar: _buildComposer(max(140.0, (constraints.maxHeight - kToolbarHeight) * 0.72)),
-          ),
-        );
+          );
+        } finally {
+          _isBuilding = false;
+          _buildCachedItems = null;
+          _buildCachedPlan = null;
+        }
       },
     );
+  },
+);
   }
 }

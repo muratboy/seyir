@@ -97,6 +97,7 @@ class _ActivityMergePageState extends State<ActivityMergePage> {
     );
 
     if (confirmed != true) return;
+    if (!mounted) return;
 
     setState(() => _isProcessing = true);
     try {
