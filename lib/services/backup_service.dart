@@ -1,8 +1,32 @@
 import 'dart:io';
+import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart';
 import 'package:intl/intl.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import '../data/store.dart';
+
+enum BackupSaveStatus { saved, cancelled, failure }
+
+class BackupSaveResult {
+  final BackupSaveStatus status;
+  final Object? error;
+
+  const BackupSaveResult.saved()
+      : status = BackupSaveStatus.saved,
+        error = null;
+
+  const BackupSaveResult.cancelled()
+      : status = BackupSaveStatus.cancelled,
+        error = null;
+
+  const BackupSaveResult.failure(this.error)
+      : status = BackupSaveStatus.failure;
+
+  bool get isSaved => status == BackupSaveStatus.saved;
+  bool get isCancelled => status == BackupSaveStatus.cancelled;
+  bool get isFailure => status == BackupSaveStatus.failure;
+}
 
 class BackupFileInfo {
   final File file;
@@ -33,6 +57,59 @@ class BackupService {
 
   /// Testlerde güvenlik yedeği hatasını simüle etmek için kullanılır.
   static Future<File> Function(AppStore store)? snapshotOverrideForTest;
+
+  /// Testlerde sistem kaydetme penceresini taklit etmek için kullanılır.
+  @visibleForTesting
+  static Future<Uri?> Function({
+    required String fileName,
+    required Uint8List bytes,
+  })? saveFileOverrideForTest;
+
+  /// Yedeğin cihaza kaydedilmesi için önerilen dosya adı:
+  /// Türkçe: seyir-yedek-YYYY-AA-GG-SSDD.json
+  /// İngilizce: seyir-backup-YYYY-MM-DD-HHmm.json
+  static String formatBackupFileName(DateTime dateTime, {bool isTr = true}) {
+    final timePart = DateFormat('yyyy-MM-dd-HHmm').format(dateTime);
+    final prefix = isTr ? 'seyir-yedek' : 'seyir-backup';
+    return '$prefix-$timePart.json';
+  }
+
+  /// Android'in sistem kaydetme penceresini (Storage Access Framework) açıp
+  /// yedeğin baytlarını kullanıcının seçtiği konuma yazar.
+  static Future<BackupSaveResult> saveToDevice(
+    File backup, {
+    DateTime? createdAt,
+    bool isTr = true,
+  }) async {
+    try {
+      final dt = createdAt ?? (await backup.lastModified());
+      final fileName = formatBackupFileName(dt, isTr: isTr);
+      final bytes = await backup.readAsBytes();
+
+      final Uri? uri;
+      if (saveFileOverrideForTest != null) {
+        uri = await saveFileOverrideForTest!(
+          fileName: fileName,
+          bytes: bytes,
+        );
+      } else {
+        uri = await FilePicker.saveFile(
+          fileName: fileName,
+          bytes: bytes,
+          mimeType: 'application/json',
+          type: FileType.custom,
+          allowedExtensions: const ['json'],
+        );
+      }
+
+      if (uri == null) {
+        return const BackupSaveResult.cancelled();
+      }
+      return const BackupSaveResult.saved();
+    } catch (e) {
+      return BackupSaveResult.failure(e);
+    }
+  }
 
   static Future<Directory> getBackupDir() async {
     final docs = await getApplicationDocumentsDirectory();

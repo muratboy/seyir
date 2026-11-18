@@ -792,6 +792,78 @@ class BackupSettingsPage extends StatefulWidget {
 }
 
 class _BackupSettingsPageState extends State<BackupSettingsPage> {
+  bool _exporting = false;
+
+  Future<void> _handleBackupExport() async {
+    if (_exporting) return;
+    _exporting = true;
+    try {
+      final s = strings.value;
+      final choice = await showModalBottomSheet<String>(
+        context: context,
+        showDragHandle: true,
+        builder: (sheetContext) => SafeArea(
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+                  child: Text(
+                    s.backupExport,
+                    style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
+                  ),
+                ),
+                const SizedBox(height: 8),
+                ListTile(
+                  leading: const Icon(Icons.save_alt),
+                  title: Text(s.isTr ? 'Telefona kaydet' : 'Save to phone'),
+                  onTap: () => Navigator.pop(sheetContext, 'save'),
+                ),
+                ListTile(
+                  leading: const Icon(Icons.share_outlined),
+                  title: Text(s.isTr ? 'Paylaş' : 'Share'),
+                  onTap: () => Navigator.pop(sheetContext, 'share'),
+                ),
+                const SizedBox(height: 8),
+              ],
+            ),
+          ),
+        ),
+      );
+
+      if (choice == null || !mounted) return;
+
+      final file = await BackupService.createBackup(store, prefix: 'manual');
+      if (choice == 'share') {
+        await SharePlus.instance.share(
+          ShareParams(
+            files: [XFile(file.path)],
+            text: '${s.isTr ? "Seyir JSON Yedeği" : "Seyir JSON backup"} (${file.uri.pathSegments.last})',
+          ),
+        );
+      } else if (choice == 'save') {
+        final res = await BackupService.saveToDevice(file, isTr: s.isTr);
+        if (!mounted) return;
+        if (res.isSaved) {
+          showSnack(context, s.isTr ? 'Yedek telefona kaydedildi' : 'Backup saved to your phone');
+        } else if (res.isFailure) {
+          showSnack(
+            context,
+            s.isTr ? 'Yedek kaydedilemedi: ${res.error}' : 'Couldn\'t save the backup: ${res.error}',
+          );
+        }
+      }
+    } finally {
+      if (mounted) {
+        setState(() => _exporting = false);
+      } else {
+        _exporting = false;
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return AnimatedBuilder(
@@ -836,19 +908,13 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
                       leading: const Icon(Icons.file_upload_outlined),
                       title: Text(s.backupExport),
                       subtitle: Text(
-                        s.isTr ? 'Yedek dosyası oluştur; paylaş ya da kaydet' : 'Create a backup file to share or save',
+                        s.isTr
+                            ? 'Yedek dosyası oluştur; telefona kaydet ya da paylaş'
+                            : 'Create a backup file to save on your phone or share',
                         style: const TextStyle(fontSize: AppFont.caption),
                       ),
                       // Yedek dosya olarak verilir: pano birkaç bin kayıtlık bir JSON'u taşıyamaz.
-                      onTap: () async {
-                        final file = await BackupService.createBackup(store, prefix: 'manual');
-                        await SharePlus.instance.share(
-                          ShareParams(
-                            files: [XFile(file.path)],
-                            text: '${s.isTr ? "Seyir JSON Yedeği" : "Seyir JSON backup"} (${file.uri.pathSegments.last})',
-                          ),
-                        );
-                      },
+                      onTap: _exporting ? null : _handleBackupExport,
                     ),
                     const Divider(height: 1),
                     ListTile(
@@ -975,48 +1041,60 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
       context: context,
       isScrollControlled: true,
       useSafeArea: true,
-      builder: (bottomContext) => StatefulBuilder(
-        builder: (bottomContext, setSheetState) => FutureBuilder<List<BackupFileInfo>>(
-          future: BackupService.listBackups(),
-          builder: (context, snap) {
-            final backups = snap.data ?? [];
-            return DraggableScrollableSheet(
-              expand: false,
-              initialChildSize: 0.6,
-              maxChildSize: 0.9,
-              builder: (c, scrollCtrl) => Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                child: Column(
-                  children: [
-                    Container(
-                      width: 40,
-                      height: 4,
-                      decoration: BoxDecoration(
-                        color: Colors.grey.withValues(alpha: 0.4),
-                        borderRadius: BorderRadius.circular(2),
+      builder: (bottomContext) {
+        bool sheetBusy = false;
+        return StatefulBuilder(
+          builder: (bottomContext, setSheetState) => FutureBuilder<List<BackupFileInfo>>(
+            future: BackupService.listBackups(),
+            builder: (context, snap) {
+              final backups = snap.data ?? [];
+              return DraggableScrollableSheet(
+                expand: false,
+                initialChildSize: 0.6,
+                maxChildSize: 0.9,
+                builder: (c, scrollCtrl) => Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Column(
+                    children: [
+                      Container(
+                        width: 40,
+                        height: 4,
+                        decoration: BoxDecoration(
+                          color: Colors.grey.withValues(alpha: 0.4),
+                          borderRadius: BorderRadius.circular(2),
+                        ),
                       ),
-                    ),
-                    const SizedBox(height: 12),
-                    Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        Text(
-                          s.isTr ? 'Yerel Yedekler' : 'Local Backups',
-                          style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
-                        ),
-                        FilledButton.icon(
-                          icon: const Icon(Icons.add, size: 16),
-                          label: Text(s.isTr ? 'Yeni Yedek Al' : 'Backup Now'),
-                          onPressed: () async {
-                            await BackupService.createBackup(store, prefix: 'manual');
-                            setSheetState(() {});
-                            if (bottomContext.mounted) {
-                              showSnack(bottomContext, s.isTr ? 'Yedek başarıyla oluşturuldu' : 'Backup created');
-                            }
-                          },
-                        ),
-                      ],
-                    ),
+                      const SizedBox(height: 12),
+                      Row(
+                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        children: [
+                          Expanded(
+                            child: Text(
+                              s.isTr ? 'Yerel Yedekler' : 'Local Backups',
+                              style: const TextStyle(fontSize: AppFont.title, fontWeight: FontWeight.bold),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            icon: const Icon(Icons.add, size: 16),
+                            label: Text(s.isTr ? 'Yeni Yedek Al' : 'Backup Now'),
+                            onPressed: () async {
+                              if (sheetBusy) return;
+                              sheetBusy = true;
+                              try {
+                                await BackupService.createBackup(store, prefix: 'manual');
+                                setSheetState(() {});
+                                if (bottomContext.mounted) {
+                                  showSnack(bottomContext, s.isTr ? 'Yedek başarıyla oluşturuldu' : 'Backup created');
+                                }
+                              } finally {
+                                sheetBusy = false;
+                              }
+                            },
+                          ),
+                        ],
+                      ),
                     const SizedBox(height: 12),
                     if (snap.connectionState == ConnectionState.waiting)
                       const Expanded(child: Center(child: CircularProgressIndicator()))
@@ -1126,23 +1204,50 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
                                     PopupMenuButton<String>(
                                       icon: const Icon(Icons.more_vert, size: 20),
                                       onSelected: (val) async {
-                                        if (val == 'share') {
-                                          SharePlus.instance.share(
-                                            ShareParams(
-                                              files: [XFile(b.file.path)],
-                                              text: '${s.isTr ? "Seyir JSON Yedeği" : "Seyir JSON backup"} (${b.name})',
-                                            ),
-                                          );
-                                        } else if (val == 'delete') {
-                                          final ok = await confirm(
-                                            c,
-                                            s.deleteConfirmTitle,
-                                            s.isTr ? 'Bu yedek dosyasını silmek istediğinize emin misiniz?' : 'Delete this backup file?',
-                                          );
-                                          if (ok) {
-                                            await b.file.delete();
-                                            setSheetState(() {});
+                                        if (sheetBusy) return;
+                                        sheetBusy = true;
+                                        try {
+                                          if (val == 'share') {
+                                            await SharePlus.instance.share(
+                                              ShareParams(
+                                                files: [XFile(b.file.path)],
+                                                text: '${s.isTr ? "Seyir JSON Yedeği" : "Seyir JSON backup"} (${b.name})',
+                                              ),
+                                            );
+                                          } else if (val == 'save') {
+                                            final res = await BackupService.saveToDevice(
+                                              b.file,
+                                              createdAt: b.createdAt,
+                                              isTr: s.isTr,
+                                            );
+                                            if (bottomContext.mounted) {
+                                              if (res.isSaved) {
+                                                showSnack(
+                                                  bottomContext,
+                                                  s.isTr ? 'Yedek telefona kaydedildi' : 'Backup saved to your phone',
+                                                );
+                                              } else if (res.isFailure) {
+                                                showSnack(
+                                                  bottomContext,
+                                                  s.isTr
+                                                      ? 'Yedek kaydedilemedi: ${res.error}'
+                                                      : 'Couldn\'t save the backup: ${res.error}',
+                                                );
+                                              }
+                                            }
+                                          } else if (val == 'delete') {
+                                            final ok = await confirm(
+                                              c,
+                                              s.deleteConfirmTitle,
+                                              s.isTr ? 'Bu yedek dosyasını silmek istediğinize emin misiniz?' : 'Delete this backup file?',
+                                            );
+                                            if (ok) {
+                                              await b.file.delete();
+                                              setSheetState(() {});
+                                            }
                                           }
+                                        } finally {
+                                          sheetBusy = false;
                                         }
                                       },
                                       itemBuilder: (c) => [
@@ -1153,6 +1258,16 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
                                               const Icon(Icons.share_outlined, size: 18),
                                               const SizedBox(width: 8),
                                               Text(s.isTr ? 'Paylaş' : 'Share'),
+                                            ],
+                                          ),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'save',
+                                          child: Row(
+                                            children: [
+                                              const Icon(Icons.save_alt, size: 18),
+                                              const SizedBox(width: 8),
+                                              Text(s.isTr ? 'Telefona kaydet' : 'Save to phone'),
                                             ],
                                           ),
                                         ),
@@ -1181,9 +1296,10 @@ class _BackupSettingsPageState extends State<BackupSettingsPage> {
             );
           },
         ),
-      ),
-    );
-  }
+      );
+    },
+  );
+}
 }
 
 /// Kullanıcının kendi yapay zekâ anahtarını (BYOK) tanımladığı ve yönettiği sayfa.
