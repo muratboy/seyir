@@ -736,6 +736,11 @@ class TimeParser {
         mVal = 30;
       }
 
+      final hasClockPunctuation = (sep == ':' || sep == '.') &&
+          rawM != null &&
+          rawM.length == 2 &&
+          int.tryParse(rawM) != null;
+
       // Gece kuralı: 1-5 arası saat gece ile gelirse 01:00-05:00
       if (hadNightMention && hVal >= 1 && hVal <= 5) {
         resolvedHour = hVal;
@@ -748,8 +753,12 @@ class TimeParser {
       } else if (matchedPod != null && matchedPod.contains('ogleden sonra') && hVal >= 1 && hVal <= 11) {
         // "öğleden sonra 3" -> 15
         resolvedHour = hVal + 12;
-      } else if (hVal > 12 || (rawH.length == 2 && rawH.startsWith('0') && sep != null)) {
-        // Başında sıfır olan yazım 24 saatlik yazımdır; "07:30" yazan kişi akşam 19:30'u kastetmez.
+      } else if (hVal > 12 ||
+          (rawH.length == 2 && rawH.startsWith('0') && sep != null) ||
+          (!isEnLocale && hasClockPunctuation)) {
+        // 24 saatlik düzen: 12'den büyük saatler, başında sıfır olan saatler ("07:30")
+        // ve Türkçe arayüzde dakikası açıkça yazılmış saatler ("7:30", "12:30", "1:15")
+        // olduğu gibi okunur.
         resolvedHour = hVal;
       } else {
         // 12 saat belirsizliği (ambiguity):
