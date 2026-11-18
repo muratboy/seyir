@@ -1,6 +1,7 @@
 package dev.takip.takip
 
 import android.Manifest
+import android.content.Context
 import android.content.pm.PackageManager
 import android.content.Intent
 import android.os.Build
@@ -45,9 +46,19 @@ class MainActivity : FlutterActivity() {
                 val statusBarManager = getSystemService(android.app.StatusBarManager::class.java)
                 val component = android.content.ComponentName(this, TakipTileService::class.java)
                 val icon = android.graphics.drawable.Icon.createWithResource(this, R.drawable.ic_stat_takip)
+                val prefs = getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
+                val payloadStr = prefs.getString("payload", null)
+                var isTr = true
+                if (payloadStr != null) {
+                    try {
+                        val json = org.json.JSONObject(payloadStr)
+                        isTr = json.optBoolean("isTr", true)
+                    } catch (_: Exception) {}
+                }
+                val tileLabel = if (isTr) "Hızlı Kayıt" else "Quick Log"
                 statusBarManager.requestAddTileService(
                     component,
-                    getString(R.string.tile_quick_add),
+                    tileLabel,
                     icon,
                     mainExecutor
                 ) { res ->

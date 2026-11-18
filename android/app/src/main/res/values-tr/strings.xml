@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Seyir</string>
+    <string name="shortcut_voice_short">Sesle Kaydet</string>
+    <string name="shortcut_voice_long">Sesli kayıt başlat</string>
+    <string name="shortcut_repeat_short">Son Kayıt</string>
+    <string name="shortcut_repeat_long">Son kaydı tekrarla</string>
+    <string name="shortcut_add_short">Hızlı Kayıt</string>
+    <string name="shortcut_add_long">Yeni kayıt ekle</string>
+    <string name="tile_quick_add">Hızlı Kayıt</string>
+    <string name="tile_quick_add_label">Seyir • Hızlı Kayıt</string>
+    <string name="todo_widget_name">Yapılacaklar</string>
+    <string name="todo_widget_description">Yapılacak işlerinizi ve görevlerinizi takip edin</string>
+    <string name="todo_widget_empty">Yapılacak yok · + Ekle</string>
+    <string name="widget_action_add">+ Ne yaptın?</string>
+    <string name="widget_empty_shortcuts">Uygulamadan sık yapılanları ekleyebilirsiniz.</string>
+    <string name="quick_record_title">Seyir • Hızlı Kayıt</string>
+    <string name="quick_record_desc">Ne yaptığını serbestçe yaz veya önerilere dokun</string>
+    <string name="quick_record_hint">Örn: 2 kupa kahve, 30 dk yürüyüş...</string>
+    <string name="quick_record_save">Kaydet</string>
+    <string name="quick_record_suggestions">Öneriler &amp; Alışkanlıklar</string>
+    <string name="quick_record_open_app">Seyir uygulamasını aç ↗</string>
+    <string name="widget_config_title">Seyir • 1x1 Mini Widget</string>
+    <string name="widget_config_subtitle">Dokunulduğunda hangi aktivite kaydedilsin?</string>
+</resources>

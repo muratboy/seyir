@@ -20,12 +20,14 @@ class TakipWidgetProvider : HomeWidgetProvider() {
         widgetData: SharedPreferences
     ) {
         var theme = widgetData.getString("widget_theme", "system") ?: "system"
+        var isTr = true
         val payloadStr = widgetData.getString("payload", null)
         if (payloadStr != null) {
             try {
                 val json = JSONObject(payloadStr)
                 val t = json.optString("theme", "")
                 if (t.isNotEmpty()) theme = t
+                isTr = json.optBoolean("isTr", true)
             } catch (_: Exception) {}
         }
 
@@ -38,6 +40,8 @@ class TakipWidgetProvider : HomeWidgetProvider() {
         appWidgetIds.forEach { widgetId ->
             val views = RemoteViews(context.packageName, layoutId)
             views.setTextViewText(R.id.widget_title, "Seyir")
+            views.setTextViewText(R.id.widget_add_btn, if (isTr) "+ Ne yaptın?" else "+ What did you do?")
+            views.setTextViewText(R.id.widget_empty, if (isTr) "Uygulamadan sık yapılanları ekleyebilirsiniz." else "Add shortcuts from the app.")
 
             // Quick Add button opens app directly into composer
             val addUri = Uri.parse("takip://add")
@@ -58,7 +62,6 @@ class TakipWidgetProvider : HomeWidgetProvider() {
             )
             views.setOnClickPendingIntent(R.id.widget_mic_btn, voicePendingIntent)
 
-            val payloadStr = widgetData.getString("payload", null)
             if (payloadStr != null) {
                 try {
                     val json = JSONObject(payloadStr)

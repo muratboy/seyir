@@ -1,10 +1,12 @@
 package dev.takip.takip
 
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.os.Build
 import android.service.quicksettings.Tile
 import android.service.quicksettings.TileService
+import org.json.JSONObject
 
 class TakipTileService : TileService() {
 
@@ -12,7 +14,16 @@ class TakipTileService : TileService() {
         super.onStartListening()
         val tile = qsTile ?: return
         tile.state = Tile.STATE_ACTIVE
-        tile.label = getString(R.string.tile_quick_add)
+        val prefs = getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
+        val payloadStr = prefs.getString("payload", null)
+        var isTr = true
+        if (payloadStr != null) {
+            try {
+                val json = JSONObject(payloadStr)
+                isTr = json.optBoolean("isTr", true)
+            } catch (_: Exception) {}
+        }
+        tile.label = if (isTr) "Hızlı Kayıt" else "Quick Log"
         tile.updateTile()
     }
 

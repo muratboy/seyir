@@ -1,14 +1,25 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">Seyir</string>
-    <string name="shortcut_voice_short">Sesle Kaydet</string>
-    <string name="shortcut_voice_long">Sesli kayıt başlat</string>
-    <string name="shortcut_repeat_short">Son Kayıt</string>
-    <string name="shortcut_repeat_long">Son kaydı tekrarla</string>
-    <string name="shortcut_add_short">Hızlı Kayıt</string>
-    <string name="shortcut_add_long">Yeni kayıt ekle</string>
-    <string name="tile_quick_add">Hızlı Kayıt</string>
-    <string name="tile_quick_add_label">Seyir • Hızlı Kayıt</string>
-    <string name="todo_widget_name">Yapılacaklar</string>
-    <string name="todo_widget_description">Yapılacak işlerinizi ve görevlerinizi takip edin</string>
+    <string name="shortcut_voice_short">Voice Log</string>
+    <string name="shortcut_voice_long">Start voice log</string>
+    <string name="shortcut_repeat_short">Last Entry</string>
+    <string name="shortcut_repeat_long">Repeat last entry</string>
+    <string name="shortcut_add_short">Quick Log</string>
+    <string name="shortcut_add_long">Add new entry</string>
+    <string name="tile_quick_add">Quick Log</string>
+    <string name="tile_quick_add_label">Seyir • Quick Log</string>
+    <string name="todo_widget_name">To-dos</string>
+    <string name="todo_widget_description">Track your to-dos and single-step goals</string>
+    <string name="todo_widget_empty">No to-dos · + Add</string>
+    <string name="widget_action_add">+ What did you do?</string>
+    <string name="widget_empty_shortcuts">Add shortcuts from the app.</string>
+    <string name="quick_record_title">Seyir • Quick Log</string>
+    <string name="quick_record_desc">Type what you did, or tap a suggestion</string>
+    <string name="quick_record_hint">e.g. 2 cups of coffee, 30 min walk…</string>
+    <string name="quick_record_save">Save</string>
+    <string name="quick_record_suggestions">Suggestions &amp; habits</string>
+    <string name="quick_record_open_app">Open Seyir ↗</string>
+    <string name="widget_config_title">Seyir • 1x1 Mini Widget</string>
+    <string name="widget_config_subtitle">Which activity should a tap log?</string>
 </resources>

@@ -48,24 +48,30 @@ class SingleWidgetConfigureActivity : Activity() {
         val closeBtn = findViewById<View>(R.id.widget_config_close)
         val listContainer = findViewById<LinearLayout>(R.id.widget_config_list)
 
+        val prefs = getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
+        val payloadStr = prefs.getString("payload", null)
+        var isTr = true
+        if (payloadStr != null) {
+            try {
+                val json = JSONObject(payloadStr)
+                isTr = json.optBoolean("isTr", true)
+            } catch (_: Exception) {}
+        }
+        findViewById<TextView>(R.id.widget_config_subtitle)?.text = if (isTr) "Dokunulduğunda hangi aktivite kaydedilsin?" else "Which activity should a tap log?"
+
         root.setOnClickListener { finish() }
         closeBtn.setOnClickListener { finish() }
 
-        populateOptions(listContainer)
+        populateOptions(listContainer, isTr, payloadStr)
     }
 
-    private fun populateOptions(container: LinearLayout) {
+    private fun populateOptions(container: LinearLayout, isTr: Boolean, payloadStr: String?) {
         val density = resources.displayMetrics.density
-        val prefs = getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
-        val payloadStr = prefs.getString("payload", null)
-
-        var isTr = true
         val activities = mutableListOf<ActivityOption>()
 
         if (payloadStr != null) {
             try {
                 val json = JSONObject(payloadStr)
-                isTr = json.optBoolean("isTr", true)
                 val acts = json.optJSONArray("activities")
                 if (acts != null) {
                     for (i in 0 until acts.length()) {

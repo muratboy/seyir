@@ -63,7 +63,7 @@
             android:paddingEnd="12dp"
             android:paddingTop="7dp"
             android:paddingBottom="7dp"
-            android:text="+ Ne yaptın?"
+            android:text="@string/widget_action_add"
             android:textColor="@color/widget_button_text_light"
             android:textSize="13sp"
             android:textStyle="bold" />
@@ -176,7 +176,7 @@
         android:gravity="center"
         android:paddingTop="10dp"
         android:paddingBottom="10dp"
-        android:text="Uygulamadan sık yapılanları ekleyebilirsiniz."
+        android:text="@string/widget_empty_shortcuts"
         android:textColor="@color/widget_empty_light"
         android:textSize="12sp"
         android:visibility="gone" />

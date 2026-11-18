@@ -19,7 +19,7 @@
             android:layout_width="0dp"
             android:layout_height="wrap_content"
             android:layout_weight="1"
-            android:text="Yapılacaklar"
+            android:text="@string/todo_widget_name"
             android:textColor="@color/widget_title_dark"
             android:textSize="15sp"
             android:textStyle="bold" />
@@ -52,7 +52,7 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:gravity="center"
-        android:text="Yapılacak yok · + Ekle"
+        android:text="@string/todo_widget_empty"
         android:textColor="@color/widget_empty_dark"
         android:textSize="13sp"
         android:visibility="gone" />

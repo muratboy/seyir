@@ -22,6 +22,7 @@ import org.json.JSONObject
 class QuickRecordActivity : Activity() {
 
     private lateinit var inputEdit: EditText
+    private var isTr = true
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -47,6 +48,22 @@ class QuickRecordActivity : Activity() {
         val micBtn = findViewById<View>(R.id.quick_mic_btn)
         val sendBtn = findViewById<View>(R.id.quick_send_btn)
         inputEdit = findViewById(R.id.quick_input_text)
+
+        val prefs = getSharedPreferences("HomeWidgetPreferences", Context.MODE_PRIVATE)
+        val payloadStr = prefs.getString("payload", null)
+        if (payloadStr != null) {
+            try {
+                val json = JSONObject(payloadStr)
+                isTr = json.optBoolean("isTr", true)
+            } catch (_: Exception) {}
+        }
+
+        findViewById<TextView>(R.id.quick_record_title)?.text = if (isTr) "Seyir • Hızlı Kayıt" else "Seyir • Quick Log"
+        findViewById<TextView>(R.id.quick_record_desc)?.text = if (isTr) "Ne yaptığını serbestçe yaz veya önerilere dokun" else "Type what you did, or tap a suggestion"
+        inputEdit.hint = if (isTr) "Örn: 2 kupa kahve, 30 dk yürüyüş..." else "e.g. 2 cups of coffee, 30 min walk…"
+        findViewById<TextView>(R.id.quick_send_btn)?.text = if (isTr) "Kaydet" else "Save"
+        findViewById<TextView>(R.id.quick_suggestions_label)?.text = if (isTr) "Öneriler & Alışkanlıklar" else "Suggestions & habits"
+        findViewById<TextView>(R.id.quick_open_app_btn)?.text = if (isTr) "Seyir uygulamasını aç ↗" else "Open Seyir ↗"
 
         // Kartın dışına dokunulduğunda kapat
         root.setOnClickListener { finish() }
@@ -143,7 +160,7 @@ class QuickRecordActivity : Activity() {
                             Uri.parse("takip://tap?id=$id")
                         }
                         sendBackgroundBroadcast(uri)
-                        Toast.makeText(this@QuickRecordActivity, "✓ $title kaydedildi", Toast.LENGTH_SHORT).show()
+                        Toast.makeText(this@QuickRecordActivity, if (isTr) "✓ $title kaydedildi" else "✓ $title logged", Toast.LENGTH_SHORT).show()
                         finish()
                     }
                 }
@@ -163,7 +180,7 @@ class QuickRecordActivity : Activity() {
         val uri = Uri.parse("takip://quick_text?text=" + Uri.encode(text))
         sendBackgroundBroadcast(uri)
 
-        Toast.makeText(this, "✓ Kaydedildi: $text", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, if (isTr) "✓ Kaydedildi: $text" else "✓ Logged: $text", Toast.LENGTH_SHORT).show()
         finish()
     }
 
@@ -178,14 +195,14 @@ class QuickRecordActivity : Activity() {
     private fun startVoiceInput() {
         val intent = Intent(RecognizerIntent.ACTION_RECOGNIZE_SPEECH).apply {
             putExtra(RecognizerIntent.EXTRA_LANGUAGE_MODEL, RecognizerIntent.LANGUAGE_MODEL_FREE_FORM)
-            putExtra(RecognizerIntent.EXTRA_LANGUAGE, "tr-TR")
-            putExtra(RecognizerIntent.EXTRA_PROMPT, "Ne yaptın? Konuşun...")
+            putExtra(RecognizerIntent.EXTRA_LANGUAGE, if (isTr) "tr-TR" else "en-US")
+            putExtra(RecognizerIntent.EXTRA_PROMPT, if (isTr) "Ne yaptın? Konuşun..." else "What did you do? Speak...")
         }
         try {
             @Suppress("DEPRECATION")
             startActivityForResult(intent, 2001)
         } catch (e: Exception) {
-            Toast.makeText(this, "Ses tanıma bu cihazda desteklenmiyor", Toast.LENGTH_SHORT).show()
+            Toast.makeText(this, if (isTr) "Ses tanıma bu cihazda desteklenmiyor" else "Speech recognition isn't supported on this device", Toast.LENGTH_SHORT).show()
         }
     }
 
